@@ -1,0 +1,19 @@
+== Implicit results through ExecResult::implicit_results() (patched crate) ==
+PASS P1    result count of fx_cursor.implicit_results(5) => 2
+PASS P2    1st result: columns and rows (limit 5) => ("ID,NAME,PRICE", 5)
+PASS P3    2nd result: category names (multibyte) => ["Plain", "Ação", "Café", "Straße", "日本"]
+PASS P4    1st and 2nd results read interleaved: 1 item, all categories, rest of items => (1, 5, 4)
+OBS  P5    lazy: rows held client-side before / after the 1st, 100th, 101st row of 1000 => Ok("before=0 after1=99 after100=0 after101=99")
+PASS P6    1st result with 1000 rows: row count, last id => (1000, 1000)
+PASS P7    OUT bind and Implicit results in one block: (out, count, rows #1, names #2) => (42, 2, 5, ["Plain", "Ação", "Café", "Straße", "日本"])
+PASS P8    block with no RETURN_RESULT: empty Vec => 0
+PASS P9    plain DML / query through execute: empty Vec => (0, 0)
+== Errors and cleanup ==
+OBS  P10   RETURN_RESULT then raise_application_error in the same block => Err(ORA-20001: boom)
+PASS P11   same connection afterwards: select 1 from dual => 1
+PASS P12   500 failing blocks (2 results each, then the error), then a read => ("ID,NAME,PRICE", 5)
+PASS P13   500 executions dropping both results unread (1000 > open_cursors 300), then a read => ["Plain", "Ação", "Café", "Straße", "日本"]
+PASS P14   500 executions dropping the ExecResult without calling implicit_results(), then a read => 2
+== Not broken by the patch ==
+PASS P15   REF CURSOR OUT: begin :o := fx_cursor.items(3); end; => ("ID,CATEGORY_ID,NAME,PRICE,CREATED_AT", 3)
+== 13 pass, 0 fail, 0 err, 2 observed ==

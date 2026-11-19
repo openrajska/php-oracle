@@ -1,0 +1,234 @@
+diff -ruN a/src/constants.rs b/src/constants.rs
+--- a/src/constants.rs
++++ b/src/constants.rs
+@@ -203,7 +203,7 @@
+ pub const TTC_MSG_TYPE_BIT_VECTOR: u8 = 21;
+ pub const TTC_MSG_TYPE_SERVER_SIDE_PIGGYBACK: u8 = 23;
+ pub const _TTC_MSG_TYPE_ONEWAY_FN: u8 = 26;
+-pub const _TTC_MSG_TYPE_IMPLICIT_RESULTSET: u8 = 27;
++pub const TTC_MSG_TYPE_IMPLICIT_RESULTSET: u8 = 27;
+ pub const TTC_MSG_TYPE_RENEGOTIATE: u8 = 28;
+ pub const TTC_MSG_TYPE_END_OF_RESPONSE: u8 = 29;
+ pub const _TTC_MSG_TYPE_TOKEN: u8 = 33;
+diff -ruN a/src/exec_result.rs b/src/exec_result.rs
+--- a/src/exec_result.rs
++++ b/src/exec_result.rs
+@@ -30,10 +30,12 @@
+ 
+ use std::sync::Arc;
+ 
++use crate::client::ClientRef;
++use crate::cursor::Cursor;
+ use crate::metadata::Metadata;
+ use crate::response::Response;
+ use crate::row::{DbRow, Row};
+-use crate::statement::CachedStatement;
++use crate::statement::{CachedStatement, Statement};
+ 
+ #[derive(Debug)]
+ /// Represents the result returned by the database when calling
+@@ -44,6 +46,7 @@
+     out_bind_data: Option<DbRow>,
+     returned_data: Option<Vec<DbRow>>,
+     rows_affected: u64,
++    implicit_results: Vec<Cursor>,
+ }
+ 
+ impl ExecResult {
+@@ -68,9 +71,30 @@
+             out_bind_data,
+             returned_data,
+             rows_affected: resp.get_rowcount(),
++            implicit_results: Vec::new(),
+         }
+     }
+ 
++    /// Wraps the cursors returned by DBMS_SQL.RETURN_RESULT. Must be called
++    /// without the client lock held, since dropping a Cursor takes it.
++    pub(crate) fn set_implicit_results(
++        &mut self,
++        client_ref: &ClientRef,
++        statements: Vec<CachedStatement>,
++    ) {
++        self.implicit_results = statements
++            .into_iter()
++            .map(|s| Cursor::new(Statement::new(client_ref.clone(), s)))
++            .collect();
++    }
++
++    /// Returns the cursors a PL/SQL block returned with
++    /// DBMS_SQL.RETURN_RESULT, in the order they were returned. This
++    /// transfers ownership of the cursors to the caller.
++    pub fn implicit_results(&mut self) -> Vec<Cursor> {
++        std::mem::take(&mut self.implicit_results)
++    }
++
+     /// Returns the number of rows affected by the execution of the statement.
+     pub fn rows_affected(&self) -> u64 {
+         self.rows_affected
+diff -ruN a/src/messages/execute.rs b/src/messages/execute.rs
+--- a/src/messages/execute.rs
++++ b/src/messages/execute.rs
+@@ -321,6 +321,32 @@
+         Ok(())
+     }
+ 
++    /// Each implicit result is an opened cursor: a short header that is
++    /// skipped, its describe info and its cursor id. The rows are fetched
++    /// later, like a REF CURSOR.
++    fn deserialize_implicit_results(
++        &mut self,
++        client: &Client,
++        resp: &mut Response,
++    ) -> Result<(), Error> {
++        let num_results = resp.read_ub4()?;
++        for _ in 0..num_results {
++            let num_bytes = resp.read_u8()?;
++            resp.advance(num_bytes.into())?;
++            let mut statement = CachedStatement::create_empty(
++                String::new(),
++                false,
++                self.statement.options(),
++            );
++            statement.populate_from_describe_info(client, resp)?;
++            statement.set_cursor_id(resp.read_ub2()?);
++            resp.add_implicit_result(statement);
++        }
++        // the describe info above resized the bit vector for its columns
++        resp.set_num_columns(self.statement.out_metadata().len());
++        Ok(())
++    }
++
+     fn deserialize_io_vector(
+         &mut self,
+         _client: &Client,
+diff -ruN a/src/messages/mod.rs b/src/messages/mod.rs
+--- a/src/messages/mod.rs
++++ b/src/messages/mod.rs
+@@ -82,6 +82,18 @@
+         Err(Error::not_implemented(feature))
+     }
+ 
++    /// Deserializes a TTC implicit results message (DBMS_SQL.RETURN_RESULT).
++    /// Only the execute message expects one.
++    fn deserialize_implicit_results(
++        &mut self,
++        _client: &Client,
++        resp: &mut Response,
++    ) -> Result<(), Error> {
++        Err(resp.unknown_ttc_message_type(
++            constants::TTC_MSG_TYPE_IMPLICIT_RESULTSET,
++        ))
++    }
++
+     /// Deserializes a TTC I/O vector message.
+     fn deserialize_io_vector(
+         &mut self,
+@@ -167,6 +179,9 @@
+             }
+             constants::TTC_MSG_TYPE_END_OF_RESPONSE => Ok(()),
+             constants::TTC_MSG_TYPE_ERROR => resp.read_error_info(client),
++            constants::TTC_MSG_TYPE_IMPLICIT_RESULTSET => {
++                self.deserialize_implicit_results(client, resp)
++            }
+             constants::TTC_MSG_TYPE_IO_VECTOR => {
+                 self.deserialize_io_vector(client, resp)
+             }
+diff -ruN a/src/response/mod.rs b/src/response/mod.rs
+--- a/src/response/mod.rs
++++ b/src/response/mod.rs
+@@ -61,6 +61,7 @@
+     warning: Option<String>,
+     rows: Option<Vec<DbRow>>,
+     pending_values: Vec<Option<PendingDbValue>>,
++    implicit_results: Vec<CachedStatement>,
+     prev_fetch_last_row: Option<DbRow>,
+     bit_vector: Option<Vec<u8>>,
+     num_columns: usize,
+@@ -82,6 +83,7 @@
+                 Some(PendingDbValue::Cursor(statement)) => Some(statement),
+                 _ => None,
+             });
++        let cursors = cursors.chain(self.implicit_results.iter_mut());
+         for statement in std::iter::once(statement).chain(cursors) {
+             for metadata in statement.out_metadata_mut() {
+                 metadata.resolve_object_type(|identity| {
+@@ -115,11 +117,17 @@
+         self.warning = None;
+         self.rows = None;
+         self.pending_values.clear();
++        self.implicit_results.clear();
+         self.bit_vector = None;
+         self.end_of_fetch = false;
+         self.flush_out_binds = false;
+     }
+ 
++    /// Records a cursor returned by DBMS_SQL.RETURN_RESULT.
++    pub(crate) fn add_implicit_result(&mut self, statement: CachedStatement) {
++        self.implicit_results.push(statement);
++    }
++
+     /// Records one pending value position while deserializing rows.
+     pub(crate) fn add_pending_db_value(
+         &mut self,
+@@ -176,6 +184,9 @@
+         for value in self.pending_values.drain(..).flatten() {
+             value.cleanup(client);
+         }
++        for statement in self.implicit_results.drain(..) {
++            client.return_statement(&statement);
++        }
+     }
+ 
+     /// Returns the current location in the response.
+@@ -445,6 +456,7 @@
+             warning: None,
+             rows: None,
+             pending_values: Vec::new(),
++            implicit_results: Vec::new(),
+             prev_fetch_last_row: None,
+             bit_vector: None,
+             num_columns: 0,
+@@ -626,6 +638,11 @@
+         self.num_columns = num_columns;
+     }
+ 
++    /// Takes the cursors returned by DBMS_SQL.RETURN_RESULT.
++    pub(crate) fn take_implicit_results(&mut self) -> Vec<CachedStatement> {
++        std::mem::take(&mut self.implicit_results)
++    }
++
+     /// Takes the rows from the response and returns them.
+     pub(crate) fn take_rows(&mut self) -> Option<Vec<DbRow>> {
+         self.rows.take()
+diff -ruN a/src/statement/public.rs b/src/statement/public.rs
+--- a/src/statement/public.rs
++++ b/src/statement/public.rs
+@@ -140,7 +140,12 @@
+         let params: BindParameters = binding.as_slice().into();
+         self.statement.check_binds(&params)?;
+         let mut response = self.get_execute_response(params, false)?;
+-        Ok(ExecResult::new(&self.statement, &mut response))
++        let mut result = ExecResult::new(&self.statement, &mut response);
++        result.set_implicit_results(
++            &self.client_ref,
++            response.take_implicit_results(),
++        );
++        Ok(result)
+     }
+ 
+     /// Executes a SQL statement against the database multiple times in one
+@@ -167,7 +172,12 @@
+         let params: BindParameters = binding.as_slice().into();
+         self.statement.check_binds(&params)?;
+         let mut response = self.get_execute_response(params, false)?;
+-        Ok(ExecResult::new(&self.statement, &mut response))
++        let mut result = ExecResult::new(&self.statement, &mut response);
++        result.set_implicit_results(
++            &self.client_ref,
++            response.take_implicit_results(),
++        );
++        Ok(result)
+     }
+ 
+     /// Returns whether or not the statement is a DDL statement.

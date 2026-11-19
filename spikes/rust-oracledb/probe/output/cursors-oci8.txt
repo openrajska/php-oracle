@@ -1,0 +1,9 @@
+C1    cols=ID,NAME,PRICE,CREATED_AT rows=250 first=["1","Item 0001","1.25","2026-01-01 00:00:00"] last=["250","Item 0250","312.5","2026-01-11 09:00:00"]
+C2    cols=ID,NAME rows=5 first=["1","Plain"] last=["5","日本"]
+C3    '1000'
+C11   Err(ORA-24338: statement handle not executed
+Help: https://docs.oracle.com/error-help/db/ora-24338/)
+R1    cols=ID,CATEGORY_ID,NAME,PRICE,CREATED_AT rows=1000 first=["1","1","Item 0001","1.25","2026-01-01 00:00:00"] last=["1000","5","Item 1000","1250","2026-02-11 15:00:00"]
+K1    ["1:Plain[1,6,11,16]","2:Ação[2,7,12,17]","3:Café[3,8,13,18]","4:Straße[4,9,14,19]","5:日本[5,10,15,20]"]
+I1.1  cols=ID,NAME,PRICE rows=5 first=["1","Item 0001","1.25"] last=["5","Item 0005","6.25"]
+I1.2  cols=ID,NAME rows=5 first=["1","Plain"] last=["5","日本"]

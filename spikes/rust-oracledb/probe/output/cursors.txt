@@ -1,0 +1,38 @@
+== REF CURSOR OUT parameters: fx_cursor.two_cursors ==
+PASS C1    items cursor (limit 250): columns, rows, sum, first, last => Items { cols: "ID,NAME,PRICE,CREATED_AT", rows: 250, sum: 39218.75, first: Some((1, "Item 0001", 1.25, OracleTimestamp("2026-01-01T00:00:00"))), last: Some((250, "Item 0250", 312.5, OracleTimestamp("2026-01-11T09:00:00"))) }
+PASS C2    categories cursor from the same Call (multibyte names) => ["Plain", "Ação", "Café", "Straße", "日本"]
+PASS C3    scalar OUT next to the cursors => 1000
+PASS C4    interleaved: 1 item, all categories, rest of items => (1, 5, 249)
+PASS C5    1000 rows cross prefetch (2) and fetch array size (100): rows, sum => (1000, 625625.0)
+OBS  C6    lazy: rows held client-side before / after the 1st, 100th, 101st row of 1000 => Ok("before=0 after1=99 after100=0 after101=99")
+PASS C7    empty cursor (limit 0) still has its columns => ("ID,NAME,PRICE,CREATED_AT", 0)
+PASS C8    1000 Calls dropping both cursors unread (2000 > open_cursors 300), then a read => (250, 39218.75)
+OBS  C9    borrowing get::<Cursor> instead of take => Err(unsupported conversion from cursor to Cursor)
+PASS C10   strongly typed REF CURSOR (fx_cursor.typed_cursor) => ("ID,CATEGORY_ID,NAME,PRICE,CREATED_AT", 3)
+OBS  C11   REF CURSOR OUT never opened by PL/SQL => Err(ORA-01001: cursor number is invalid or does not exist)
+OBS  C12   REF CURSOR OUT opened and closed by PL/SQL => Err(ORA-01001: cursor number is invalid or does not exist)
+PASS C13   connection still usable after C11/C12 => 1
+== REF CURSOR as a function return value: fx_cursor.items ==
+PASS R1    begin :o := fx_cursor.items(1000); end; => Items { cols: "ID,CATEGORY_ID,NAME,PRICE,CREATED_AT", rows: 1000, sum: 625625.0, first: Some((1, "Item 0001", 1.25, OracleTimestamp("2026-01-01T00:00:00"))), last: Some((1000, "Item 1000", 1250.0, OracleTimestamp("2026-02-11T15:00:00"))) }
+PASS R2    positional bind :1 := fx_cursor.items(:2), take(0) => 3
+PASS R3    function cursor in a select list: select fx_cursor.items(3) from dual => (1, 3)
+== Nested CURSOR() column ==
+PASS K1    query with a CURSOR() column, nested read row by row => ["1:Plain[1, 6, 11, 16]", "2:Ação[2, 7, 12, 17]", "3:Café[3, 8, 13, 18]", "4:Straße[4, 9, 14, 19]", "5:日本[5, 10, 15, 20]"]
+PASS K2    REF CURSOR whose rows hold a CURSOR() (fx_cursor.categories_with_items) => ["1:Plain[1, 6, 11, 16]", "2:Ação[2, 7, 12, 17]", "3:Café[3, 8, 13, 18]", "4:Straße[4, 9, 14, 19]", "5:日本[5, 10, 15, 20]"]
+OBS  K3    outer fetched completely first, nested cursors read afterwards => Ok(["1:Ok([1, 6, 11, 16])", "2:Ok([2, 7, 12, 17])", "3:Ok([3, 8, 13, 18])", "4:Ok([4, 9, 14, 19])", "5:Ok([5, 10, 15, 20])"])
+PASS K4    200 queries dropping 5 nested cursors unread each, then a read => ["1:Plain[1, 6, 11, 16]", "2:Ação[2, 7, 12, 17]", "3:Café[3, 8, 13, 18]", "4:Straße[4, 9, 14, 19]", "5:日本[5, 10, 15, 20]"]
+== Implicit results (DBMS_SQL.RETURN_RESULT), each case on a fresh connection ==
+OBS  I1    begin fx_cursor.implicit_results(5); end; => Err(internal error: unknown TTC message type 27 at packet 1, offset 11)
+OBS  I2    same connection afterwards: select 1 from dual => Ok(1)
+OBS  I3    did the block run to the end? (client_info set after both RETURN_RESULTs) => Ok("execute=Err(\"internal error: unknown TTC message type 27 at packet 1, offset 11\") client_info=Ok(\"end\")")
+OBS  I4    OUT bind in a block that also returns Implicit results => Err(internal error: unknown TTC message type 27 at packet 1, offset 27)
+OBS  I5    Implicit results through query() instead of execute() => Err(internal error: unknown TTC message type 27 at packet 1, offset 11)
+OBS  I6    400 failing executions (800 results > open_cursors 300), then a REF CURSOR read => Ok("errors=400 then read=Ok(3)")
+== Implicit results workaround: DBMS_SQL.GET_NEXT_RESULT -> REF CURSOR OUT ==
+PASS W1    result count => 2
+PASS W2    1st Implicit result (id, name, price; limit 5) => ("ID,NAME,PRICE", 5)
+PASS W3    2nd Implicit result (different columns) => ["Plain", "Ação", "Café", "Straße", "日本"]
+OBS  W4    3rd slot, never filled => Err(ORA-01001: cursor number is invalid or does not exist)
+PASS W5    1st result with 1000 rows, read lazily => (1000, 1000)
+PASS W6    500 wrapped Calls dropping results unread, then a read => 2
+== 20 pass, 0 fail, 0 err, 12 observed ==

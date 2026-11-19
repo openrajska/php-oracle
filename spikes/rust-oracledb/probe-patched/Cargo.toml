@@ -1,0 +1,12 @@
+[package]
+name = "probe-patched"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+oracledb = "=26.0.0-beta.6"
+
+# The patched copy made by ../patch/apply.sh (vendor/ is git-ignored).
+[patch.crates-io]
+oracledb = { path = "../vendor/oracledb" }

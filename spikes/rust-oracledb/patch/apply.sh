@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Copies the pristine oracledb 26.0.0-beta.6 source from the cargo registry
+# into spikes/rust-oracledb/vendor/oracledb and applies implicit-results.diff.
+# Run inside ddev (the registry lives in the web container):
+#   ddev exec bash spikes/rust-oracledb/patch/apply.sh
+# Idempotent: the vendor copy is wiped and recopied every time.
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+spike="$(dirname "$here")"
+version="26.0.0-beta.6"
+dest="$spike/vendor/oracledb"
+
+src="$(ls -d "${CARGO_HOME:-/usr/local/cargo}"/registry/src/*/oracledb-"$version" 2>/dev/null | head -n1 || true)"
+if [ -z "$src" ]; then
+    # Not downloaded yet: let cargo fetch it through the unpatched probe crate.
+    (cd "$spike/probe" && cargo fetch -q)
+    src="$(ls -d "${CARGO_HOME:-/usr/local/cargo}"/registry/src/*/oracledb-"$version" | head -n1)"
+fi
+
+rm -rf "$dest"
+mkdir -p "$(dirname "$dest")"
+cp -R "$src" "$dest"
+
+if [ "${1:-}" != "--no-patch" ]; then
+    patch -d "$dest" -p1 --forward --quiet < "$here/implicit-results.diff"
+    echo "patched $dest"
+else
+    echo "copied pristine source to $dest"
+fi
