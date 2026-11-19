@@ -1,0 +1,9 @@
+F1    Err(oci_fetch_array(): ORA-00932: expression is of data type ADT, which is incompatible with expected data type CHAR)
+N1    Err(oci_fetch_array(): ORA-00932: expression is of data type ADT, which is incompatible with expected data type CHAR)
+T1    ["1000","500500"]
+T2    ["1000","333833500","P1000"]
+X1    ["1","5","999","1000"]
+X2    [3,2,1]
+X3    ["red","café","x"]
+X4    true
+X5    null

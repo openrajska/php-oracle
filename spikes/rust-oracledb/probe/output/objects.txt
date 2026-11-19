@@ -1,0 +1,50 @@
+== Fetch: object and Collection columns (fx_shapes) ==
+PASS F1    row 1: object, VARRAY with multibyte, nested table of objects with a NULL attribute => (Some((Some(1.5), Some(-2.0), Some("center"))), Some([Some("red"), Some("café")]), Some([Some((Some(0.0), Some(0.0), Some("a"))), Some((Some(1.0), Some(0.0), Some("b"))), Some((Some(0.0), Some(1.0), None))]))
+PASS F2    row 2: every column NULL => (None, None, None)
+PASS F3    row 3: object with NULL attributes, empty VARRAY, empty nested table => (Some((None, None, None)), Some([]), Some([]))
+PASS F4    all rows in one query (type cache reused) => 3
+PASS F5    column metadata: object types of CENTER, TAGS, OUTLINE => [("RAJSKA.FX_POINT", false, ["X", "Y", "LABEL"]), ("RAJSKA.FX_STRING_VARRAY", true, ["VARCHAR2(100)"]), ("RAJSKA.FX_POINT_LIST", true, ["OBJECT"])]
+== Fetch: function results and nested values ==
+PASS N1    object returned by a function in SQL => (Some(1.5), Some(-2.0), Some("x"))
+PASS N2    object with a Collection of objects (make_polygon 4): name, vertices => (Some("sq"), Some([Some((Some(1.0), Some(0.0), Some("v1"))), Some((Some(0.0), Some(1.0), Some("v2"))), Some((Some(-1.0), Some(0.0), Some("v3"))), Some((Some(0.0), Some(-1.0), Some("v4")))]))
+PASS N3    VARRAY with NULL elements (split_csv 'a,,b,') => [Some("a"), None, Some("b"), None]
+PASS N4    VARRAY limit: split_csv with 11 parts surfaces ORA-06532 => true
+PASS N5    connection usable after N4 => Some(6.0)
+PASS N6    nested table of 10000 numbers (long image length): count, sum => (10000, 50005000.0)
+PASS N7    1000 rows of object values: rows, sum of y, last label => (1000, 333833500.0, Some("P1000"))
+PASS N8    object and Collection columns inside a REF CURSOR (fx_shapes row 1) => (Some((Some(1.5), Some(-2.0), Some("center"))), Some([Some("red"), Some("café")]), Some([Some((Some(0.0), Some(0.0), Some("a"))), Some((Some(1.0), Some(0.0), Some("b"))), Some((Some(0.0), Some(1.0), None))]))
+== SELECT ... FROM TABLE(pipelined_fn()) ==
+PASS T1    fx_pipe.numbers(:n = 1000): rows, sum => (1000, 500500.0)
+PASS T2    fx_pipe.points(:n = 1000) as columns: names, rows, sum of y, last row => ("X,Y,LABEL", 1000, 333833500.0, (1000.0, 1000000.0, "P1000"))
+PASS T3    fx_pipe.points(0): no rows, columns kept => ("X,Y,LABEL", 0)
+PASS T4    value(t) of a pipelined object row (an object column) => [Some((Some(1.0), Some(1.0), Some("P1"))), Some((Some(2.0), Some(4.0), Some("P2")))]
+PASS T5    pipelined query inside a REF CURSOR: rows, sum => (5, 15.0)
+== Binds: objects, Collections and Associative arrays ==
+PASS B1    get_type: object, nested table, VARRAY => [("RAJSKA.FX_POINT", false, ["X", "Y", "LABEL"]), ("RAJSKA.FX_NUMBER_LIST", true, ["NUMBER"]), ("RAJSKA.FX_STRING_VARRAY", true, ["VARCHAR2(100)"])]
+OBS  B2    get_type of a package Associative array type FX_OBJECT.T_NUMBER_MAP => Ok(("RAJSKA.FX_OBJECT.T_NUMBER_MAP", true, ["NUMBER"]))
+OBS  B3    OUT object bound as the bare DB_TYPE_OBJECT (no type attached) => Err(ORA-03137: malformed TTC packet from client rejected: [opibnd0-2] [0] [] [] [] [] [] [])
+PASS B4    connection usable after B3 => Some(3.0)
+OBS  B5    OUT Collection bound as the bare DB_TYPE_OBJECT => Err(ORA-03137: malformed TTC packet from client rejected: [opibnd0-2] [0] [] [] [] [] [] [])
+OBS  B6    Collection IN bound as a NULL DB_TYPE_OBJECT into TABLE(:ids) (throwaway connection) => Err(ORA-03137: malformed TTC packet from client rejected: [opibnd0-2] [0] [] [] [] [] [] [])
+OBS  B7    Associative array OUT bound as the bare DB_TYPE_OBJECT (fresh throwaway connection) => Err(ORA-03137: malformed TTC packet from client rejected: [opibnd0-2] [0] [] [] [] [] [] [])
+OBS  B8    throwaway connection after B6 => Ok(Some(1.0))
+OBS  B10   3 malformed binds (B3) on one connection, then a plain Call => Ok(([Some("ORA-03137"), Some("ORA-03137"), Some("ORA-03138")], Err("stream operation failed")))
+PASS B9    main connection usable after B5-B7 => Some(3.0)
+== Workarounds: JSON in, REF CURSOR out ==
+PASS W1    TABLE(:ids) via JSON_TABLE over a string bind => [1, 5, 999, 1000]
+PASS W2    JSON_TABLE with 1000 ids (a 4893-byte string bind): rows, sum => (1000, 500500)
+OBS  W3    JSON_TABLE with 10000 ids (a 48894-byte string bind, past 32767): rows => Err(ORA-01460: unimplemented or unreasonable conversion requested)
+PASS W3b   JSON_TABLE with 10000 ids bound as a JsonValue array (DB_TYPE_JSON, OSON): rows => 1000
+PASS W4    IN nested table via JSON: sum_numbers '[1, 2, 3.5]', '[]', NULL => (Some(6.5), Some(0.0), None)
+OBS  W5    IN object via JSON_VALUE ... RETURNING fx_polygon (nested Collection) => Ok(Some(3.0))
+PASS W6    OUT Collection via REF CURSOR: reverse_numbers of JSON '[1, 2, 3]' => [Some(3.0), Some(2.0), Some(1.0)]
+OBS  W7    IN OUT object: move_point of a JSON point by (10, 20), read back via REF CURSOR => Ok((Some(11.0), Some(22.0), Some("ação")))
+PASS W8    IN OUT VARRAY: append_tag 'x' to NULL and to ['red', 'café'] => ([Some("x")], [Some("red"), Some("café"), Some("x")])
+PASS W9    OUT object as JSON text: json_object(make_polygon('tri', 3)) into a VARCHAR2 OUT => Some("{\"NAME\":\"tri\",\"VERTICES\":[{\"X\":1,\"Y\":0,\"LABEL\":\"v1\"},{\"X\":-0.5,\"Y\":0.866025,\"LABEL\":\"v2\"},{\"X\":-0.5,\"Y\":-0.866025,\"LABEL\":\"v3\"}]}")
+PASS A1    Associative array IN via JSON: sum_map of '[1, 2, 3.5]' (keys 1..n) => Some(6.5)
+PASS A2    Associative array OUT as (key, value) rows via a REF CURSOR: fill_map(3) => [(10, 1), (20, 2), (30, 3)]
+OBS  A3    TABLE() over a package Associative array in a REF CURSOR (12c+ feature) => Ok(("COLUMN_VALUE", [1, 2, 3]))
+== Cleanup ==
+PASS L1    500 REF CURSORs with object columns dropped unread, then a read => (Some((Some(1.5), Some(-2.0), Some("center"))), Some([Some("red"), Some("café")]), Some([Some((Some(0.0), Some(0.0), Some("a"))), Some((Some(1.0), Some(0.0), Some("b"))), Some((Some(0.0), Some(1.0), None))]))
+
+31 pass, 0 fail, 0 err, 11 observed
