@@ -1,0 +1,29 @@
+# Oracle AI Database 26ai Free (gvenzl/oracle-free), só para desenvolvimento.
+#
+# - Imagem multi-arch: no Apple Silicon roda linux/arm64 nativo, sem emulação.
+# - "-faststart": o banco já vem expandido na imagem, então sobe em segundos.
+# - Efêmero de propósito: sem volume. `ddev stop`/`ddev restart` recriam um banco
+#   limpo. `ddev pause` preserva os dados (não remove o container).
+# - Dentro da rede do ddev: oracle:1521/FREEPDB1. No Mac: 127.0.0.1:1521/FREEPDB1.
+# - Credenciais de dev: SYS/SYSTEM = oracle; usuário de app rajska/rajska em FREEPDB1.
+#
+# Suporte de tags: https://github.com/gvenzl/oci-oracle-free#supported-tags
+services:
+  oracle:
+    container_name: ddev-${DDEV_SITENAME}-oracle
+    image: gvenzl/oracle-free:23.26.3-faststart
+    labels:
+      com.ddev.site-name: ${DDEV_SITENAME}
+      com.ddev.approot: ${DDEV_APPROOT}
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: rajska
+      APP_USER_PASSWORD: rajska
+    ports:
+      - "127.0.0.1:1521:1521"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 30

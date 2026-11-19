@@ -1,0 +1,31 @@
+# Toolchain Rust para o spike do crate `oracledb` e para a extensão via ext-php-rs.
+#
+# - Rust fixado: trocar RUST_VERSION é o único jeito de mudar o toolchain.
+# - clang/libclang-dev: o bindgen do ext-php-rs precisa deles.
+# - php-dev: fornece php-config e os headers do PHP, usados pelo ext-php-rs.
+# - cmake: seguro barato caso o rustls puxe o aws-lc-sys, que compila C.
+# - CARGO_TARGET_DIR fica fora do projeto, então o Mutagen não sincroniza o
+#   target/. O diretório é um volume (ver docker-compose.rust.yaml).
+ARG RUST_VERSION=1.100.0
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential pkg-config cmake clang libclang-dev php${DDEV_PHP_VERSION}-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    CARGO_TARGET_DIR=/var/cache/cargo-target \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --no-modify-path --profile minimal \
+          --default-toolchain "${RUST_VERSION}" -c clippy,rustfmt \
+ && mkdir -p /usr/local/cargo/registry /usr/local/cargo/git /var/cache/cargo-target \
+ && chown -R "$uid:$gid" /usr/local/cargo /usr/local/rustup /var/cache/cargo-target \
+ && printf '%s\n' \
+      'export RUSTUP_HOME=/usr/local/rustup' \
+      'export CARGO_HOME=/usr/local/cargo' \
+      'export CARGO_TARGET_DIR=/var/cache/cargo-target' \
+      'case ":$PATH:" in *:/usr/local/cargo/bin:*) ;; *) export PATH=/usr/local/cargo/bin:$PATH ;; esac' \
+      > /etc/profile.d/rust.sh

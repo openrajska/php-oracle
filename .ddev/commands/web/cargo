@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+## Description: Roda o cargo no container web (o target/ fica em volume, fora do Mutagen)
+## Usage: cargo [args]
+## Example: "ddev cargo build" or "cd spikes/rust-oracledb/probe && ddev cargo run"
+## HostWorkingDir: true
+
+exec cargo "$@"

@@ -1,0 +1,19 @@
+# Extras do container web para o spike Rust:
+# - Variáveis de conexão com o serviço `oracle` (docker-compose.oracle.yaml).
+# - Caches do cargo em volumes nomeados e persistentes. O build incremental sobrevive
+#   ao `ddev restart` e o target/ fica fora do sync do Mutagen.
+#   Para limpar: `ddev stop` e depois
+#   `docker volume rm ddev-php-oracle_cargo-registry ddev-php-oracle_cargo-target`.
+services:
+  web:
+    environment:
+      - ORACLE_CONNECT_STRING=oracle:1521/FREEPDB1
+      - ORACLE_USER=rajska
+      - ORACLE_PASSWORD=rajska
+    volumes:
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/var/cache/cargo-target
+
+volumes:
+  cargo-registry:
+  cargo-target:

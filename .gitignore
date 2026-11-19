@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Claude Code (configuração local do usuário)
+.claude/settings.local.json
+
+# Rust (spikes e extensão)
+target/
+
+# PHP / Composer
+vendor/
+
+# IDEs
+.idea/

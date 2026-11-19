@@ -1,0 +1,48 @@
+# ext-oci8 + Oracle Instant Client: SÓ como referência de benchmark (passo 5).
+#
+# O ddev aplica os Dockerfile.* em ordem alfabética, então este arquivo roda ANTES
+# do Dockerfile.rust e instala as próprias dependências de build.
+#
+# - O Instant Client vem do permalink "latest" da Oracle, conforme a arquitetura.
+#   Ele fica só nesta imagem local de dev (licença OTN), sem redistribuição.
+# - Debian trixie renomeou a libaio para libaio.so.1t64. O Instant Client
+#   procura libaio.so.1, por isso o symlink.
+ARG OCI8_VERSION=3.4.1
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential php${DDEV_PHP_VERSION}-dev libaio1t64 unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && aio="$(find /usr/lib -name 'libaio.so.1t64*' | head -n1)" \
+ && ln -sf "$aio" "$(dirname "$aio")/libaio.so.1"
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      arm64) ic_arch=linux-arm64 ;; \
+      amd64) ic_arch=linuxx64 ;; \
+      *) echo "arquitetura não suportada: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    base=https://download.oracle.com/otn_software/linux/instantclient; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL -o "$tmp/basic.zip" "$base/instantclient-basiclite-${ic_arch}.zip"; \
+    curl -fsSL -o "$tmp/sdk.zip"   "$base/instantclient-sdk-${ic_arch}.zip"; \
+    mkdir -p /opt/oracle; \
+    unzip -qo "$tmp/basic.zip" -d /opt/oracle; \
+    unzip -qo "$tmp/sdk.zip"   -d /opt/oracle; \
+    mv /opt/oracle/instantclient_* /opt/oracle/instantclient; \
+    echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf; \
+    ldconfig; \
+    rm -rf "$tmp"
+
+RUN set -eux; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL "https://pecl.php.net/get/oci8-${OCI8_VERSION}.tgz" | tar -xz -C "$tmp"; \
+    cd "$tmp/oci8-${OCI8_VERSION}"; \
+    phpize${DDEV_PHP_VERSION}; \
+    ./configure --with-php-config="php-config${DDEV_PHP_VERSION}" \
+                --with-oci8=instantclient,/opt/oracle/instantclient; \
+    make -j"$(nproc)"; \
+    make install; \
+    echo 'extension=oci8.so' > "/etc/php/${DDEV_PHP_VERSION}/mods-available/oci8.ini"; \
+    phpenmod -v "${DDEV_PHP_VERSION}" oci8; \
+    cd /; rm -rf "$tmp"
