@@ -43,6 +43,7 @@ client `NLS_LANG` does not matter.
 | Implicit results (`DBMS_SQL.RETURN_RESULT`) | `fx_cursor.implicit_results` (2 results with different columns) | `02_cursor.sql` |
 | Object types as IN / OUT / IN OUT / return | `fx_point`, `fx_polygon` (object with a Collection attribute); `fx_object.make_point`, `move_point`, `make_polygon`, `count_vertices` | `03_object.sql` |
 | Collections (nested table, VARRAY) as IN / OUT / IN OUT / return | `fx_number_list`, `fx_point_list` (nested tables), `fx_string_varray` (VARRAY(10)); `fx_object.sum_numbers`, `reverse_numbers`, `split_csv`, `append_tag` | `03_object.sql` |
+| Associative arrays (`INDEX BY`) as IN / OUT | `fx_object.t_number_map` (`index by pls_integer`); `fx_object.sum_map`, `fill_map` (sparse keys) | `03_object.sql` |
 | Object and Collection columns in fetched rows | `fx_shapes` (object, VARRAY and nested table columns; rows with values, all NULL, and empty Collections) | `03_object.sql` |
 | `SELECT ... FROM TABLE(pipelined_fn())` | `fx_pipe.numbers` (scalar rows), `fx_pipe.points` (object rows → columns `x, y, label`) | `04_pipe.sql` |
 | Collection bound into `TABLE(:ids)` | `fx_number_list` bound against `fx_items` (query below) | `03_object.sql`, `02_cursor.sql` |
@@ -90,6 +91,8 @@ select id, name
 - `split_csv('a,,b,')` returns `('a', NULL, 'b', NULL)`. More than 10 parts
   raises ORA-06532 (VARRAY limit).
 - `append_tag` turns a NULL VARRAY into a one-element VARRAY.
+- `fill_map(3)` gives keys 10, 20, 30 with values 1, 2, 3; `sum_map` of an
+  empty map is 0.
 
 ### `fx_lobs`
 

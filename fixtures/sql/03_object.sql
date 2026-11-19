@@ -73,6 +73,15 @@ create or replace package fx_object as
   function make_polygon(p_name in varchar2, p_sides in number) return fx_polygon;
 
   function count_vertices(p_polygon in fx_polygon) return number;
+
+  -- Associative array (INDEX BY): a PL/SQL-only type, never a SQL column.
+  type t_number_map is table of number index by pls_integer;
+
+  -- Sum of the values; 0 for an empty map.
+  function sum_map(p_map in t_number_map) return number;
+
+  -- Sparse keys 10, 20, .. p_count * 10 holding the values 1 .. p_count.
+  procedure fill_map(p_count in number, o_map out t_number_map);
 end fx_object;
 /
 
@@ -158,5 +167,23 @@ create or replace package body fx_object as
     end if;
     return p_polygon.vertices.count;
   end count_vertices;
+
+  function sum_map(p_map in t_number_map) return number is
+    l_sum number := 0;
+    l_key pls_integer := p_map.first;
+  begin
+    while l_key is not null loop
+      l_sum := l_sum + p_map(l_key);
+      l_key := p_map.next(l_key);
+    end loop;
+    return l_sum;
+  end sum_map;
+
+  procedure fill_map(p_count in number, o_map out t_number_map) is
+  begin
+    for i in 1 .. p_count loop
+      o_map(i * 10) := i;
+    end loop;
+  end fill_map;
 end fx_object;
 /
