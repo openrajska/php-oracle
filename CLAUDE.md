@@ -19,4 +19,4 @@ Default canonical labels: needs-triage, needs-info, ready-for-agent, ready-for-h
 
 ### Domain docs
 
-Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Multi-context: `GLOSSARY-MAP.md` at the root points to one `GLOSSARY.md` per package (Core, Extension, Laravel adapter); system-wide ADRs in `docs/adr/`. See `docs/agents/domain.md`.

@@ -4,49 +4,41 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`GLOSSARY.md`** at the repo root, or
-- **`GLOSSARY-MAP.md`** at the repo root if it exists: it points at one `GLOSSARY.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`**: read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+- **`GLOSSARY-MAP.md`** at the repo root: it points at one `GLOSSARY.md` per context. Always read the Core glossary, because the other contexts build on its language. Then read the glossary of each context relevant to the topic.
+- **`docs/adr/`**: read ADRs that touch the area you're about to work in. Also check `packages/<package>/docs/adr/` for context-scoped decisions.
 
 If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
 
 ## File structure
 
-This repo is **single-context**. The three packages share one domain (Oracle
-Database for PHP), so they share one glossary and one ADR log:
+This repo is **multi-context**: each package is a context with its own language.
+Core owns the shared domain language, and the Extension and the Laravel adapter
+build on it.
 
 ```
 /
-├── GLOSSARY.md
-├── docs/adr/
-│   ├── 0001-<decision-slug>.md
-│   └── 0002-<decision-slug>.md
+├── GLOSSARY-MAP.md                    ← lists the contexts and how they relate
+├── docs/adr/                          ← system-wide decisions (span packages)
 ├── fixtures/sql/
 ├── spikes/
 └── packages/
-    ├── php-oracle/
-    ├── php-oracle-ext/
-    └── laravel-oracle/
-```
-
-Multi-context repo (presence of `GLOSSARY-MAP.md` at the root):
-
-```
-/
-├── GLOSSARY-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
+    ├── php-oracle/                    ← Core
     │   ├── GLOSSARY.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
+    │   └── docs/adr/                  ← Core-only decisions
+    ├── php-oracle-ext/                ← Extension
+    │   ├── GLOSSARY.md
+    │   └── docs/adr/
+    └── laravel-oracle/                ← Laravel adapter
         ├── GLOSSARY.md
         └── docs/adr/
 ```
 
+A decision goes in the root `docs/adr/` when it affects more than one package,
+and in `packages/<package>/docs/adr/` when it affects only that package.
+
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in the relevant context's `GLOSSARY.md` (Core's, for shared Oracle concepts). Don't drift to synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 
