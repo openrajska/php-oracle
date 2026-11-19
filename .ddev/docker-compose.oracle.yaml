@@ -21,6 +21,11 @@ services:
       APP_USER_PASSWORD: rajska
     ports:
       - "127.0.0.1:1521:1521"
+    volumes:
+      # Schema de fixtures (ver fixtures/sql/README.md), instalado com `ddev fixtures`.
+      - ${DDEV_APPROOT}/fixtures/sql:/fixtures/sql:ro
+      # Necessário para os comandos em .ddev/commands/oracle/.
+      - .:/mnt/ddev_config:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 10s

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+## Description: Instala (ou reinstala) o schema de fixtures de fixtures/sql no usuário de app
+## Usage: fixtures
+## Example: "ddev fixtures"
+
+set -euo pipefail
+cd /fixtures/sql
+exec sqlplus -s -l "${APP_USER}/${APP_USER_PASSWORD}@//localhost/FREEPDB1" @install.sql
