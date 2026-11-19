@@ -1,0 +1,85 @@
+== NUMBER: OUT (fx_scalar.echo_out) ==
+PASS N1    42 as i64 => 42
+PASS N2    i64::MAX via OracleNumber => 9223372036854775807
+PASS N3    38-digit integer via OracleNumber => 12345678901234567890123456789012345678
+OBS  N3b   38-digit integer read as i64 (must not wrap) => Err(unsupported conversion from number to i64)
+OBS  N3c   38-digit integer read as i128 => Ok(12345678901234567890123456789012345678)
+OBS  N3d   38-digit integer read as f64 (lossy by design) => Ok(1.2345678901234568e37)
+PASS N4    -123.456 decimal => -123.456
+PASS N5    NULL NUMBER -> None => None
+PASS N6    0 -> 0 => 0
+OBS  N7    f64 0.1 IN (binds as BINARY_DOUBLE) -> NUMBER OUT => Ok(0.10000000000000001)
+PASS N7b   workaround: PHP float as shortest-repr string -> OracleNumber => 0.1
+== NUMBER: server-made values, OUT in an Anonymous block ==
+PASS N8    1/3 keeps 40 significant digits => 0.3333333333333333333333333333333333333333
+PASS N9    largest NUMBER 9.99..e125 => <126 chars> 99999999999999999999…0000000000
+PASS N10   smallest positive NUMBER 1e-130 => <132 chars> 0.000000000000000000…0000000001
+PASS N11   -1e-130 => <133 chars> -0.00000000000000000…0000000001
+PASS N12   0.1 read as f64 => 0.1
+PASS N13   1/3 read as String => "0.3333333333333333333333333333333333333333"
+== NUMBER: IN OUT (fx_scalar.bump) ==
+PASS N14   41 -> 42 => Some(42)
+PASS N15   38-digit + 1 => Some(12345678901234567890123456789012345679)
+PASS N16   i64::MAX + 1 (beyond i64) => Some(9223372036854775808)
+PASS N17   NULL -> NULL => None
+PASS N18   1.5 -> 2.5 => Some(2.5)
+== VARCHAR2: OUT (fx_scalar.echo_out) ==
+PASS S1    ASCII => Some("hello")
+PASS S2    multibyte incl. 4-byte emoji => Some("Ação Café Straße 日本 😀")
+PASS S3    '' is NULL in Oracle -> None => None
+PASS S4    NULL -> None => None
+== VARCHAR2: OUT buffer sizing (fx_scalar.repeat_out) ==
+PASS S5    4000 x 'a' into bare DB_TYPE_VARCHAR => (4000, 4000, true)
+OBS  S6    4001 x 'a' into bare DB_TYPE_VARCHAR => Ok((4001, 4001, true))
+OBS  S7    32767 x 'a' into bare DB_TYPE_VARCHAR => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+OBS  S8    4000 x 'ç' (8000 bytes) into bare DB_TYPE_VARCHAR => Ok((4000, 8000, true))
+PASS S8b   16000 x 'a' (= 4000 x 4 bytes) into bare DB_TYPE_VARCHAR => (16000, 16000, true)
+OBS  S8c   16001 x 'a' into bare DB_TYPE_VARCHAR => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+PASS S9    32767 x 'a' with a 32767-byte padding value (doc workaround) => (32767, 32767, true)
+PASS S10   16383 x 'ç' (32766 bytes) with padding value => (16383, 32766, true)
+OBS  S11   32768 x 'a' (over the PL/SQL limit) with padding value => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+== VARCHAR2: IN OUT (fx_scalar.bump and Anonymous blocks) ==
+PASS S12   'abc' -> 'abc!' => Some("abc!")
+PASS S13   multibyte + '!' => Some("Ação Café Straße 日本 😀!")
+OBS  S14   NULL IN OUT (0-byte buffer?) -> expected '!' => Ok(Some("!"))
+OBS  S15   'a' grows to 101 bytes (buffer is 4 x 1 byte) => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+OBS  S16   'a' grows to 4 bytes (exactly 4 x input) => Ok(Some("abcd"))
+OBS  S17   'a' grows to 5 bytes (4 x input + 1) => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+PASS S18   positional get(0) counts only OUT binds => "!x!"
+OBS  S14b  NULL IN OUT grows to 100 bytes => Err(ORA-06502: PL/SQL: value or conversion error: character string buffer too small)
+PASS S19   workaround: IN OUT split into IN + padded OUT via a local variable => (32767, 32767, true)
+PASS S20   workaround on a real Call: fx_scalar.bump via local variable => Some("abc!")
+PASS S21   workaround with NULL input: bump(NULL) via local variable => Some("!")
+== DATE: OUT and IN OUT ==
+PASS D1    DATE with time of day => Some(OracleTimestamp("2026-11-19T13:45:30"))
+PASS D2    0001-01-01 00:00:00 => Some(OracleTimestamp("0001-01-01T00:00:00"))
+PASS D3    9999-12-31 23:59:59 => Some(OracleTimestamp("9999-12-31T23:59:59"))
+PASS D4    NULL DATE -> None => None
+OBS  D5    IN TIMESTAMP with nanos into a DATE param (truncate or round?) => Ok(Some(OracleTimestamp("2026-11-19T13:45:30")))
+OBS  D5b   server-only: DATE := TIMESTAMP .999999999 (reference for D5) => Ok("2026-11-19 13:45:30")
+PASS D6    BC date via server: 4712-01-01 BC => Ok(Some(OracleTimestamp("-4712-01-01T00:00:00")))
+PASS D7    IN OUT 2024-02-28 + 1 = leap day => Some(OracleTimestamp("2024-02-29T10:00:00"))
+PASS D8    IN OUT 2025-12-31 23:59:59 + 1 => Some(OracleTimestamp("2026-01-01T23:59:59"))
+PASS D9    IN OUT NULL -> None => None
+== TIMESTAMP family: OUT and IN OUT in Anonymous blocks ==
+PASS T1    TIMESTAMP(9) OUT keeps nanoseconds => OracleTimestamp("2026-11-19T13:45:30.123456789")
+PASS T2    TIMESTAMP IN OUT + 1 second keeps nanos => OracleTimestamp("2026-11-19T13:45:31.000000001")
+OBS  T3    TIMESTAMP IN OUT with nanos=0 (client sends it as DATE) => Ok(OracleTimestamp("2026-11-19T13:45:30.500000000"))
+OBS  T4    TIMESTAMP WITH TIME ZONE -03:00 OUT (offset kept?) => Ok(OracleTimestamp("2026-11-19T16:45:30.500000000Z"))
+OBS  T5    TIMESTAMP WITH TIME ZONE named region OUT => Ok(OracleTimestamp("2026-11-19T16:45:30Z"))
+PASS T5b   workaround: TSTZ offset kept as text via to_char => "2026-11-19 13:45:30.500000000 -03:00"
+OBS  T5c   session and database time zones => Ok("-03:00 / +00:00")
+OBS  T6    TIMESTAMP WITH LOCAL TIME ZONE OUT => Ok(OracleTimestamp("2026-11-19T16:45:30Z"))
+OBS  T7    UTC TIMESTAMP IN OUT (binds as TIMESTAMP_TZ) + 1 hour => Ok(OracleTimestamp("2026-11-19T14:45:30.000000005Z"))
+OBS  T8    DATE OUT read into a DB_TYPE_TIMESTAMP bind => Ok(OracleTimestamp("2026-11-19T13:45:30"))
+== Function return values ==
+PASS F1    add_numbers(2, 40) => Some(42)
+PASS F2    add_numbers(38 digits, 1) => Some(12345678901234567890123456789012345679)
+PASS F3    add_numbers(NULL, 1) -> None => None
+PASS F4    greet(multibyte) => Some("Hello, Ação Café Straße 日本 😀!")
+PASS F5    greet(NULL) => Some("Hello, !")
+OBS  F6    greet(10000 x 'a') into bare DB_TYPE_VARCHAR (result 10008 bytes) => Ok(Some(10008))
+PASS F7    add_days(2026-11-19 13:45:30, 30) => Some(OracleTimestamp("2026-12-19T13:45:30"))
+PASS F8    add_days(.., 1.5) = +36h => Some(OracleTimestamp("2026-11-21T01:45:30"))
+PASS F9    function call positional, get(0) => 42
+== 51 pass, 0 fail, 0 err, 24 observed ==

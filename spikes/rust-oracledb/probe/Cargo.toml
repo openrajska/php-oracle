@@ -1,0 +1,8 @@
+[package]
+name = "probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+oracledb = "=26.0.0-beta.6"
