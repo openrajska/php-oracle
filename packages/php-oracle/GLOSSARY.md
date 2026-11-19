@@ -15,8 +15,13 @@ _Avoid_: native core, engine, núcleo (for anything below the Driver contract)
 
 **Backend**:
 An interchangeable implementation of the Driver contract that actually talks to
-the database (for example the oci8 Backend or the Rust thin Backend).
+the database (for example the Rust thin Backend or a pure-PHP thin Backend).
 _Avoid_: driver, engine, adapter, núcleo
+
+**Primary Backend**:
+The Backend the project is built around: the Driver contract is designed
+against it and the conformance suite runs on it first.
+_Avoid_: default Backend, main driver
 
 **Driver contract**:
 The set of internal interfaces between Core and a Backend. Users never call it
@@ -31,7 +36,7 @@ _Avoid_: pure, native (as synonyms for thin)
 
 **Thick**:
 Describes a Backend mode that depends on Oracle Client libraries (Instant
-Client), such as the oci8 Backend or an ODPI-C Backend.
+Client), such as an ODPI-C Backend.
 _Avoid_: OCI mode, full client
 
 ### Connections
