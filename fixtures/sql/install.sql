@@ -22,6 +22,8 @@ prompt 06_batch
 @@06_batch.sql
 prompt 07_pool
 @@07_pool.sql
+prompt 08_bench
+@@08_bench.sql
 
 commit;
 

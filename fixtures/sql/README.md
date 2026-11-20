@@ -50,6 +50,7 @@ client `NLS_LANG` does not matter.
 | Large LOB for streaming | `fx_lobs` row 4: 16 MiB CLOB and 16 MiB BLOB with deterministic content; rows 1–3: small, empty, NULL; `fx_lob.generate`, `text_line`, `text_length`, `binary_length` | `05_lob.sql` |
 | `execute_batch` with per-row errors | `fx_batch_rows` (empty; PK, UNIQUE, NOT NULL and CHECK constraints) | `06_batch.sql` |
 | One Pool shared across threads | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.bump_counter` | `07_pool.sql` |
+| Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
 
 ## Data and expected values
 
@@ -134,3 +135,19 @@ Empty. Each constraint gives a different error, so a batch can mix them:
 - `bump_counter`: increments a package variable and returns it. It starts at 0
   in every new Session, so the sequence a Connection sees shows whether its
   Session changed underneath it.
+
+### `fx_bench_rows`
+
+10,000 rows for the fetch benchmark, one column of each common type. Row `n`:
+
+| Column | Type | Value |
+| --- | --- | --- |
+| `id` | `NUMBER(10)` | `n` |
+| `qty` | `NUMBER(10)` | `n mod 1000` |
+| `amount` | `NUMBER(12,2)` | `n * 1.25` |
+| `ratio` | `BINARY_DOUBLE` | `n / 7` |
+| `code` | `VARCHAR2(20)` | `BENCH-` and the 6-digit zero-padded `n` |
+| `label` | `VARCHAR2(60)` | `Ação café 日本 n` when `n mod 5 = 0`, else `Item n` |
+| `note` | `VARCHAR2(60)` | NULL when `n mod 3 = 0`, else `note n` |
+| `created_at` | `DATE` | 2026-01-01 00:00 + `(n - 1)` minutes |
+| `updated_at` | `TIMESTAMP(6)` | 2026-01-01 00:00:00 + `n` milliseconds |
