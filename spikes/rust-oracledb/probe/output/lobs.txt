@@ -1,0 +1,75 @@
+== Inline fetch, small values (default: LOBs come back as String / Vec<u8>) ==
+PASS I1    row 1 small: CLOB text, BLOB hex => (Some("Hello, LOB! Ação 日本"), Some("DEADBEEF"))
+FAIL I2    row 2 empty_clob / empty_blob => (None, None) (expected (Some(""), Some("")))
+PASS I2b   server-side: row 2 is not NULL (text_value / binary_value IS NOT NULL, lengths) => (1, 1, 0, 0)
+PASS I3    row 3 NULL => (None, None)
+== Locators (fetch_lobs) ==
+PASS L1    row 1 via locators: read_to_string, read_to_end => ("Hello, LOB! Ação 日本", "DEADBEEF")
+PASS L2    row 2 empty via locators: sizes, read_to_string, read_to_end len => (0, 0, "", 0)
+PASS L3    row 3 NULL via locators is None => (true, true)
+PASS L4    row 4 (16 MiB) sizes: CLOB in UCS-2 units, BLOB in bytes => (16777216, 16777216)
+OBS  L5    row 4 chunk sizes (CLOB, BLOB) => Ok((8060, 8060))
+== Streaming read, 16 MiB fixture (row 4), 64 KiB buffer ==
+PASS S1    CLOB streamed: UTF-8 bytes, every byte matches => (18612224, true)
+~          0.07 s, 240 MiB/s, 769 LOB calls, RSS 3.6 MiB before, peak 3.8 MiB
+PASS S2    BLOB streamed: bytes, every byte matches => (16777216, true)
+~          0.02 s, 670 MiB/s, 256 LOB calls, RSS 3.8 MiB before, peak 4.0 MiB
+PASS S3    CLOB seek to line 100000 (offset in UCS-2 units) and read 64 characters => "00100000 ação café 日本 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+PASS S4    BLOB seek to 1-based offset 1,000,001 and read 4 bytes => [64, 65, 66, 67]
+OBS  S5    CLOB read with a 2-byte buffer through line 1 (results until the first error) => Ok("\"00000001 ação café \" then Err(buffer too small for LOB read)")
+OBS  S6    temporary CLOB 'a😀b' (supplemental char = 2 UCS-2 units): size, then reads with a 3-byte buffer => Ok((4, ["\"a\"", "Err(invalid encoded string)"]))
+PASS S7    same temporary CLOB read whole with read_to_string => "a😀b"
+OBS  S8    temporary CLOB of 200,000 '😀' streamed with a 64 KiB buffer (21,845 units per read) => Ok("Err(invalid encoded string) after 0 bytes")
+PASS S9    same CLOB through a reader that retries a split surrogate with one unit less: (bytes, equal) => (800000, true)
+== Buffer size vs throughput, 16 MiB fixture (row 4) ==
+PASS T1    BLOB streamed with a 8 KiB buffer => (16777216, true)
+~          0.03 s, 610 MiB/s, 2048 LOB calls, RSS 5.4 MiB before, peak 5.4 MiB
+PASS T2    BLOB streamed with a 64 KiB buffer => (16777216, true)
+~          0.01 s, 1343 MiB/s, 256 LOB calls, RSS 5.4 MiB before, peak 5.4 MiB
+PASS T3    BLOB streamed with a 1024 KiB buffer => (16777216, true)
+~          0.01 s, 1260 MiB/s, 16 LOB calls, RSS 5.4 MiB before, peak 11.4 MiB
+PASS T4    BLOB streamed with a 8192 KiB buffer => (16777216, true)
+~          0.02 s, 729 MiB/s, 2 LOB calls, RSS 6.8 MiB before, peak 67.2 MiB
+PASS T5    CLOB streamed with a 64 KiB buffer => (18612224, true)
+~          0.06 s, 315 MiB/s, 769 LOB calls, RSS 10.9 MiB before, peak 10.9 MiB
+PASS T6    CLOB streamed with a 1024 KiB buffer => (18612224, true)
+~          0.05 s, 348 MiB/s, 49 LOB calls, RSS 10.9 MiB before, peak 10.9 MiB
+PASS T7    CLOB streamed with a 8192 KiB buffer => (18612224, true)
+~          0.05 s, 335 MiB/s, 7 LOB calls, RSS 10.9 MiB before, peak 39.9 MiB
+== Streaming write and read, 100 MiB (row 5 = fx_lob.generate reference, row 6 = written by the client) ==
+OBS  H0    server-side fx_lob.generate(5, 100) (reference, seconds) => Ok("2.3")
+PASS H1    CLOB 100 MiB written in ~1 MiB runs of whole lines: (characters, all written) => (104857600, true)
+~          1.22 s, 91 MiB/s, 111 LOB calls, RSS 13.9 MiB before, peak 13.9 MiB
+PASS H2    BLOB 100 MiB written in 1 MiB chunks: (bytes, all written) => (104857600, true)
+~          0.41 s, 246 MiB/s, 100 LOB calls, RSS 13.9 MiB before, peak 13.9 MiB
+PASS H3    server-side: row 6 vs row 5 (CLOB length, compare, BLOB length, compare) => (104857600, 0, 104857600, 0)
+PASS H4    CLOB 100 MiB read back streamed, 1 MiB buffer: (UTF-8 bytes, every byte matches) => (116326400, true)
+~          0.34 s, 325 MiB/s, 301 LOB calls, RSS 13.9 MiB before, peak 13.9 MiB
+PASS H5    BLOB 100 MiB read back streamed, 1 MiB buffer => (104857600, true)
+~          0.06 s, 1547 MiB/s, 100 LOB calls, RSS 13.9 MiB before, peak 13.9 MiB
+== Write paths and binds ==
+OBS  W1    CLOB write() of half a multibyte character => Err(incomplete utf-8 byte sequence from index 0)
+OBS  W2    io::copy of 16 KiB of '日本…' into a CLOB (8 KiB copy buffer splits a character) => Err(incomplete utf-8 byte sequence from index 8190)
+PASS W3    same io::copy through a Utf8Boundary writer: (size, read back equal) => (5460, true)
+PASS W4    temporary CLOB/BLOB: write 16 MiB each, sizes => (16777216, 16777216)
+PASS W5    insert with a 16 MiB String and a 16 MiB Vec<u8> bound inline, then row 7 vs row 4 on the server => (16777216, 0, 16777216, 0)
+OBS  W6    PL/SQL CLOB IN parameter with a String: lengths for 32767, 32768, 1 MiB and 16 MiB characters => Ok(["32767: 32767", "32768: Err(ORA-01460: unimplemented or unreasonable conversion requested)", "1048576: Err(ORA-01460: unimplemented or unreasonable conversion requested)", "16777216: Err(ORA-01460: unimplemented or unreasonable conversion requested)"])
+OBS  W7    PL/SQL BLOB IN parameter with a Vec<u8>: lengths for 32767, 32768 and 16 MiB bytes => Ok(["32767: 32767", "32768: Err(ORA-01460: unimplemented or unreasonable conversion requested)", "16777216: Err(ORA-01460: unimplemented or unreasonable conversion requested)"])
+OBS  W8    OUT CLOB bind (DB_TYPE_CLOB) of the 16 MiB row 4: taken as Lob, its size => Ok(16777216)
+OBS  W9    OUT CLOB bind of a PL/SQL temporary LOB: taken as Lob, read_to_string => Ok("hello")
+PASS W10   workaround for a large LOB IN to PL/SQL: stream into a row, the block reads it from there => 104857600
+PASS W11   schema-free workaround: 1 MiB CLOB to PL/SQL as VARCHAR2 chunk binds appended in one Anonymous block: (length, ok) => (1048576, true)
+~          36 binds, 0.01 s, 112 MiB/s, 1 LOB calls, RSS 10.9 MiB before, peak 11.9 MiB
+PASS W12   schema-free workaround: 16 MiB CLOB to PL/SQL as VARCHAR2 chunk binds appended in one Anonymous block: (length, ok) => (16777216, true)
+~          569 binds, 0.16 s, 112 MiB/s, 1 LOB calls, RSS 44.6 MiB before, peak 62.0 MiB
+== Lifecycle ==
+OBS  D0    temporary LOBs held by this session now => Ok(0)
+OBS  D1    200 temporary CLOBs created and dropped, then the count => Ok(0)
+PASS D2    1000 locators of row 4 fetched and dropped unread, then a read of row 1 => Some("Hello, LOB! Ação 日本")
+== Inline fetch of large values (whole value in memory) ==
+PASS I4    row 4 (16 MiB) inline: (CLOB bytes + BLOB bytes, both match) => (35389440, true)
+~          0.16 s, 210 MiB/s, 1 LOB calls, RSS 26.8 MiB before, peak 154.9 MiB
+PASS I5    row 6 (100 MiB) inline => (221184000, true)
+~          5.50 s, 38 MiB/s, 1 LOB calls, RSS 10.9 MiB before, peak 773.2 MiB
+
+34 pass, 1 fail, 0 err, 13 observed

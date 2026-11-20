@@ -1,0 +1,30 @@
+== execute_batch: all rows valid ==
+PASS B1    1000 valid rows: (rows_affected, rows in table) => (1000, 1000)
+== execute_batch: one bad row (code, first line of the message, rows left in the table) ==
+OBS  B2    10 rows, index 3 duplicates id 1 => Ok((Some(1), "ORA-00001: unique constraint (RAJSKA.FX_BATCH_ROWS_PK) violated on table RAJSKA.FX_BATCH_ROWS columns (ID)", 3))
+PASS B2b   rows applied before the failing one stay in the transaction (ids) => [1, 2, 3]
+OBS  B3    10 rows, index 5 has a NULL code => Ok((Some(1400), "ORA-01400: cannot insert NULL into (\"RAJSKA\".\"FX_BATCH_ROWS\".\"CODE\")", 5))
+OBS  B4    10 rows, index 7 has qty < 0 => Ok((Some(2290), "ORA-02290: check constraint (RAJSKA.FX_BATCH_ROWS_QTY_CK) violated", 7))
+== execute_batch: several bad rows ==
+OBS  B5    10 rows, bad at 3 (dup), 5 (NULL), 7 (CHECK): only the first surfaces => Ok((Some(1), "ORA-00001: unique constraint (RAJSKA.FX_BATCH_ROWS_PK) violated on table RAJSKA.FX_BATCH_ROWS columns (ID)", 3))
+OBS  B6    the whole error (Debug): is there a row index anywhere? => Ok("ORA-00001: unique constraint (RAJSKA.FX_BATCH_ROWS_PK) violated on table RAJSKA.FX_BATCH_ROWS columns (ID)\nORA-03301: (ORA-00001 details) row with column values (ID:1) already exists")
+OBS  B7    10,000 rows, duplicate at index 9000: (code, message, rows applied), seconds => Ok(((Some(1), "ORA-00001: unique constraint (RAJSKA.FX_BATCH_ROWS_PK) violated on table RAJSKA.FX_BATCH_ROWS columns (ID)", 9000), "0.010"))
+PASS B8    same connection and cached statement still work: a valid batch of 10 => (10, 10)
+== execute_batch of a PL/SQL block ==
+OBS  B9    PL/SQL block 'begin insert ...; end;' over 10 rows, bad at 3, 5, 7 => Ok("Some(1): ORA-00001: unique constraint (RAJSKA.FX_BATCH_ROWS_PK) violated on table RAJSKA.FX_BATCH_ROWS columns (ID), 3 rows left")
+== Workaround 1: savepoint, then row-by-row retry ==
+PASS R1    10 rows, bad at 3, 5, 7: (rows inserted, [(index, ORA code)]) => (7, [(3, 1), (5, 1400), (7, 2290)])
+PASS R1b   ids in the table => [1, 2, 3, 5, 7, 9, 10]
+OBS  R2    10,000 valid rows through the same path (one round trip) => Ok("10000 inserted, 0 errors, 0.016 s")
+OBS  R3    10,000 rows with one duplicate at 9000 (batch + savepoint + 10,000 single executes) => Ok("9999 inserted, 1 errors, 0.338 s")
+== Workaround 2: DML error logging (LOG ERRORS ... REJECT LIMIT UNLIMITED) ==
+OBS  E0    create the error log table with dbms_errlog (DDL: commits) => Ok("created")
+FAIL E1    10 rows, bad at 3, 5, 7, tag = row index: (rows_affected, [(tag, ORA code)]) => (7, [("5", 1400), ("7", 2290), ("9", 1)]) (expected (7, [("3", 1), ("5", 1400), ("7", 2290)]))
+PASS E1b   ids in the table => [1, 2, 3, 5, 7, 9, 10]
+OBS  E1c   same batch, full log rows: (tag, ORA code, ID, CODE, QTY as logged) => Ok([("5", 1400, Some("6"), None, Some("5")), ("7", 2290, Some("8"), Some("C8"), Some("-1")), ("9", 1, Some("1"), Some("C4"), Some("3"))])
+OBS  E1d   duplicates at 3 and 6 only (ids 1 and 2): full log rows => Ok([("9", 1, Some("1"), Some("C7"), Some("6")), ("9", 1, Some("1"), Some("C4"), Some("3"))])
+OBS  E1e   duplicate CODE (unique key, not PK) at 4: full log rows => Ok([("9", 1, Some("5"), Some("C1"), Some("4"))])
+OBS  E2    10,000 rows, 100 bad (every 100th duplicates id 1): (rows_affected, errors logged), seconds => Ok((9900, 100, "0.094"))
+OBS  E3    error log rows survive a rollback? (count after rollback) => Ok(3)
+
+6 pass, 1 fail, 0 err, 15 observed

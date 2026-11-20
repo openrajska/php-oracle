@@ -1,0 +1,19 @@
+I1    ["Hello, LOB! Ação 日本","DEADBEEF"]
+I2    ["",""]
+I3    [null,null]
+L4    [16777216,16777216]
+S1    (18612224, true) ~ 0.06 s, 310 MiB/s, 256 reads, peak PHP memory 1.0 MiB
+S2    (16777216, true) ~ 0.01 s, 1126 MiB/s, 256 reads, peak PHP memory 1.0 MiB
+S8    {"bytes":400000,"valid_utf8":true,"all_emoji":true,"err":null}
+H0    2.2 s
+H4    (116326400, true) ~ 0.46 s, 241 MiB/s, 100 reads, peak PHP memory 7.1 MiB
+H5    (104857600, true) ~ 0.10 s, 1022 MiB/s, 100 reads, peak PHP memory 3.9 MiB
+H1    0.84 s, peak PHP memory 1.9 MiB
+H2    0.27 s
+H3    ["104857600","0","104857600","0"]
+W6    32767: 32767
+W6    32768: ORA-01460: unimplemented or unreasonable conversion requested
+Help: https://docs.oracle.com/error-help/db/ora-01460/
+W6t   16 MiB temporary LOB bound OCI_B_CLOB: 16777216
+I4    35389440 bytes, 0.04 s, peak PHP memory 83.7 MiB
+I5    221184000 bytes, 0.19 s, peak PHP memory 512.9 MiB
