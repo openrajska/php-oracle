@@ -1,0 +1,52 @@
+Probe: does rajska_oracle (ext-php-rs 0.16.5 + oracledb 26.0.0-beta.6, rustls 0.23 on aws-lc-rs)
+build and load on every PIE target? Ticket #12, map #1. 2026-11-20.
+
+Run: https://github.com/openrajska/php-oracle/actions/runs/44800329297 (branch spike/pie-targets,
+never merged; the first run 44798049337 found the two fixes below).
+
+Each job: cargo build --release --locked, rename the library as PIE ships it
+(rajska_oracle.so / php_rajska_oracle.dll), `php -n -d extension=<abs path> -m`, then smoke.php:
+  - extension loaded
+  - TLS rejects a self-signed certificate (UnknownIssuer: rustls + aws-lc ran verification)
+  - TLS handshake with a valid certificate completes (peer then closes: it is not Oracle)
+  - connection refused comes back as an error, not a crash
+  - real query against Oracle Free 26ai (23.26.4) in Docker: Linux jobs only
+
+target                    toolchain                  build    size      glibc floor  real Call  result
+linux x86_64 glibc NTS    1.100.0 stable             47 s     6.2 MB    GLIBC_2.34   pass       builds + loads
+linux x86_64 glibc ZTS    1.100.0 stable             1m12s    6.2 MB    GLIBC_2.34   pass       builds + loads
+linux arm64  glibc NTS    1.100.0 stable             52 s     5.2 MB    GLIBC_2.34   pass       builds + loads
+linux arm64  glibc ZTS    1.100.0 stable             49 s     5.2 MB    GLIBC_2.34   pass       builds + loads
+linux x86_64 musl  NTS    1.100.0 stable             1m22s    6.2 MB    -            pass       builds + loads
+linux x86_64 musl  ZTS    1.100.0 stable             1m23s    6.2 MB    -            pass       builds + loads
+linux arm64  musl  NTS    1.100.0 stable             1m34s    5.3 MB    -            pass       builds + loads
+linux arm64  musl  ZTS    1.100.0 stable             1m37s    5.3 MB    -            pass       builds + loads
+macos arm64        NTS    1.100.0 stable             1m42s    4.7 MB    -            n/a        builds + loads
+macos arm64        ZTS    1.100.0 stable             1m30s    4.7 MB    -            n/a        builds + loads
+windows x86_64     NTS    1.100.0 + RUSTC_BOOTSTRAP  3m18s    3.8 MB    -            n/a        builds + loads
+windows x86_64     TS     1.100.0 + RUSTC_BOOTSTRAP  5m06s    3.8 MB    -            n/a        builds + loads
+windows x86_64     NTS    nightly 1.102 (2026-11-19) 3m50s    3.8 MB    -            n/a        builds + loads
+
+Build environments
+  Linux:   php:8.4-{cli,zts}-{bookworm,alpine} on ubuntu-24.04 / ubuntu-24.04-arm (native, no cross).
+           bookworm: build-essential libclang-dev. alpine: build-base clang clang-libclang.
+  macOS:   macos-15 + shivammathur/setup-php (phpts nts|zts). Xcode's libclang is found; no brew llvm.
+  Windows: windows-2025 + shivammathur/setup-php (vs17 builds). Runner LLVM; aws-lc built with no
+           extra NASM/CMake setup; ext-php-rs downloads the PHP devel pack itself. linker = rust-lld.
+  PHP 8.4.28 everywhere. Linker flags: .cargo/config.toml (dynamic_lookup on macOS, -crt-static on musl).
+
+Fixes found by the first run
+  1. Alpine: clang-libclang alone lacks clang's builtin headers (mmintrin.h on x86_64, arm_neon.h on
+     arm64) that PHP's zend_types.h includes; bindgen fails. Install `clang` too.
+  2. Windows: RUSTC_BOOTSTRAP=1 or nightly is not enough. The extension crate itself must declare
+     #![cfg_attr(windows, feature(abi_vectorcall))], because #[php_function] expands to
+     extern "vectorcall" in our crate (E0658). Stable 1.100 + RUSTC_BOOTSTRAP=1 then works like nightly.
+
+Notes
+  - The glibc floor is 2.34 even when built on bookworm (2.36): RHEL 9 / Ubuntu 22.04 and newer load it;
+    RHEL 8 (2.28) and Debian 11 (2.31) would need a pinned older target (not tried). The build image
+    sets the floor: the same crate built in the ddev web container (Debian 13) needs GLIBC_2.38.
+  - Linux artifacts depend only on libc and libgcc_s; macOS only on libSystem. No Instant Client,
+    no OpenSSL: TLS is statically linked aws-lc.
+  - Not tried: macOS x86_64 (out of v1 per the PIE research), PIE itself installing the assets
+    (asset naming/packaging belongs to the release pipeline, not this question).
