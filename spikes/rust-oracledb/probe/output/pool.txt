@@ -1,0 +1,62 @@
+== Thread safety (compile time) ==
+PASS T1    Pool is Send + Sync (can live in a static shared by ZTS threads) => (true, true)
+OBS  T2    Connection is (Send, Sync) => Ok((true, true))
+OBS  T3    PoolConfig defaults: (min, max, increment, ping_interval, ping_timeout) => Ok((1, 2, 1, Some(60s), 5s))
+== Growth: min_connections and connection_increment ==
+~ G1  time until all 16 held: Some("0.213") s, open after release: 16
+PASS G1    min=0 max=16 inc=1: 16 threads hold at once (acquired, open, busy, ok after release) => (16, 16, 16, 16)
+FAIL G2    min=4 max=16 inc=1: open_count 1.5 s after create_pool => 1 (expected 4)
+FAIL G3    min=4 max=16 inc=1: 4 threads hold at once, 5 s deadline => (1, 1, 1, 4) (expected (4, 4, 4, 4))
+FAIL G4    min=0 max=16 inc=4: 16 threads hold at once, 5 s deadline => (1, 1, 1, 16) (expected (16, 16, 16, 16))
+FAIL G5    fixed size min=2 max=2 inc=0: (open after 1.5 s, then 2 threads hold at once) => (1, (1, 1, 1, 2)) (expected (2, (2, 2, 2, 2)))
+PASS G6    workaround for a warm Pool: min=1 inc=1, pre-acquire 8 then release (open after) => 8
+== Load: one Pool, many threads, a fresh acquire per Call ==
+   (calls, wrong results, errors, overlapping holders of one Session)
+~ L1  Load { calls: 3200, wrong: 0, errors: 0, overlaps: 0, counter_breaks: 0, sids: 5, max_open: 6, max_busy: 5, secs: "0.063", calls_per_sec: 50615, first_error: None }
+PASS L1    16 threads x 200 Calls on max=8 => (3200, 0, 0, 0)
+PASS L1b   package state follows its Session (bump_counter never skips or resets) => true
+~ L2  Load { calls: 3200, wrong: 0, errors: 0, overlaps: 0, counter_breaks: 0, sids: 6, max_open: 6, max_busy: 6, secs: "0.070", calls_per_sec: 45409, first_error: None }
+PASS L2    64 threads x 50 Calls on max=16 => (3200, 0, 0, 0)
+~ L3  Load { calls: 16000, wrong: 0, errors: 0, overlaps: 0, counter_breaks: 0, sids: 15, max_open: 16, max_busy: 15, secs: "0.209", calls_per_sec: 76565, first_error: None }
+PASS L3    16 threads x 1000 Calls on max=16 (one Connection per thread) => (16000, 0, 0, 0)
+== Exhaustion ==
+PASS X1    max=1 held: (other acquire still waiting after 2 s, gets it within 1 s of the release) => (true, true)
+OBS  X2    PoolConfig has no acquire wait timeout / NOWAIT (source: acquire() is an unbounded channel.recv()) => Ok("Pool::acquire blocks until a Connection is returned or created")
+PASS X3    workaround: a timed gate sized to max in front of acquire, 500 ms wait while max=1 is held (entered, waited 0.45-1 s) => (false, true)
+PASS X4    unreachable database: 4 threads acquire at once (errors, open, busy) => (4, 0, 0)
+== set_call_timeout ==
+PASS C1    500 ms timeout on a 3 s sleep: (error, returned within timeout + 1 s) => (true, true)
+OBS  C1b   the error (kind, ORA code, message), seconds => Ok((Some(("UnableToRecover", None, "unable to recover from error: connection has been closed")), "1.008"))
+FAIL C1e   same Connection after the timeout: Ok((select 1, same Session)) => Err("not connected to database") (expected Ok((1, true)))
+PASS C1f   returned to the Pool and acquired again: (call_timeout, select 1, open_count) => (None, 1, 1)
+OBS  C1g   same Session as before the timeout (false = the Pool replaced a dead one) => Ok(false)
+FAIL C1c   2 s timeout on a 3 s sleep: (error, returned within timeout + 1 s) => (true, false) (expected (true, true))
+OBS  C1cb  the error (kind, ORA code, message), seconds => Ok((Some(("CallTimeoutExceeded", None, "the configured call timeout was exceeded")), "3.009"))
+PASS C1ce  same Connection after the timeout: Ok((select 1, same Session)) => Ok((1, true))
+PASS C1cf  returned to the Pool and acquired again: (call_timeout, select 1, open_count) => (None, 1, 1)
+OBS  C1cg  same Session as before the timeout (false = the Pool replaced a dead one) => Ok(true)
+PASS C1d   500 ms timeout on a CPU-bound query: (error, returned within timeout + 1 s) => (true, true)
+OBS  C1db  the error (kind, ORA code, message), seconds => Ok((Some(("CallTimeoutExceeded", None, "the configured call timeout was exceeded")), "0.504"))
+PASS C1de  same Connection after the timeout: Ok((select 1, same Session)) => Ok((1, true))
+PASS C1df  returned to the Pool and acquired again: (call_timeout, select 1, open_count) => (None, 1, 1)
+OBS  C1dg  same Session as before the timeout (false = the Pool replaced a dead one) => Ok(true)
+FAIL C4    8 threads, 400 ms timeout, odd ones sleep 2 s, even 0.1 s: (right outcome, usable after) => (8, 4) (expected (8, 8))
+OBS  C5    is the timeout per round trip? 500 ms timeout, 4 rows x 0.3 s fetched one row per round trip: (rows, seconds) => Ok((4, "1.209"))
+== DRCP ==
+OBS  D0    default DRCP pool status (started when INACTIVE) => Ok("ACTIVE -> ACTIVE")
+OBS  D0b   v$cpool_stats before the DRCP cases => Ok(Cp { open: 7, busy: 0, requests: 27, hits: 5, misses: 22 })
+PASS D1    standalone over Easy Connect host:port/service:pooled: (add_numbers(2,3), v$session.server, select 1 after idle) => (5, "POOLED", 1)
+OBS  D1b   DRCP busy servers: (before connect, connected and idle, after close) => Ok((0, 1, 0))
+PASS D2    standalone over descriptor with (SERVER=POOLED): (add_numbers(2,3), v$session.server, select 1 after idle) => (5, "POOLED", 1)
+OBS  D2b   DRCP busy servers: (before connect, connected and idle, after close) => Ok((0, 1, 0))
+~ D3  Load { calls: 1600, wrong: 0, errors: 0, overlaps: 0, counter_breaks: 0, sids: 4, max_open: 4, max_busy: 4, secs: "0.086", calls_per_sec: 18709, first_error: None }
+PASS D3    Pool over DRCP: 16 threads x 100 Calls on max=4 (calls, wrong, errors, overlaps) => (1600, 0, 0, 0)
+OBS  D3b   package state across acquires under DRCP: (Sessions seen, counter breaks) => Ok((4, 0))
+OBS  D3c   v$cpool_stats delta over the load: (requests, hits, misses) => Ok((4, 0, 4))
+OBS  D3d   client Pool idle (all returned): (open_count, DRCP busy servers) => Ok((4, 4))
+OBS  D3e   v$cpool_conn_info while idle: (cclass, status, count) => Ok([("RAJSKA.RSO:<uuid>", "ACTIVE", 4)])
+OBS  D3f   DRCP busy servers after the client Pool is dropped => Ok(0)
+OBS  D4    implicit connection pooling, (POOL_BOUNDARY=TRANSACTION): (Call result, busy before/idle/after close, same Session on the next Call) => Ok((5, (0, 1, 0), true))
+PASS D5    call timeout over DRCP, CPU-bound query: (timed out, usable after) => (true, 1)
+
+21 pass, 7 fail, 0 err, 20 observed

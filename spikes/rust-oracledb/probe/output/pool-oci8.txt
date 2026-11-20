@@ -1,0 +1,6 @@
+D1b   oci_connect :pooled, add_numbers(2,3) = 5; busy (before, connected and idle, after close) = (0, 1, 0)
+D3d   oci_pconnect :pooled: busy while held = 1, after oci_close (connection still cached) = 0; requests/hits/misses delta over two pconnects = (2, 2, 0)
+D4    POOL_BOUNDARY=TRANSACTION: add_numbers(2,3) = 5; busy (before, connected and idle, after close) = (0, 0, 0)
+C1    timeout 500 ms: 1.004 s, ORA-03156: OCI call timed out; same connection after: select 1 = Err(ORA-03114: not connected to ORACLE), same Session = false
+C1c   timeout 2000 ms: 3.002 s, ORA-03156: OCI call timed out; same connection after: select 1 = 1, same Session = true
+C1d   timeout 500 ms: 0.503 s, ORA-03156: OCI call timed out; same connection after: select 1 = 1, same Session = true
