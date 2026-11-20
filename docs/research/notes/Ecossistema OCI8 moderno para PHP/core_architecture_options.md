@@ -15,7 +15,7 @@ ext-oci8 is mature, maintained by Oracle and still released (3.4.1, Dec 2025, PH
 - OCI8 "can be linked with Oracle Client libraries from Oracle Database 11.2 or later" — [PECL oci8](https://pecl.php.net/package/oci8)
 - Oracle states PHP OCI8 and PDO_OCI are part of the PHP open-source project and maintained by Oracle — [Oracle PHP Developer Center](https://developer.oracle.com/php/) (via search summary)
 - A php-src issue asked for OCI8 to be rebuilt on ODPI-C. The poster noted ODPI-C still needs Instant Client because it wraps OCI rather than replacing it — [php-src #10585](https://github.com/php/php-src/issues/10585)
-- PDO_OCI is still described in parts of the manual as "EXPERIMENTAL" — [PHP manual PDO_OCI (mirror)](https://php.he.net/manual/ja/ref.pdo-oci.php)
+- PDO_OCI is still described in parts of the manual as "EXPERIMENTAL" — [PHP manual PDO_OCI](https://www.php.net/manual/en/ref.pdo-oci.php)
 - The common framework integration (Laravel) is built on OCI8 — [yajra/laravel-oci8](https://github.com/yajra/laravel-oci8)
 
 ### Inferences
@@ -40,7 +40,7 @@ FFI against **ODPI-C** is technically viable. ODPI-C has a small, stable C API c
 - ODPI-C features: SQL/PL/SQL execution, LOBs, REF CURSORs, array fetch/bind, statement caching, **User Defined Types**, **AQ**, **SODA**, **DRCP**, homogeneous and heterogeneous **session pools** with proxy auth and HA, **JSON**, **VECTOR**, CQN, Application Continuity (limited), two-phase commit, result cache, privileged connections — [ODPI-C home](https://oracle.github.io/odpi/)
 - ODPI-C license: dual **UPL 1.0 / Apache 2.0** ("you may modify it and/or redistribute it") — [ODPI-C home](https://oracle.github.io/odpi/)
 - ODPI-C is used by python-oracledb (thick), node-oracledb (thick), godror (Go), rust-oracle (Rust), ruby-ODPI, Oracle.jl, oranif (Erlang), nimodpi, oratcl, Haskell bindings. **PHP is not listed** — [ODPI-C home](https://oracle.github.io/odpi/)
-- ODPI-C "uses the shared library loading mechanism available on each supported platform to load the Oracle Client library at runtime" (no link-time dependency on libclntsh) — [ODPI-C (mirror of oracle.github.io/odpi)](https://scriptagc.wasmer.app/https_oracle_github_io/odpi)
+- ODPI-C "uses the shared library loading mechanism available on each supported platform to load the Oracle Client library at runtime" (no link-time dependency on libclntsh) — [ODPI-C](https://oracle.github.io/odpi/)
 - **ODPI-C 6.0.0 (2026-05-04)** dropped support for Oracle Client libraries older than 19c — [ODPI-C release notes](https://odpi-c.readthedocs.io/en/latest/releasenotes.html)
 - No public project binding PHP FFI to ODPI-C was found (search returned only OCI8 docs and the php-src issue) — [php-src #10585](https://github.com/php/php-src/issues/10585)
 - `ffi.enable` default is **"preload"**: FFI is allowed only in the CLI SAPI and in preloaded files. `"true"` enables it everywhere. Both `ffi.enable` and `ffi.preload` are `INI_SYSTEM` (php.ini only). `ffi.preload` loads bindings at startup and scripts reach them via `FFI::scope()`. `FFI\CData` objects created in preloaded files can be used from normal scripts. `ffi.preload` is the route when `opcache.preload_user` prevents `FFI::load()` — [PHP manual: FFI configuration](https://www.php.net/manual/en/ffi.configuration.php)
@@ -75,8 +75,8 @@ A native extension gives the best performance and the most complete feature surf
 - Releases visible in Nov 2026: **1.5.5 (30 Oct, marked "Latest")** fixing advisory GHSA-4538-pqqf-mv67. A 1.4.x maintenance line runs in parallel (1.4.12). **1.6.0-rc.1…rc.5 (4–17 Nov)**. Changes include fixes for "pie staticphp exe issues" (#783, #784, i.e. PIE itself shipped as a static-php-cli executable), "add self update for executables" (#776), and "update pie build to exclude pre-packaged-binary by default" (#774) — [php/pie releases](https://github.com/php/pie/releases)
 - The original 2024 pre-release was a PHAR — [PHP Foundation blog: PIE pre-release (Nov 2024, older)](https://thephp.foundation/blog/2024/11/19/pie-pre-release/)
 - PIE relies on extension authors for Windows pre-built DLLs (it does not compile on Windows). The design starts with precompiled Windows binaries attached to GitHub releases — [Vonage blog](https://developer.vonage.com/en/blog/managing-php-extensions-is-as-easy-as-pie); [PIE design](https://www.github.com/ThePHPF/pie-design)
-- A php-org GitHub Action (**pie-ext-binary-builder**) builds `.so` binaries and attaches them to a GitHub release for extension maintainers — [php/pie-ext-binary-builder (mirror)](https://gh.r-mj.com/php/pie-ext-binary-builder)
-- Example of the ecosystem adopting this: v8js PR "Add PIE / Composer installability + CI for prebuilt binaries" — [v8js PR #547 (mirror)](https://black-queen-531f.myworkers1.workers.dev/phpv8/v8js/pull/547)
+- A php-org GitHub Action (**pie-ext-binary-builder**) builds `.so` binaries and attaches them to a GitHub release for extension maintainers — [php/pie-ext-binary-builder](https://github.com/php/pie-ext-binary-builder)
+- Example of the ecosystem adopting this: v8js PR "Add PIE / Composer installability + CI for prebuilt binaries" — [v8js PR #547](https://github.com/phpv8/v8js/pull/547)
 
 **Rust route**
 - ext-php-rs is on the **0.15.x** line (0.15.13 dated 2026-05-11; 0.15.14 latest on docs.rs). Recent additions: ModuleGlobals (0.15.9), named-argument callables (0.15.7). Still pre-1.0 — [ext-php-rs CHANGELOG](https://docs.rs/crate/ext-php-rs/0.15.13/source/CHANGELOG.md); [docs.rs ext-php-rs](https://docs.rs/crate/ext-php-rs/latest); [GitHub extphprs/ext-php-rs](https://github.com/extphprs/ext-php-rs)

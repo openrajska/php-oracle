@@ -370,6 +370,8 @@ public function createSqlFromProcedure(string $procedureName, array $bindings, b
     return sprintf('begin %s(%s%s); end;', $procedureName, $paramsString, $cursor);
 }
 ```
+_Excerpt from yajra/laravel-oci8, Copyright (c) 2013-2022 Arjay Angeles, released under the [MIT License](https://github.com/yajra/laravel-oci8/blob/master/LICENSE)._
+
 - How the SQL is built:
   - It is positional: `begin proc(:a,:b,:cursor); end;`, in array-key order. It is not named notation (`p => :p`), so the array order must match the parameter order. See [LO #482 "Can we use named parameters in Procedures?"](https://github.com/yajra/laravel-oci8/issues/482).
   - The cursor is always appended as the last argument.
