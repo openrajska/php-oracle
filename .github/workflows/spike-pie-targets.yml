@@ -42,7 +42,7 @@ jobs:
             -e ORACLE_USER=rajska -e ORACLE_PASSWORD=rajska \
             php:8.4-${{ matrix.variant }}-${{ matrix.distro }} sh -euc '
               if command -v apk >/dev/null; then
-                apk add --no-cache build-base clang-libclang curl binutils
+                apk add --no-cache build-base clang clang-libclang curl binutils
               else
                 apt-get update -qq && apt-get install -y -qq build-essential libclang-dev curl >/dev/null
               fi
@@ -50,9 +50,6 @@ jobs:
               . "$HOME/.cargo/env"
               '"$EXT_DIR"'/ci/build-unix.sh
             '
-      - name: Oracle health (diagnostic)
-        if: always()
-        run: docker inspect -f '{{.State.Health.Status}}' oracle || true
 
   macos:
     name: macos arm64 ${{ matrix.ts }}
@@ -104,6 +101,7 @@ jobs:
         run: |
           php -v
           cargo build --release --locked --target-dir target
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item target\release\rajska_oracle.dll out\php_rajska_oracle.dll
           Get-Item out\php_rajska_oracle.dll | Format-List Name,Length

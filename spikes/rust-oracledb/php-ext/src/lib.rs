@@ -10,6 +10,9 @@
 //!
 //! Errors and panics never cross into PHP as a crash: both come back as "ERR: …".
 
+// PHP on Windows uses the vectorcall ABI, still unstable in Rust: nightly or RUSTC_BOOTSTRAP=1.
+#![cfg_attr(windows, feature(abi_vectorcall))]
+
 use ext_php_rs::prelude::*;
 
 #[php_function]
