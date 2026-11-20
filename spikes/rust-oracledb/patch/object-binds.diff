@@ -1,0 +1,856 @@
+diff --git a/src/bind_params.rs b/src/bind_params.rs
+index a57e5d1..2877a0c 100644
+--- a/src/bind_params.rs
++++ b/src/bind_params.rs
+@@ -109,6 +109,7 @@ impl BindParameters<'_> {
+                             first_row,
+                             value.db_type(),
+                             value.max_size(),
++                            value.db_object_type(),
+                             binds_changed,
+                         )?;
+                     }
+@@ -133,6 +134,7 @@ impl BindParameters<'_> {
+                         true,
+                         db_type,
+                         max_size,
++                        None,
+                         binds_changed,
+                     )?;
+                 }
+diff --git a/src/db_value.rs b/src/db_value.rs
+index 6996442..72e5b8f 100644
+--- a/src/db_value.rs
++++ b/src/db_value.rs
+@@ -622,6 +622,12 @@ pub trait ToDbValue: ToBuf + Send + Sync {
+     fn max_size(&self) -> usize {
+         0
+     }
++
++    /// Returns the named type of an object or collection bind. A bind whose
++    /// db_type() is DB_TYPE_OBJECT must return Some.
++    fn db_object_type(&self) -> Option<std::sync::Arc<crate::DbObjectType>> {
++        None
++    }
+ }
+ 
+ impl ToDbValue for String {
+diff --git a/src/dbobject/mod.rs b/src/dbobject/mod.rs
+index 9f5a081..04df6fe 100644
+--- a/src/dbobject/mod.rs
++++ b/src/dbobject/mod.rs
+@@ -34,6 +34,6 @@ mod type_impl;
+ 
+ pub(crate) use cache::DbObjectTypeCache;
+ pub(crate) use object::PendingDbObject;
+-pub use object::{DbCollection, DbObject};
++pub use object::{DbCollection, DbObject, IntoDbObjectValue};
+ pub use type_impl::DbObjectType;
+ pub(crate) use type_impl::DbObjectTypeIdentity;
+diff --git a/src/dbobject/object.rs b/src/dbobject/object.rs
+index 6bbdded..c887a69 100644
+--- a/src/dbobject/object.rs
++++ b/src/dbobject/object.rs
+@@ -26,6 +26,8 @@
+ // object.rs
+ //
+ // Retains database object images and decodes them when taken from a row.
++// Builds objects and collections on the client and encodes them as images
++// for binds.
+ //-----------------------------------------------------------------------------
+ 
+ use std::sync::Arc;
+@@ -35,7 +37,8 @@ use crate::client::Client;
+ use crate::client::ClientRef;
+ use crate::column_index::ColumnIndex;
+ use crate::constants;
+-use crate::db_value::{DbValue, FromDbValue};
++use crate::db_type::DbType;
++use crate::db_value::{DbValue, FromDbValue, ToDbValue};
+ use crate::error::Error;
+ use crate::lob::{Lob, PendingLobData};
+ use crate::metadata::Metadata;
+@@ -43,17 +46,29 @@ use crate::read_buffer::FromBuf;
+ use crate::read_buffer::ReadBuffer;
+ use crate::response::Response;
+ use crate::row::{ColumnData, DbRow, Row};
++use crate::write_buffer::{ToBuf, WriteBuffer};
+ 
+ const TTC_OBJ_ATOMIC_NULL: u8 = 253;
+ const TTC_OBJ_IS_DEGENERATE: u8 = 0x10;
+ const TTC_OBJ_NO_PREFIX_SEG: u8 = 0x04;
+-const TTC_OBJ_PLSQL_INDEX_TABLE: u8 = 1;
++pub(super) const TTC_OBJ_PLSQL_INDEX_TABLE: u8 = 1;
++const TTC_OBJ_IS_VERSION_81: u8 = 0x80;
++const TTC_OBJ_IS_COLLECTION: u8 = 0x08;
++const TTC_OBJ_IMAGE_VERSION: u8 = 1;
++const TTC_OBJ_MAX_SHORT_LENGTH: usize = 245;
++const TTC_OBJ_TOP_LEVEL: u32 = 0x01;
++const TTC_OBJ_HAS_INDEXES: u8 = 0x10;
++const TTC_OBJ_NON_NULL_OID: u8 = 0x02;
++const TTC_OBJ_HAS_EXTENT_OID: u8 = 0x08;
++const TTC_OBJ_EXTENT_OID: [u8; 16] =
++    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1];
+ 
+ #[derive(Debug)]
+ /// A fetched database collection.
+ pub struct DbCollection {
+     object_type: Arc<DbObjectType>,
+     values: DbRow,
++    indices: Option<Vec<i32>>,
+ }
+ 
+ /// A fetched database object.
+@@ -76,9 +91,94 @@ pub(crate) struct PendingDbObject {
+ }
+ 
+ impl DbCollection {
+-    /// Creates a new database collection.
+-    fn new(object_type: &Arc<DbObjectType>, values: DbRow) -> Self {
+-        Self { object_type: Arc::clone(object_type), values }
++    /// Creates a database collection from decoded values.
++    fn from_values(
++        object_type: &Arc<DbObjectType>,
++        values: DbRow,
++        indices: Option<Vec<i32>>,
++    ) -> Self {
++        Self { object_type: Arc::clone(object_type), values, indices }
++    }
++
++    /// Creates an empty collection of the given type, ready to be filled with
++    /// [`push`](Self::push) (nested tables and VARRAYs) or
++    /// [`insert`](Self::insert) (associative arrays) and bound.
++    pub fn new(object_type: &Arc<DbObjectType>) -> Result<Self, Error> {
++        if !object_type.is_collection() {
++            return Err(Error::out_of_range(format!(
++                "{} is not a collection type",
++                object_type.fqn()
++            )));
++        }
++        let indices = object_type.is_associative_array().then(Vec::new);
++        Ok(Self::from_values(object_type, DbRow::new(Vec::new()), indices))
++    }
++
++    /// Appends an element to a nested table or VARRAY.
++    pub fn push(
++        &mut self,
++        value: impl IntoDbObjectValue,
++    ) -> Result<(), Error> {
++        if self.indices.is_some() {
++            return Err(Error::out_of_range(format!(
++                "{} is an associative array: use insert()",
++                self.object_type.fqn()
++            )));
++        }
++        let metadata = self.object_type.element_metadata().unwrap();
++        let value = coerce(metadata, value.into_db_object_value()?)?;
++        self.values.values_mut().push(value);
++        Ok(())
++    }
++
++    /// Sets the element of an associative array at the given key, replacing
++    /// any element already there. Keys are kept in ascending order, as PL/SQL
++    /// does.
++    pub fn insert(
++        &mut self,
++        key: i32,
++        value: impl IntoDbObjectValue,
++    ) -> Result<(), Error> {
++        let Some(indices) = self.indices.as_mut() else {
++            return Err(Error::out_of_range(format!(
++                "{} is not an associative array: use push()",
++                self.object_type.fqn()
++            )));
++        };
++        let metadata = self.object_type.element_metadata().unwrap();
++        let value = coerce(metadata, value.into_db_object_value()?)?;
++        let values = self.values.values_mut();
++        match indices.binary_search(&key) {
++            Ok(pos) => values[pos] = value,
++            Err(pos) => {
++                indices.insert(pos, key);
++                values.insert(pos, value);
++            }
++        }
++        Ok(())
++    }
++
++    /// Returns the keys of an associative array in ascending order, or None
++    /// for a nested table or VARRAY.
++    pub fn keys(&self) -> Option<&[i32]> {
++        self.indices.as_deref()
++    }
++
++    /// Returns the number of elements.
++    pub fn len(&self) -> usize {
++        self.values.values().len()
++    }
++
++    /// Reports whether the collection has no elements.
++    pub fn is_empty(&self) -> bool {
++        self.len() == 0
++    }
++
++    /// Returns the packed image of the collection.
++    fn packed_image(&self) -> Vec<u8> {
++        let mut writer = ImageWriter::new(&self.object_type);
++        writer.write_collection_body(self);
++        writer.finish()
+     }
+ 
+     /// Transforms an owned DbCollection into a vector of the requested type.
+@@ -96,11 +196,52 @@ impl DbCollection {
+ }
+ 
+ impl DbObject {
+-    /// Creates a new database object.
+-    fn new(object_type: &Arc<DbObjectType>, data: Row) -> Self {
++    /// Creates a database object from decoded values.
++    fn from_row(object_type: &Arc<DbObjectType>, data: Row) -> Self {
+         Self { object_type: Arc::clone(object_type), data }
+     }
+ 
++    /// Creates an object of the given type with every attribute NULL, ready to
++    /// be filled with [`set`](Self::set) and bound.
++    pub fn new(object_type: &Arc<DbObjectType>) -> Result<Self, Error> {
++        if object_type.is_collection() {
++            return Err(Error::out_of_range(format!(
++                "{} is a collection type: use DbCollection::new()",
++                object_type.fqn()
++            )));
++        }
++        let attrs = object_type.attributes();
++        let row = Row::new(
++            &Arc::new(attrs.to_vec()),
++            DbRow::new(attrs.iter().map(|_| None).collect()),
++        );
++        Ok(Self::from_row(object_type, row))
++    }
++
++    /// Sets an object attribute by name or zero-based position. The value is
++    /// checked against the attribute's type.
++    pub fn set(
++        &mut self,
++        index: impl ColumnIndex,
++        value: impl IntoDbObjectValue,
++    ) -> Result<(), Error> {
++        let attrs = self.object_type.attributes();
++        let index = index.resolve(attrs)?;
++        let metadata = attrs
++            .get(index)
++            .ok_or_else(|| Error::invalid_column_index(index))?;
++        let value = coerce(metadata, value.into_db_object_value()?)?;
++        self.data.db_row_mut().values_mut()[index] = value;
++        Ok(())
++    }
++
++    /// Returns the packed image of the object.
++    fn packed_image(&self) -> Vec<u8> {
++        let mut writer = ImageWriter::new(&self.object_type);
++        writer.write_object_body(self);
++        writer.finish()
++    }
++
+     /// Returns an object attribute by name or zero-based position.
+     pub fn get<'a, T: FromDbValue<'a>>(
+         &'a self,
+@@ -208,15 +349,19 @@ impl DbObjectReadBuffer<'_> {
+             let metadata = object_type.element_metadata().unwrap();
+             let _collection_flags = self.buf.read_u8()?;
+             let num_elements = self.read_length()?;
++            let mut indices = (collection_type
++                == Some(TTC_OBJ_PLSQL_INDEX_TABLE))
++            .then(|| Vec::with_capacity(num_elements));
+             for _ in 0..num_elements {
+-                if collection_type == Some(TTC_OBJ_PLSQL_INDEX_TABLE) {
+-                    let _index = self.buf.read_u32be()?;
++                if let Some(indices) = indices.as_mut() {
++                    indices.push(self.buf.read_u32be()? as i32);
+                 }
+                 values.push(self.decode_value(object_type, metadata)?);
+             }
+-            Ok(DbObjectOrCollection::DbCollection(DbCollection::new(
++            Ok(DbObjectOrCollection::DbCollection(DbCollection::from_values(
+                 object_type,
+                 DbRow::new(values),
++                indices,
+             )))
+         } else {
+             for metadata in object_type.attributes() {
+@@ -226,7 +371,10 @@ impl DbObjectReadBuffer<'_> {
+                 &Arc::new(object_type.attributes().to_vec()),
+                 DbRow::new(values),
+             );
+-            Ok(DbObjectOrCollection::DbObject(DbObject::new(object_type, row)))
++            Ok(DbObjectOrCollection::DbObject(DbObject::from_row(
++                object_type,
++                row,
++            )))
+         }
+     }
+ 
+@@ -446,3 +594,436 @@ fn validate_scalar_length(
+     }
+     Ok(())
+ }
++
++/// A Rust value that can be stored in an attribute of a [`DbObject`] or an
++/// element of a [`DbCollection`] built on the client. `None` stores NULL.
++pub trait IntoDbObjectValue {
++    #[doc(hidden)]
++    fn into_db_object_value(self) -> Result<Option<DbValue>, Error>;
++}
++
++macro_rules! into_db_object_value_via_number {
++    ($($t:ty),*) => {
++        $(
++            impl IntoDbObjectValue for $t {
++                fn into_db_object_value(
++                    self,
++                ) -> Result<Option<DbValue>, Error> {
++                    Ok(Some(DbValue::Number(self.to_string().parse()?)))
++                }
++            }
++        )*
++    };
++}
++
++into_db_object_value_via_number!(
++    i8, i16, i32, i64, isize, u8, u16, u32, u64, usize
++);
++
++macro_rules! into_db_object_value_direct {
++    ($($t:ty => $variant:ident($conv:expr)),* $(,)?) => {
++        $(
++            impl IntoDbObjectValue for $t {
++                fn into_db_object_value(
++                    self,
++                ) -> Result<Option<DbValue>, Error> {
++                    Ok(Some(DbValue::$variant($conv(self))))
++                }
++            }
++        )*
++    };
++}
++
++into_db_object_value_direct!(
++    crate::OracleNumber => Number(|v| v),
++    f64 => BinaryDouble(|v| v),
++    f32 => BinaryFloat(|v| v),
++    bool => Boolean(|v| v),
++    String => String(|v| v),
++    &str => String(|v: &str| v.to_string()),
++    Vec<u8> => Bytes(|v| v),
++    &[u8] => Bytes(|v: &[u8]| v.to_vec()),
++    crate::OracleTimestamp => Timestamp(|v| v),
++    DbObject => DbObject(|v| v),
++    DbCollection => DbCollection(|v| v),
++);
++
++impl<T: IntoDbObjectValue> IntoDbObjectValue for Option<T> {
++    fn into_db_object_value(self) -> Result<Option<DbValue>, Error> {
++        match self {
++            Some(value) => value.into_db_object_value(),
++            None => Ok(None),
++        }
++    }
++}
++
++/// Checks a value against the attribute or element metadata and converts it
++/// to the representation the image encoder writes for that type.
++fn coerce(
++    metadata: &Metadata,
++    value: Option<DbValue>,
++) -> Result<Option<DbValue>, Error> {
++    let Some(value) = value else {
++        return Ok(None);
++    };
++    let typ = metadata.db_type();
++    let target = if metadata.name().is_empty() {
++        "a collection element".to_string()
++    } else {
++        format!("attribute {}", metadata.name())
++    };
++    let mismatch = |value: &DbValue| {
++        Error::out_of_range(format!(
++            "cannot store a {} value in {target} of type {}",
++            value.type_name(),
++            metadata.data_type()
++        ))
++    };
++    // the server does not check the length of an attribute or element in an
++    // image, so a value that is too long would be stored as is
++    let too_long = |length: usize| {
++        let max = metadata.max_size() as usize;
++        (max > 0 && length > max).then(|| {
++            Error::out_of_range(format!(
++                "value of length {length} exceeds the maximum of {max} for \
++                 {target} of type {}",
++                metadata.data_type()
++            ))
++        })
++    };
++    let parse_err = |_| mismatch(&DbValue::Boolean(false));
++    let value = match (typ, value) {
++        (crate::DB_TYPE_NUMBER, DbValue::Number(v)) => DbValue::Number(v),
++        (crate::DB_TYPE_NUMBER, DbValue::BinaryDouble(v)) => {
++            DbValue::Number(v.to_string().parse()?)
++        }
++        (crate::DB_TYPE_NUMBER, DbValue::BinaryFloat(v)) => {
++            DbValue::Number(v.to_string().parse()?)
++        }
++        (crate::DB_TYPE_BINARY_INTEGER, DbValue::Number(v)) => {
++            let _: i32 = v.to_string().parse().map_err(|_| {
++                Error::out_of_range(format!(
++                    "{v} does not fit {} of type {}",
++                    metadata.name(),
++                    metadata.data_type()
++                ))
++            })?;
++            DbValue::Number(v)
++        }
++        (crate::DB_TYPE_BINARY_DOUBLE, DbValue::BinaryDouble(v)) => {
++            DbValue::BinaryDouble(v)
++        }
++        (crate::DB_TYPE_BINARY_DOUBLE, DbValue::BinaryFloat(v)) => {
++            DbValue::BinaryDouble(v.into())
++        }
++        (crate::DB_TYPE_BINARY_DOUBLE, DbValue::Number(v)) => {
++            DbValue::BinaryDouble(v.to_string().parse().map_err(parse_err)?)
++        }
++        (crate::DB_TYPE_BINARY_FLOAT, DbValue::BinaryFloat(v)) => {
++            DbValue::BinaryFloat(v)
++        }
++        (crate::DB_TYPE_BINARY_FLOAT, DbValue::BinaryDouble(v)) => {
++            DbValue::BinaryFloat(v as f32)
++        }
++        (crate::DB_TYPE_BINARY_FLOAT, DbValue::Number(v)) => {
++            DbValue::BinaryFloat(v.to_string().parse().map_err(parse_err)?)
++        }
++        (
++            crate::DB_TYPE_CHAR
++            | crate::DB_TYPE_VARCHAR
++            | crate::DB_TYPE_NCHAR
++            | crate::DB_TYPE_NVARCHAR,
++            DbValue::String(v),
++        ) => {
++            let length = if typ.csfrm == constants::CS_FORM_NCHAR {
++                v.chars().count()
++            } else {
++                v.len()
++            };
++            if let Some(err) = too_long(length) {
++                return Err(err);
++            }
++            DbValue::String(v)
++        }
++        (crate::DB_TYPE_RAW, DbValue::Bytes(v)) => {
++            if let Some(err) = too_long(v.len()) {
++                return Err(err);
++            }
++            DbValue::Bytes(v)
++        }
++        (crate::DB_TYPE_BOOLEAN, DbValue::Boolean(v)) => DbValue::Boolean(v),
++        (t, DbValue::Timestamp(v)) if t.is_date_type() => {
++            DbValue::Timestamp(v)
++        }
++        (crate::DB_TYPE_OBJECT, value) => {
++            let expected = metadata
++                .object_type()?
++                .ok_or_else(Error::db_object_type_unavailable)?;
++            let actual = match &value {
++                DbValue::DbObject(v) => v.object_type(),
++                DbValue::DbCollection(v) => v.object_type(),
++                _ => return Err(mismatch(&value)),
++            };
++            if actual.fqn() != expected.fqn() {
++                return Err(Error::out_of_range(format!(
++                    "cannot store a {} in {target} of type {}",
++                    actual.fqn(),
++                    expected.fqn()
++                )));
++            }
++            value
++        }
++        (_, value) => return Err(mismatch(&value)),
++    };
++    Ok(Some(value))
++}
++
++/// Encodes an object or collection image: the inverse of
++/// `DbObjectReadBuffer`.
++struct ImageWriter {
++    buf: Vec<u8>,
++}
++
++impl ImageWriter {
++    /// Starts an image for the given type. The image size is written by
++    /// `finish()` once it is known.
++    fn new(object_type: &DbObjectType) -> Self {
++        let mut flags = TTC_OBJ_IS_VERSION_81;
++        if object_type.is_collection() {
++            flags |= TTC_OBJ_IS_COLLECTION;
++        } else {
++            flags |= TTC_OBJ_NO_PREFIX_SEG;
++        }
++        let mut buf = vec![
++            flags,
++            TTC_OBJ_IMAGE_VERSION,
++            constants::TTC_LONG_LENGTH_INDICATOR,
++            0,
++            0,
++            0,
++            0,
++        ];
++        if object_type.is_collection() {
++            buf.push(1); // length of the prefix segment
++            buf.push(1); // prefix segment contents
++        }
++        Self { buf }
++    }
++
++    /// Writes the image size into the header and returns the image.
++    fn finish(mut self) -> Vec<u8> {
++        let size = self.buf.len() as u32;
++        self.buf[3..7].copy_from_slice(&size.to_be_bytes());
++        self.buf
++    }
++
++    /// Writes a short or extended object-image length.
++    fn write_length(&mut self, length: usize) {
++        if length <= TTC_OBJ_MAX_SHORT_LENGTH {
++            self.buf.push(length as u8);
++        } else {
++            self.buf.push(constants::TTC_LONG_LENGTH_INDICATOR);
++            self.buf.extend((length as u32).to_be_bytes());
++        }
++    }
++
++    /// Writes bytes prefixed by an object-image length.
++    fn write_bytes_with_length(&mut self, bytes: &[u8]) {
++        self.write_length(bytes.len());
++        self.buf.extend_from_slice(bytes);
++    }
++
++    /// Writes a scalar in its TTC wire format, which carries a one-byte
++    /// length that is also a valid short object-image length.
++    fn write_ttc(&mut self, value: &dyn ToBuf, db_type: &'static DbType) {
++        let mut buf = WriteBuffer::new();
++        value.to_buf(&mut buf, db_type, true);
++        self.buf.extend_from_slice(buf.get_buf());
++    }
++
++    /// Writes the attributes of an object.
++    fn write_object_body(&mut self, object: &DbObject) {
++        let attrs = object.object_type.attributes();
++        for (metadata, value) in
++            attrs.iter().zip(object.data.db_row().values())
++        {
++            self.write_value(false, metadata, value);
++        }
++    }
++
++    /// Writes the elements of a collection, with their keys for an
++    /// associative array.
++    fn write_collection_body(&mut self, collection: &DbCollection) {
++        let metadata = collection.object_type.element_metadata().unwrap();
++        let values = collection.values.values();
++        self.buf.push(if collection.indices.is_some() {
++            TTC_OBJ_HAS_INDEXES
++        } else {
++            0
++        });
++        self.write_length(values.len());
++        for (pos, value) in values.iter().enumerate() {
++            if let Some(indices) = &collection.indices {
++                self.buf.extend((indices[pos] as u32).to_be_bytes());
++            }
++            self.write_value(true, metadata, value);
++        }
++    }
++
++    /// Writes one attribute or element.
++    fn write_value(
++        &mut self,
++        in_collection: bool,
++        metadata: &Metadata,
++        value: &Option<DbValue>,
++    ) {
++        let typ = metadata.db_type();
++        let Some(value) = value else {
++            // only an object written inline (an attribute of an object) is
++            // atomically NULL; one written as an image with a length (inside
++            // a collection, or a collection itself) has a NULL length, and
++            // the server raises ORA-00600 [kopp2ucoll233] otherwise
++            let is_inline_object = !in_collection
++                && typ == crate::DB_TYPE_OBJECT
++                && metadata
++                    .object_type()
++                    .ok()
++                    .flatten()
++                    .is_some_and(|t| !t.is_collection());
++            self.buf.push(if is_inline_object {
++                TTC_OBJ_ATOMIC_NULL
++            } else {
++                constants::TTC_NULL_LENGTH_INDICATOR
++            });
++            return;
++        };
++        match value {
++            DbValue::String(v) => {
++                if typ.csfrm == constants::CS_FORM_NCHAR {
++                    let bytes: Vec<u8> =
++                        v.encode_utf16().flat_map(u16::to_be_bytes).collect();
++                    self.write_bytes_with_length(&bytes);
++                } else {
++                    self.write_bytes_with_length(v.as_bytes());
++                }
++            }
++            DbValue::Bytes(v) => self.write_bytes_with_length(v),
++            DbValue::Number(v) if typ == crate::DB_TYPE_BINARY_INTEGER => {
++                let v: i32 = v.to_string().parse().unwrap();
++                self.buf.push(4);
++                self.buf.extend(v.to_be_bytes());
++            }
++            DbValue::Number(v) => self.write_ttc(v, typ),
++            DbValue::BinaryDouble(v) => self.write_ttc(v, typ),
++            DbValue::BinaryFloat(v) => self.write_ttc(v, typ),
++            DbValue::Timestamp(v) => self.write_ttc(v, typ),
++            DbValue::Boolean(v) => {
++                self.buf.push(4);
++                self.buf.extend(u32::from(*v).to_be_bytes());
++            }
++            DbValue::DbObject(v) => {
++                if in_collection || v.object_type.is_collection() {
++                    self.write_bytes_with_length(&v.packed_image());
++                } else {
++                    self.write_object_body(v);
++                }
++            }
++            DbValue::DbCollection(v) => {
++                self.write_bytes_with_length(&v.packed_image())
++            }
++            // coerce() admits no other value
++            _ => self.buf.push(constants::TTC_NULL_LENGTH_INDICATOR),
++        }
++    }
++}
++
++/// Writes a top-level object bind value: the TTC envelope and the image.
++fn write_bind_image(
++    buf: &mut WriteBuffer,
++    object_type: &DbObjectType,
++    image: &[u8],
++) {
++    let mut toid = Vec::with_capacity(36);
++    toid.extend([0x00, 0x22, TTC_OBJ_NON_NULL_OID, TTC_OBJ_HAS_EXTENT_OID]);
++    toid.extend_from_slice(object_type.oid());
++    toid.extend(TTC_OBJ_EXTENT_OID);
++    buf.write_bytes_with_double_length(Some(&toid));
++    buf.write_ub4(0); // OID
++    buf.write_ub4(0); // snapshot
++    buf.write_ub4(0); // version
++    buf.write_ub4(image.len().try_into().unwrap());
++    buf.write_ub4(TTC_OBJ_TOP_LEVEL); // flags
++    buf.write_bytes_with_length(image);
++}
++
++/// Writes a NULL top-level object bind value.
++fn write_null_bind(buf: &mut WriteBuffer) {
++    buf.write_ub4(0); // TOID
++    buf.write_ub4(0); // OID
++    buf.write_ub4(0); // snapshot
++    buf.write_ub2(0); // version
++    buf.write_ub4(0); // image length
++    buf.write_ub4(TTC_OBJ_TOP_LEVEL); // flags
++}
++
++impl ToBuf for DbObject {
++    fn to_buf(&self, buf: &mut WriteBuffer, _: &'static DbType, _: bool) {
++        write_bind_image(buf, &self.object_type, &self.packed_image());
++    }
++
++    fn to_buf_null(&self, buf: &mut WriteBuffer) {
++        write_null_bind(buf);
++    }
++}
++
++impl ToDbValue for DbObject {
++    fn db_type(&self) -> &'static DbType {
++        crate::DB_TYPE_OBJECT
++    }
++
++    fn db_object_type(&self) -> Option<Arc<DbObjectType>> {
++        Some(Arc::clone(&self.object_type))
++    }
++}
++
++impl ToBuf for DbCollection {
++    fn to_buf(&self, buf: &mut WriteBuffer, _: &'static DbType, _: bool) {
++        write_bind_image(buf, &self.object_type, &self.packed_image());
++    }
++
++    fn to_buf_null(&self, buf: &mut WriteBuffer) {
++        write_null_bind(buf);
++    }
++}
++
++impl ToDbValue for DbCollection {
++    fn db_type(&self) -> &'static DbType {
++        crate::DB_TYPE_OBJECT
++    }
++
++    fn db_object_type(&self) -> Option<Arc<DbObjectType>> {
++        Some(Arc::clone(&self.object_type))
++    }
++}
++
++/// Binding a type handle binds a NULL of that type: an IN NULL, or the
++/// placeholder of an OUT bind (like binding a `&DbType` for scalars).
++impl ToBuf for Arc<DbObjectType> {
++    fn to_buf(&self, buf: &mut WriteBuffer, _: &'static DbType, _: bool) {
++        write_null_bind(buf);
++    }
++
++    fn to_buf_null(&self, buf: &mut WriteBuffer) {
++        write_null_bind(buf);
++    }
++}
++
++impl ToDbValue for Arc<DbObjectType> {
++    fn db_type(&self) -> &'static DbType {
++        crate::DB_TYPE_OBJECT
++    }
++
++    fn db_object_type(&self) -> Option<Arc<DbObjectType>> {
++        Some(Arc::clone(self))
++    }
++}
+diff --git a/src/dbobject/type_impl.rs b/src/dbobject/type_impl.rs
+index bbfa6a1..ff3f7cb 100644
+--- a/src/dbobject/type_impl.rs
++++ b/src/dbobject/type_impl.rs
+@@ -168,6 +168,13 @@ impl DbObjectType {
+         self.body().element.is_some()
+     }
+ 
++    /// Reports whether the resolved type is a PL/SQL associative array
++    /// (INDEX BY).
++    pub fn is_associative_array(&self) -> bool {
++        self.collection_type()
++            == Some(super::object::TTC_OBJ_PLSQL_INDEX_TABLE)
++    }
++
+     /// Returns the database type name.
+     pub fn name(&self) -> &str {
+         &self.identity.name
+diff --git a/src/lib.rs b/src/lib.rs
+index dc3ea7b..731fa21 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -85,6 +85,7 @@ pub use crate::db_type::DbType;
+ pub use crate::dbobject::DbCollection;
+ pub use crate::dbobject::DbObject;
+ pub use crate::dbobject::DbObjectType;
++pub use crate::dbobject::IntoDbObjectValue;
+ pub use crate::end_user_security_context::EndUserSecurityContext;
+ pub use crate::end_user_security_context::EndUserSecurityContextBuilder;
+ pub use crate::error::Error;
+diff --git a/src/row.rs b/src/row.rs
+index 56d460a..7901f88 100644
+--- a/src/row.rs
++++ b/src/row.rs
+@@ -107,6 +107,16 @@ impl DbRow {
+         Self { column_values }
+     }
+ 
++    /// Returns the values of the row.
++    pub(crate) fn values(&self) -> &[Option<DbValue>] {
++        &self.column_values
++    }
++
++    /// Returns the values of the row for modification.
++    pub(crate) fn values_mut(&mut self) -> &mut Vec<Option<DbValue>> {
++        &mut self.column_values
++    }
++
+     /// Tranforms all the elements in the row into the requested type using
+     /// owned values.
+     pub(crate) fn transform_owned<'a, T>(self) -> Result<Vec<T>, Error>
+@@ -205,6 +215,16 @@ impl Row {
+         &self.column_info
+     }
+ 
++    /// Returns the values of the row.
++    pub(crate) fn db_row(&self) -> &DbRow {
++        &self.column_values
++    }
++
++    /// Returns the values of the row for modification.
++    pub(crate) fn db_row_mut(&mut self) -> &mut DbRow {
++        &mut self.column_values
++    }
++
+     /// Returns the value at the given column index, converted to the requested
+     /// type. If a reference type is supplied, a reference is provided to the
+     /// internal data, if possible. If an owned type is supplied, a copy of
+diff --git a/src/statement/bind_info.rs b/src/statement/bind_info.rs
+index 1667cc2..b6173f1 100644
+--- a/src/statement/bind_info.rs
++++ b/src/statement/bind_info.rs
+@@ -28,6 +28,9 @@
+ // Defines the structure representing bind information.
+ //-----------------------------------------------------------------------------
+ 
++use std::sync::Arc;
++
++use crate::DbObjectType;
+ use crate::constants;
+ use crate::db_type::DbType;
+ use crate::error::Error;
+@@ -52,11 +55,34 @@ impl BindInfo {
+         replace: bool,
+         desired_type: &'static DbType,
+         desired_max_size: usize,
++        desired_object_type: Option<Arc<DbObjectType>>,
+         binds_changed: &mut bool,
+     ) -> Result<(), Error> {
++        // without its named type an object bind is a malformed packet that
++        // the server rejects (ORA-03137) and eventually drops the session for
++        if desired_type == crate::DB_TYPE_OBJECT
++            && desired_object_type.is_none()
++        {
++            return Err(Error::out_of_range(format!(
++                "bind {} of type DB_TYPE_OBJECT needs its named type: bind a \
++                 DbObject, a DbCollection or the Arc<DbObjectType> from \
++                 Connection::get_type()",
++                self.name
++            )));
++        }
+         let mut matches: bool = false;
+         if let Some(metadata) = self.metadata.as_ref() {
+-            if metadata.db_type() == desired_type {
++            let same_object_type = match (
++                metadata.object_type().ok().flatten(),
++                desired_object_type.as_ref(),
++            ) {
++                (Some(current), Some(desired)) => {
++                    current.fqn() == desired.fqn()
++                }
++                (None, None) => true,
++                _ => false,
++            };
++            if metadata.db_type() == desired_type && same_object_type {
+                 matches = metadata.max_size() as usize >= desired_max_size;
+             } else if !replace {
+                 return Err(Error::different_types(
+@@ -77,6 +103,9 @@ impl BindInfo {
+             if self.is_return_bind {
+                 metadata.set_is_array(true);
+             }
++            if let Some(object_type) = desired_object_type {
++                metadata.set_object_type(object_type);
++            }
+             self.metadata = Some(metadata);
+         }
+         Ok(())

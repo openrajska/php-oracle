@@ -3,6 +3,7 @@ name = "probe-patched"
 version = "0.0.0"
 edition = "2024"
 publish = false
+default-run = "probe-patched"
 
 [dependencies]
 oracledb = "=26.0.0-beta.6"

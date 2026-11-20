@@ -1,0 +1,52 @@
+== Building values on the client ==
+PASS C1    DbObject::new(fx_point) then set X, Y, LABEL by name; read back with get => (Some(1.5), Some(-2.0), Some("ação"))
+OBS  C2    DbObject::set with the wrong value type (a string into X NUMBER) => Err(cannot store a string value in attribute X of type NUMBER)
+OBS  C3    DbCollection::push of an fx_point into fx_number_list => Err(cannot store a database object value in a collection element of type NUMBER)
+OBS  C4    DbCollection::new of an object type / DbObject::new of a Collection type => Ok((Some("RAJSKA.FX_POINT is not a collection type"), Some("RAJSKA.FX_NUMBER_LIST is a collection type: use DbCollection::new()")))
+PASS C5    associative array insert out of order, with a replaced key: keys sorted => ([-5, 10, 20], [Some(3.5), Some(1.0), Some(7.0)])
+== IN ==
+PASS I1    IN fx_point (multibyte label) read inside PL/SQL => Some("1.5|-2|ação")
+PASS I2    IN fx_point with every attribute NULL => Some("-|-|-")
+PASS I3    IN NULL fx_point (the type handle as the value) => Some("atomic null")
+PASS I4    IN fx_number_list: sum_numbers [1, 2, 3.5], [], NULL => (Some(6.5), Some(0.0), None)
+PASS I5    IN fx_number_list with a NULL element: count, count of non-NULL => Some("3/2")
+PASS I6    IN fx_string_varray ['red', 'café', NULL]: elements joined => Some("red,café,<null>,")
+OBS  I7    IN fx_string_varray with 11 elements (limit 10) => Err(ORA-22165: given index [] must be in the range of [] to [])
+PASS I8    connection usable after I7 => Some(1.0)
+PASS I9    IN fx_polygon (nested Collection of 3 points): count_vertices => Some(3.0)
+PASS I10   IN fx_polygon with NULL vertices / with a NULL vertex inside => (None, Some("3|<null>"))
+PASS I11   IN fx_polygon with 1000 vertices (image past 245 bytes and TTC chunks): count, sum of y => Some("1000|333833500")
+PASS I12   IN associative array {10: 1, 20: 2, -5: 3.5}: sum_map and keys in order => (Some(6.5), Some("-5=3.5,10=1,20=2,"))
+PASS I13   IN empty associative array: sum_map => Some(0.0)
+== TABLE(:ids) in SQL ==
+PASS T1    select ... from table(:ids) with [1, 5, 999] => [1, 5, 999]
+PASS T2    table(:ids) with 10,000 ids: count, sum => (10000, 50005000)
+PASS T3    join on table(:ids) with 10,000 ids against fx_bench_rows (10k rows): matches => 10000
+PASS T4    table(:ids) with an empty / NULL Collection: count => (0, 0)
+== OUT ==
+PASS O1    OUT fx_point from make_point(1.5, -2, 'ação') => (Some(1.5), Some(-2.0), Some("ação"))
+PASS O2    OUT fx_polygon from make_polygon('sq', 4) => (Some("sq"), Some([Some((Some(1.0), Some(0.0), Some("v1"))), Some((Some(0.0), Some(1.0), Some("v2"))), Some((Some(-1.0), Some(0.0), Some("v3"))), Some((Some(0.0), Some(-1.0), Some("v4")))]))
+PASS O3    OUT fx_number_list from reverse_numbers([1, 2, 3]) / reverse_numbers(NULL) => (Some([Some(3.0), Some(2.0), Some(1.0)]), None)
+PASS O4    OUT fx_string_varray from split_csv('a,,b,') => [Some("a"), None, Some("b"), None]
+PASS O5    OUT associative array from fill_map(3): keys, values => ([10, 20, 30], [Some(1.0), Some(2.0), Some(3.0)])
+PASS O6    OUT associative array from fill_map(0): empty => ([], [])
+PASS O7    OUT fx_point set to NULL / OUT fx_point_list set to an empty Collection => (None, Some(0))
+PASS O8    OUT fx_number_list of 10,000 elements: count, sum => (10000, 50005000.0)
+== IN OUT ==
+PASS X1    IN OUT fx_point: move_point((1, 2, 'ação'), 10, 20) => (Some(11.0), Some(22.0), Some("ação"))
+PASS X2    IN OUT fx_string_varray: append_tag 'x' to NULL and to ['red', 'café'] => ([Some("x")], [Some("red"), Some("café"), Some("x")])
+PASS X3    IN OUT fx_polygon: append a vertex inside PL/SQL => (Some("tri+"), Some(4), Some((Some(9.0), Some(9.0), Some("new"))))
+PASS X4    IN OUT associative array: {10: 1, 20: 2} then m(15) := 99, m.delete(10) => ([15, 20], [Some(99.0), Some(2.0)])
+PASS X5    fetched values re-bound: fx_shapes row 1 TAGS + push 'y', then append_tag 'z' => [Some("red"), Some("café"), Some("y"), Some("z")]
+PASS X6    fetched object re-bound after set: fx_shapes row 1 CENTER with LABEL changed, then move_point(1, 1) => (Some(2.5), Some(-1.0), Some("moved"))
+== Errors and robustness ==
+OBS  E1    bare DB_TYPE_OBJECT OUT bind (no type): refused before the round trip => Err(bind P of type DB_TYPE_OBJECT needs its named type: bind a DbObject, a DbCollection or the Arc<DbObjectType> from Connection::get_type())
+PASS E2    connection usable after E1 => Some(1.0)
+OBS  E3    fx_point bound where count_vertices expects fx_polygon => Err(ORA-06550: line 1, column 13:)
+OBS  E4    fx_point with a 31-character label (attribute is varchar2(30)): refused by set() => Err(value of length 31 exceeds the maximum of 30 for attribute LABEL of type VARCHAR2(30))
+PASS E5    connection usable after E3, E4 => Some(1.0)
+PASS E6    same statement re-executed with fx_point then fx_polygon in one bind slot (cached statement) => (Some("POINT"), Some("POLYGON"))
+PASS E7    500 IN OUT fx_polygon calls (5 vertices each), then a plain call => (500, Some(1.0))
+PASS E8    execute_batch: 3 rows with an fx_point column (insert into fx_shapes, then rollback) => 3
+PASS S1    no ORA-03137 / ORA-03138 / ORA-0311x in any error above => false
+== 38 pass, 0 fail, 0 err, 7 observed ==
