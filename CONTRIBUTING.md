@@ -135,3 +135,21 @@ ddev exec -s oracle sqlplus rajska/rajska@localhost/FREEPDB1
 ```
 
 The Oracle database is ephemeral. `ddev restart` gives you a clean database.
+
+## License
+
+The whole repository is dual-licensed under either of
+
+- the MIT license ([LICENSE-MIT](LICENSE-MIT)), or
+- the Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)),
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
+
+Every package manifest declares both licenses:
+
+- `composer.json`: `"license": ["MIT", "Apache-2.0"]` (a list means "or")
+- `Cargo.toml`: `license = "MIT OR Apache-2.0"`
