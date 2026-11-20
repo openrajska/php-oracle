@@ -13,3 +13,6 @@ oracledb = "=26.0.0-beta.6"
 
 [profile.release]
 strip = "debuginfo"
+# As it would ship: the benchmark (#13) measures this profile.
+lto = "fat"
+codegen-units = 1

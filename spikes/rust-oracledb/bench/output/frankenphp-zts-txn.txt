@@ -1,0 +1,17 @@
+# scalar-txn only, after the oci8 commit-mode fix: 8 worker threads, 8 connections, wrk 10 s, 3 rounds.
+# rajska-pool-rb = rajska-pool plus an explicit rollback() before the release (the workaround).
+# The timeouts hit every driver: lock and index contention in the database from 8 open DML
+# transactions, so throughput is noisy here and p50 is the metric to read.
+3 rajska-pool-rb up
+round=1 workload=scalar-txn conc=8 driver=oci8 rps=1329.68 p50=1.46ms p99=4.14ms   Socket errors: connect 0, read 0, write 0, timeout 16 
+round=1 workload=scalar-txn conc=8 driver=rajska rps=940.79 p50=1.70ms p99=5.36ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=1 workload=scalar-txn conc=8 driver=rajska-pool rps=134.39 p50=12.89ms p99=29.39ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=1 workload=scalar-txn conc=8 driver=rajska-pool-rb rps=1709.46 p50=1.32ms p99=178.59ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=scalar-txn conc=8 driver=rajska-pool-rb rps=2030.29 p50=1.18ms p99=151.66ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=scalar-txn conc=8 driver=rajska-pool rps=1099.57 p50=6.36ms p99=386.68ms 
+round=2 workload=scalar-txn conc=8 driver=rajska rps=1043.09 p50=1.60ms p99=6.53ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=scalar-txn conc=8 driver=oci8 rps=1018.11 p50=1.88ms p99=4.61ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=3 workload=scalar-txn conc=8 driver=oci8 rps=1014.03 p50=1.96ms p99=25.83ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=3 workload=scalar-txn conc=8 driver=rajska rps=1020.21 p50=1.49ms p99=1.03s 
+round=3 workload=scalar-txn conc=8 driver=rajska-pool rps=867.51 p50=6.70ms p99=897.15ms 
+round=3 workload=scalar-txn conc=8 driver=rajska-pool-rb rps=808.02 p50=2.57ms p99=27.65ms   Socket errors: connect 0, read 0, write 0, timeout 8 

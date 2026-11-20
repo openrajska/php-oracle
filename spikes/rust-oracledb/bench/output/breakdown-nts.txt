@@ -1,0 +1,8 @@
+# rajska_oracle time split (NTS, one process, 10 rounds x 30 iterations, medians).
+# countRows = rows read and dropped in Rust; conversion = fetchAll minus countRows.
+# Absolute times run higher than in summary-nts.md (one process alternating three
+# measurements); read the proportions.
+RESULT ok
+(b) fetch 10k: countRows 4.48 ms | fetchAll plain 11.33 ms (conversion 6.85 ms, 60%) | fetchAll typed 18.51 ms (conversion 14.03 ms, 76%)
+(b) fetch 10k arraysize 1000: countRows 3.51 ms | fetchAll plain 9.70 ms (conversion 6.19 ms, 64%) | fetchAll typed 16.95 ms (conversion 13.44 ms, 79%)
+(c) cursor 1k: countRows 0.50 ms | fetchAll plain 0.81 ms (conversion 0.31 ms, 38%) | fetchAll typed 1.25 ms (conversion 0.75 ms, 60%)

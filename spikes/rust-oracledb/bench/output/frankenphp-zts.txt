@@ -1,0 +1,56 @@
+# FrankenPHP 1.13 worker mode, 8 worker threads, wrk 10 s per point after 2 s warm-up, 2 rounds.
+# INVALID LINES: every "workload=scalar-txn driver=oci8" line. The scalar Call ran with oci8's default
+# OCI_COMMIT_ON_SUCCESS, which committed the pending INSERT, so oci8 never paid the rollback.
+# Fixed in drivers.php (Oci8Driver::$executeMode); scalar-txn rerun: frankenphp-zts-txn.txt.
+10
+3 oci8 up
+3 rajska up
+3 rajska-pool up
+round=1 workload=scalar conc=1 driver=oci8 rps=5389.21 p50=180.00us p99=1.70ms 
+round=1 workload=scalar conc=1 driver=rajska rps=5399.46 p50=172.00us p99=2.61ms 
+round=1 workload=scalar conc=1 driver=rajska-pool rps=5025.38 p50=178.00us p99=3.76ms 
+round=1 workload=scalar conc=8 driver=oci8 rps=11944.43 p50=585.00us p99=5.55ms 
+round=1 workload=scalar conc=8 driver=rajska rps=12673.37 p50=552.00us p99=6.79ms 
+round=1 workload=scalar conc=8 driver=rajska-pool rps=13028.44 p50=537.00us p99=3.54ms 
+round=1 workload=scalar-txn conc=1 driver=oci8 rps=779.38 p50=1.32ms p99=11.39ms 
+round=1 workload=scalar-txn conc=1 driver=rajska rps=686.50 p50=1.45ms p99=9.32ms 
+round=1 workload=scalar-txn conc=1 driver=rajska-pool rps=730.10 p50=1.44ms p99=9.28ms 
+round=1 workload=scalar-txn conc=8 driver=oci8 rps=3859.69 p50=1.40ms p99=67.93ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=1 workload=scalar-txn conc=8 driver=rajska rps=1571.00 p50=4.20ms p99=561.29ms 
+round=1 workload=scalar-txn conc=8 driver=rajska-pool rps=1144.74 p50=6.03ms p99=37.02ms 
+round=1 workload=cursor conc=1 driver=oci8 rps=772.97 p50=1.23ms p99=6.33ms 
+round=1 workload=cursor conc=1 driver=rajska rps=919.22 p50=1.08ms p99=19.01ms 
+round=1 workload=cursor conc=1 driver=rajska-pool rps=902.76 p50=1.08ms p99=2.50ms 
+round=1 workload=cursor conc=8 driver=oci8 rps=2495.86 p50=3.15ms p99=7.05ms 
+round=1 workload=cursor conc=8 driver=rajska rps=2468.07 p50=3.13ms p99=15.85ms 
+round=1 workload=cursor conc=8 driver=rajska-pool rps=2918.45 p50=2.51ms p99=7.86ms 
+round=1 workload=fetch conc=1 driver=oci8 rps=44.28 p50=20.53ms p99=68.96ms 
+round=1 workload=fetch conc=1 driver=rajska rps=81.76 p50=12.10ms p99=18.35ms 
+round=1 workload=fetch conc=1 driver=rajska-pool rps=85.25 p50=11.49ms p99=24.70ms 
+round=1 workload=fetch conc=8 driver=oci8 rps=150.47 p50=48.70ms p99=135.81ms 
+round=1 workload=fetch conc=8 driver=rajska rps=276.27 p50=25.68ms p99=72.85ms 
+round=1 workload=fetch conc=8 driver=rajska-pool rps=265.41 p50=26.68ms p99=67.69ms 
+round=2 workload=scalar conc=1 driver=rajska-pool rps=5578.84 p50=171.00us p99=2.11ms 
+round=2 workload=scalar conc=1 driver=rajska rps=5440.20 p50=174.00us p99=2.05ms 
+round=2 workload=scalar conc=1 driver=oci8 rps=5378.24 p50=175.00us p99=2.47ms 
+round=2 workload=scalar conc=8 driver=rajska-pool rps=10864.90 p50=634.00us p99=5.95ms 
+round=2 workload=scalar conc=8 driver=rajska rps=10109.75 p50=689.00us p99=7.61ms 
+round=2 workload=scalar conc=8 driver=oci8 rps=10990.18 p50=639.00us p99=5.18ms 
+round=2 workload=scalar-txn conc=1 driver=rajska-pool rps=674.18 p50=1.50ms p99=5.22ms 
+round=2 workload=scalar-txn conc=1 driver=rajska rps=869.01 p50=1.07ms p99=19.02ms 
+round=2 workload=scalar-txn conc=1 driver=oci8 rps=787.05 p50=1.33ms p99=6.40ms 
+round=2 workload=scalar-txn conc=8 driver=rajska-pool rps=1316.15 p50=5.51ms p99=39.86ms 
+round=2 workload=scalar-txn conc=8 driver=rajska rps=1628.66 p50=4.52ms p99=856.87ms 
+round=2 workload=scalar-txn conc=8 driver=oci8 rps=3502.85 p50=1.93ms p99=1.00s 
+round=2 workload=cursor conc=1 driver=rajska-pool rps=929.79 p50=1.05ms p99=4.10ms 
+round=2 workload=cursor conc=1 driver=rajska rps=914.13 p50=1.06ms p99=3.58ms 
+round=2 workload=cursor conc=1 driver=oci8 rps=781.61 p50=1.21ms p99=5.33ms 
+round=2 workload=cursor conc=8 driver=rajska-pool rps=2804.70 p50=2.63ms p99=11.39ms 
+round=2 workload=cursor conc=8 driver=rajska rps=2338.94 p50=3.24ms p99=9.51ms 
+round=2 workload=cursor conc=8 driver=oci8 rps=2043.63 p50=3.72ms p99=19.51ms 
+round=2 workload=fetch conc=1 driver=rajska-pool rps=83.58 p50=11.40ms p99=28.54ms 
+round=2 workload=fetch conc=1 driver=rajska rps=79.73 p50=11.83ms p99=32.87ms 
+round=2 workload=fetch conc=1 driver=oci8 rps=48.66 p50=19.45ms p99=44.83ms 
+round=2 workload=fetch conc=8 driver=rajska-pool rps=269.39 p50=26.31ms p99=51.94ms 
+round=2 workload=fetch conc=8 driver=rajska rps=279.10 p50=26.04ms p99=67.52ms 
+round=2 workload=fetch conc=8 driver=oci8 rps=152.68 p50=46.54ms p99=115.84ms 

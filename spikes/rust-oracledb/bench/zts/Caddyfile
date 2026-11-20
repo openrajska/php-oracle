@@ -1,0 +1,18 @@
+# FrankenPHP worker mode for the ZTS concurrency run of the Benchmark ticket (#13).
+{
+	auto_https off
+	admin off
+	frankenphp {
+		num_threads {$THREADS}
+	}
+}
+
+:8080 {
+	root * /app/spikes/rust-oracledb/bench/zts
+	php_server {
+		worker {
+			file /app/spikes/rust-oracledb/bench/zts/index.php
+			num {$WORKERS}
+		}
+	}
+}

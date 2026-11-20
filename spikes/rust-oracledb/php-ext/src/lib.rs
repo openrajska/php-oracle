@@ -15,6 +15,8 @@
 
 use ext_php_rs::prelude::*;
 
+mod bench;
+
 #[php_function]
 pub fn rajska_probe_info() -> String {
     format!(
@@ -59,6 +61,8 @@ fn chain(e: &dyn std::error::Error) -> String {
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module
+        .class::<bench::BenchConnection>()
+        .class::<bench::BenchStatement>()
         .function(wrap_function!(rajska_probe_info))
         .function(wrap_function!(rajska_probe_query))
 }
