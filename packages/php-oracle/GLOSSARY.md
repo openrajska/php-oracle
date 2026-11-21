@@ -56,6 +56,11 @@ A set of reusable Sessions that hands out Connections. It never swaps the
 Session underneath a Connection in use.
 _Avoid_: connection pool (when DRCP's server-side pool is meant, say DRCP)
 
+**Round trip**:
+One exchange of messages between the client and the Oracle server over the
+network: a request and its response. The unit of latency.
+_Avoid_: call, request (for the network exchange)
+
 ### Executing PL/SQL
 
 **Call**:
