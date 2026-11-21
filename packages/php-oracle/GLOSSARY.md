@@ -90,6 +90,14 @@ the same typed binds as a Call and can produce Implicit results, but it is not a
 Call.
 _Avoid_: script, PL/SQL call
 
+**Bind**:
+A value sent to the database separately from the SQL text, matched to a named
+placeholder (`:name`). Its direction is IN (sent), OUT (received) or IN OUT
+(both). A bind's type is either inferred from the PHP value or stated
+explicitly.
+_Avoid_: parameter (that is a procedure's or function's formal parameter),
+placeholder (that is the `:name` in the SQL text), bind variable
+
 ### Results
 
 **Implicit result**:
