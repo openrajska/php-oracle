@@ -36,19 +36,23 @@ In the order fixed before any probe ran:
 
 ## Conditions
 
-There are eighteen, listed with their exits in FINDINGS.md. By exit:
+There are eighteen from the spike, plus one (C19) added while designing the
+bind model, all listed with their exits in FINDINGS.md. By exit:
 
-- **Fork + upstream PR** (build): Implicit results (C1) and binds of objects,
-  Collections and Associative arrays (C2). Both patches are contained and only
-  add API. We carry them in a fork of `oracle/rust-oracledb` pinned to an exact
-  version (C17) and offer each one upstream; the fork goes away as upstream
+- **Fork + upstream PR** (build): Implicit results (C1), binds of objects,
+  Collections and Associative arrays (C2), and three bind patches decided in
+  [Bind model and Type catalog for IN, OUT and IN OUT](https://github.com/openrajska/php-oracle/issues/22):
+  a declared bind size, which lifts the VARCHAR2 OUT and IN OUT limits (C5,
+  C6); a bindable `Lob`, for LOB IN over 32767 bytes (C11); and CHAR / NCHAR /
+  NVARCHAR2 binds (C19). These patches are contained and only add API. We
+  carry them in a fork of `oracle/rust-oracledb` pinned to an exact version (C17) and offer each one upstream; the fork goes away as upstream
   absorbs them.
 - **Upstream**: per-row batch errors (C3, planned on rust-oracledb#41),
   cancelling a Call (C16, rust-oracledb#24), and DRCP server release (C15,
   rust-oracledb#98, not yet planned; the fork builds it if upstream doesn't).
-- **Workarounds Core or the extension applies**: scalar bind sizing and types
-  (C4–C7), LOB edge cases (C8–C11), Pool growth, acquire timeout and release
-  with an open transaction (C12–C14), and the Windows toolchain (C18).
+- **Workarounds Core or the extension applies**: NUMBER from a PHP float (C4),
+  the TSTZ offset (C7), LOB edge cases (C8–C10), Pool growth, acquire timeout
+  and release with an open transaction (C12–C14), and the Windows toolchain (C18).
 
 ## Considered options
 
