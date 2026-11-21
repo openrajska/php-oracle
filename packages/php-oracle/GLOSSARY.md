@@ -56,6 +56,22 @@ A set of reusable Sessions that hands out Connections. It never swaps the
 Session underneath a Connection in use.
 _Avoid_: connection pool (when DRCP's server-side pool is meant, say DRCP)
 
+**Standalone Connection**:
+A Connection whose Session is opened for it alone, outside the Pool, and ends
+when the Connection ends.
+_Avoid_: dedicated connection, non-pooled connection
+
+**Release**:
+The end of a Connection's use of its Session: the Session goes back to the Pool,
+or ends for a Standalone Connection. A Release always rolls back an open
+transaction and never commits it.
+_Avoid_: close (that is the user's call that triggers a Release), disconnect
+
+**Broken Connection**:
+A Connection whose Session was lost to a network or server failure. Every later
+operation on it fails; it never reconnects by itself.
+_Avoid_: dead connection, stale connection
+
 **Round trip**:
 One exchange of messages between the client and the Oracle server over the
 network: a request and its response. The unit of latency.
