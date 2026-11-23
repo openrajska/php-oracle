@@ -78,6 +78,11 @@ One exchange of messages between the client and the Oracle server over the
 network: a request and its response. The unit of latency.
 _Avoid_: call, request (for the network exchange)
 
+**Server version**:
+The release of the Oracle Database a Connection talks to, as the server reports
+it when the Session is established (for example 23.26.3.0.0 on 26ai).
+_Avoid_: database version (ambiguous with the schema's version), Oracle version
+
 **Call timeout**:
 The longest a Connection waits for a single Round trip. It does not limit an
 Execution as a whole, which may take several Round trips.
