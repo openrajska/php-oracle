@@ -100,6 +100,13 @@ placeholder (that is the `:name` in the SQL text), bind variable
 
 ### Results
 
+**Execution**:
+One run of a SQL statement or a PL/SQL block (a Call included) and everything
+it produced: the number of affected rows, the OUT values, the Implicit results
+and, for a query, its rows.
+_Avoid_: result (that word belongs to Implicit result), statement (that is the
+SQL text, not one run of it)
+
 **Implicit result**:
 A result returned by PL/SQL through `DBMS_SQL.RETURN_RESULT` without being
 declared as a parameter. A single execution can produce several, each with its
