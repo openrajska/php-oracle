@@ -147,7 +147,7 @@ the Oracle Contributor Agreement).
 |---|---|---|---|
 | C1 | Implicit results | build | **Fork**: [`patch/implicit-results.diff`][e8-patch] (+96 −4, 6 files, adds `ExecResult::implicit_results()`), plus the `execute_batch` and `Connection::query()` paths (about 3–5 lines each); then an upstream PR. Interim: `DBMS_SQL.GET_NEXT_RESULT` handed back as REF CURSOR OUT slots. |
 | C2 | Binds of objects, Collections and Associative arrays (incl. `TABLE(:ids)`) | build | **Fork**: [`patch/object-binds.diff`][e15-patch] (+659 −13, 8 files, additive only), plus dedicated `ErrorKind`s and coverage of LOB, `BINARY_INTEGER`, `BOOLEAN`, TSTZ and NCHAR attributes; then an upstream PR. `VARCHAR2`-indexed Associative arrays stay unsupported. Interim: JSON in, REF CURSOR or `json_object` out; `TABLE(:ids)` via `JSON_TABLE` over an OSON bind. Core never emits a typeless `DB_TYPE_OBJECT` bind (ORA-03137 drops the session at the third). |
-| C3 | `execute_batch` per-row errors | upstream | **Upstream**: planned on [rust-oracledb#41][u41]. Interim: savepoint, then a row-by-row retry on failure, which reports every failing row with its index and ORA code. Core rolls back to the savepoint, because earlier rows stay applied. |
+| C3 | `execute_batch` per-row errors | build | **Fork** (decided in [Transactions, autocommit and array DML with per-row errors](https://github.com/openrajska/php-oracle/issues/26)): set the `batch_errors` execute option and parse the batch errors, their offsets and their messages, which the crate leaves as `todo!()` in `error_info.rs` (port of python-oracledb thin, same protocol); one Round trip reports every failing row. Then an upstream PR on [rust-oracledb#41][u41]. The Extension keeps Array DML atomic: rollback under Autocommit, a savepoint inside an Explicit transaction. Spike workaround, superseded: savepoint, then a row-by-row retry on failure. |
 | C4 | NUMBER IN from a PHP float | workaround | **Workaround**: bind as `OracleNumber` of the shortest round-trip text. |
 | C5 | VARCHAR2 OUT past 16000 bytes | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): a public wrapper that declares a bind's type and max size (about 40–50 lines, 2 files), the equivalent of [rust-oracledb#65][u65]; then an upstream PR. No padding is sent. Spike workaround, superseded: bind a 32767-byte padding value as the OUT value. |
 | C6 | VARCHAR2 IN OUT that grows | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): the same declared-size wrapper as C5, which also covers user-written Anonymous blocks. Spike workaround, superseded: wrap the Call in an Anonymous block with a local `varchar2(32767)`. |
@@ -165,6 +165,7 @@ the Oracle Contributor Agreement).
 | C18 | Windows builds | workaround | **Workaround**: CI only, pinned stable + `RUSTC_BOOTSTRAP=1` and `#![cfg_attr(windows, feature(abi_vectorcall))]` in the extension crate. Removed when rust-lang/rust#124485 stabilises `vectorcall`. |
 | C19 | CHAR, NCHAR and NVARCHAR2 IN binds | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): strings always bind as VARCHAR, so there is no blank-padded CHAR comparison and no national-charset bind; the declared-type wrapper of C5 sends them as CHAR / NCHAR / NVARCHAR2, encoding NCHAR data in the national character set; then an upstream PR. Not probed. |
 | C20 | Session time zone at logon | build | **Fork** (decided in [Mapping Oracle values to PHP values](https://github.com/openrajska/php-oracle/issues/23)): the crate sets the Session time zone from `$ORA_SDTZ` or else the process's fixed offset at connect, which ignores daylight saving. A connect option lets the Extension send PHP's default time zone by name when the Session is created; then an upstream PR. Not probed. |
+| C21 | No autocommit | build | **Fork** (decided in [Transactions, autocommit and array DML with per-row errors](https://github.com/openrajska/php-oracle/issues/26)): the execute message serialises an `autocommit` flag, but the field is private and always `false`, so every commit costs its own Round trip. A statement option sets it, so Autocommit rides on the execute (about 5–10 lines); then an upstream PR. To verify in the patch: whether the server commits the valid rows when `batch_errors` and `autocommit` go together (if so, Array DML commits separately). Not probed. |
 
 ## Risks and unknowns
 
@@ -197,12 +198,13 @@ the Oracle Contributor Agreement).
 |---|---|---|
 | Implicit results | not planned | C1 patch, PR candidate |
 | Object / Collection binds; typeless `DB_TYPE_OBJECT` sent malformed | not planned | C2 patch (includes the client-side guard), PR candidate |
-| Per-row batch errors; failing row index dropped on the error path | planned, [rust-oracledb#41][u41] | C3 |
+| Per-row batch errors; failing row index dropped on the error path | planned, [rust-oracledb#41][u41] | C3 patch, PR candidate |
 | `setinputsizes` | open, [rust-oracledb#65][u65] | C6 |
 | `OracleTimestamp` has no offset | not reported | C7 patch, PR candidate |
 | Empty inline LOB read as NULL | not reported | C8 patch, PR candidate |
 | `Lob::read` splits surrogate pairs | not reported | C9 patch, PR candidate |
 | Session time zone is a fixed offset taken at connect | not reported | C20 patch, PR candidate |
+| No public autocommit | not reported | C21 patch, PR candidate |
 | `Lob` is not bindable | not reported | C11 |
 | Pool growth stall | reported, [rust-oracledb#97][u97] | C12 |
 | No acquire wait timeout | not reported | C13 |

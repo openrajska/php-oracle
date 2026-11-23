@@ -37,8 +37,9 @@ In the order fixed before any probe ran:
 ## Conditions
 
 There are eighteen from the spike, plus C19, added while designing the bind
-model, and C20, added while designing the value mapping. All are listed with
-their exits in FINDINGS.md. By exit:
+model, C20, added while designing the value mapping, and C21, added while
+designing transactions. All are listed with their exits in FINDINGS.md. By
+exit:
 
 - **Fork + upstream PR** (build): Implicit results (C1), binds of objects,
   Collections and Associative arrays (C2), and three bind patches decided in
@@ -48,12 +49,15 @@ their exits in FINDINGS.md. By exit:
   NVARCHAR2 binds (C19). Four more come from
   [Mapping Oracle values to PHP values, LOBs included](https://github.com/openrajska/php-oracle/issues/23):
   the TSTZ offset (C7), empty LOBs in the opt-in inline mode (C8), CLOB reads
-  across a surrogate pair (C9) and the Session time zone by name (C20). These
+  across a surrogate pair (C9) and the Session time zone by name (C20). Two
+  more come from
+  [Transactions, autocommit and array DML with per-row errors](https://github.com/openrajska/php-oracle/issues/26):
+  per-row Array DML errors (C3, upstream planned on rust-oracledb#41) and
+  autocommit riding on the execute (C21). These
   patches are contained and only add API. We
   carry them in a fork of `oracle/rust-oracledb` pinned to an exact version (C17) and offer each one upstream; the fork goes away as upstream
   absorbs them.
-- **Upstream**: per-row batch errors (C3, planned on rust-oracledb#41),
-  cancelling a Call (C16, rust-oracledb#24), and DRCP server release (C15,
+- **Upstream**: cancelling a Call (C16, rust-oracledb#24), and DRCP server release (C15,
   rust-oracledb#98, not yet planned; the fork builds it if upstream doesn't).
 - **Workarounds Core or the extension applies**: NUMBER from a PHP float (C4),
   whole-UTF-8 CLOB writes (C10), Pool growth, acquire timeout
