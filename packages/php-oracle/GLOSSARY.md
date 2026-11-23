@@ -77,6 +77,25 @@ One exchange of messages between the client and the Oracle server over the
 network: a request and its response. The unit of latency.
 _Avoid_: call, request (for the network exchange)
 
+### Transactions
+
+**Autocommit**:
+The mode a Connection is in outside an Explicit transaction: every successful
+Execution is committed as part of itself.
+_Avoid_: auto-commit mode (for the Oracle default of an implicit open
+transaction), commit on success
+
+**Explicit transaction**:
+A transaction the user opens on a Connection, inside which nothing is committed
+until the user commits it.
+_Avoid_: manual transaction, user transaction
+
+**Array DML**:
+One SQL statement or PL/SQL block run once per row of binds, with every row
+sent in a single Round trip. It applies every row or none.
+_Avoid_: batch (that word belongs to a Cursor's fetch), bulk insert,
+executemany
+
 ### Executing PL/SQL
 
 **Call**:
