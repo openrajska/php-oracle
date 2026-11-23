@@ -128,3 +128,25 @@ write "Laravel Collection")
 **Associative array**:
 A PL/SQL-only `INDEX BY` table, which may be sparse. It is not a Collection.
 _Avoid_: index-by table, PL/SQL table, hash
+
+### Values
+
+**Wall clock**:
+A date and time with no time zone, as DATE and TIMESTAMP hold it: what a clock
+on the wall shows, not a point on the global timeline.
+_Avoid_: local time, naive datetime
+
+**Instant**:
+A point on the global timeline, independent of any time zone, as TIMESTAMP WITH
+TIME ZONE and WITH LOCAL TIME ZONE identify it.
+_Avoid_: absolute time, UTC time
+
+**LOB**:
+A CLOB, NCLOB or BLOB value: character or binary data large enough that it is
+read through a Locator rather than carried in the row.
+_Avoid_: blob (for any LOB), large field
+
+**Locator**:
+A server-side reference to a LOB's data. It is valid only while the Connection
+that received it keeps its Session.
+_Avoid_: LOB handle, pointer
