@@ -151,9 +151,9 @@ the Oracle Contributor Agreement).
 | C4 | NUMBER IN from a PHP float | workaround | **Workaround**: bind as `OracleNumber` of the shortest round-trip text. |
 | C5 | VARCHAR2 OUT past 16000 bytes | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): a public wrapper that declares a bind's type and max size (about 40–50 lines, 2 files), the equivalent of [rust-oracledb#65][u65]; then an upstream PR. No padding is sent. Spike workaround, superseded: bind a 32767-byte padding value as the OUT value. |
 | C6 | VARCHAR2 IN OUT that grows | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): the same declared-size wrapper as C5, which also covers user-written Anonymous blocks. Spike workaround, superseded: wrap the Call in an Anonymous block with a local `varchar2(32767)`. |
-| C7 | TSTZ offset | workaround | **Workaround**: `to_char(…, '… TZH:TZM')` on the server when the offset matters; otherwise the UTC instant is correct. |
-| C8 | Empty LOB fetched inline comes back as NULL | workaround | **Workaround**: Core reads LOB columns through locators (which large LOBs need anyway: inline 100 MiB takes 773 MiB RSS and 5.5 s). Candidate upstream issue. |
-| C9 | CLOB read splitting a surrogate pair | workaround | **Workaround**: retry the read with one UCS-2 unit less. Candidate fork patch, contained in `lob.rs`. |
+| C7 | TSTZ offset | build | **Fork** (decided in [Mapping Oracle values to PHP values, LOBs included](https://github.com/openrajska/php-oracle/issues/23)): `OracleTimestamp` keeps a numeric offset, decoded from and encoded into the tz bytes (about 35–50 lines, 2 files; OSON gets it too); then an upstream PR. A value stored with a time-zone region comes back as the correct instant in UTC, because the crate has no region table. Spike workaround, superseded: `to_char(…, '… TZH:TZM')` on the server. |
+| C8 | Empty LOB fetched inline comes back as NULL | build | LOBs are read through locators by default. **Fork** (decided in [Mapping Oracle values to PHP values](https://github.com/openrajska/php-oracle/issues/23)) for the opt-in inline mode: use the per-value null indicator the crate now discards (about 10–15 lines in `db_value.rs`); then an upstream PR. Unverified that the server sends "not null" for `EMPTY_CLOB()`; if not, the inline mode is not in v1. |
+| C9 | CLOB read splitting a surrogate pair | build | **Fork** (decided in [Mapping Oracle values to PHP values](https://github.com/openrajska/php-oracle/issues/23)): `Lob::read` trims a trailing high surrogate and advances one unit less (about 15–25 lines in `lob.rs`); then an upstream PR. Spike workaround, superseded: retry with one UCS-2 unit less. |
 | C10 | CLOB write must be whole UTF-8 | workaround | **Workaround**: a writer that holds back an incomplete trailing sequence (verified as `Utf8Boundary`). |
 | C11 | LOB IN to PL/SQL over 32767 bytes | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): `ToDbValue for Lob` (about 25–35 lines); the Extension writes a temporary LOB and binds it, in SQL and PL/SQL alike; then an upstream PR. Spike workaround, superseded: ≤ 32767-byte VARCHAR2 binds appended to a temporary CLOB in one Anonymous block (16 MiB in 0.16 s). |
 | C12 | Pool growth stalls at one Connection | workaround | **Workaround**: `min_connections ≤ 1`, `connection_increment = 1`, pre-acquire to warm. Reported as [rust-oracledb#97][u97] with a verified 3-line fix (fork candidate). |
@@ -164,6 +164,7 @@ the Oracle Contributor Agreement).
 | C17 | Crate maturity | not a gate | **Pin** the exact crate version (today `=26.0.0-beta.6`) through the fork; upgrade deliberately, rerunning the probes. |
 | C18 | Windows builds | workaround | **Workaround**: CI only, pinned stable + `RUSTC_BOOTSTRAP=1` and `#![cfg_attr(windows, feature(abi_vectorcall))]` in the extension crate. Removed when rust-lang/rust#124485 stabilises `vectorcall`. |
 | C19 | CHAR, NCHAR and NVARCHAR2 IN binds | build | **Fork** (decided in [Bind model and Type catalog](https://github.com/openrajska/php-oracle/issues/22)): strings always bind as VARCHAR, so there is no blank-padded CHAR comparison and no national-charset bind; the declared-type wrapper of C5 sends them as CHAR / NCHAR / NVARCHAR2, encoding NCHAR data in the national character set; then an upstream PR. Not probed. |
+| C20 | Session time zone at logon | build | **Fork** (decided in [Mapping Oracle values to PHP values](https://github.com/openrajska/php-oracle/issues/23)): the crate sets the Session time zone from `$ORA_SDTZ` or else the process's fixed offset at connect, which ignores daylight saving. A connect option lets the Extension send PHP's default time zone by name when the Session is created; then an upstream PR. Not probed. |
 
 ## Risks and unknowns
 
@@ -181,6 +182,9 @@ the Oracle Contributor Agreement).
   Continuity, TAF and FAN. Those users need a Thick Backend, which is out of this
   spike's scope.
 - **Network latency** shrinks the lead on (a) and (c) toward parity.
+- **Named `DBTIMEZONE`**: the crate fails every TIMESTAMP WITH LOCAL TIME ZONE
+  fetch with `not_implemented` when the database time zone is a region name
+  rather than an offset. Documented; v1 fails loudly, never with wrong data.
 - **Not probed**: CHAR / NCHAR / NVARCHAR2, BINARY_FLOAT / BINARY_DOUBLE,
   PLS_INTEGER, BOOLEAN and INTERVAL binds; `SYS_REFCURSOR` IN binds; object
   attributes of LOB, TSTZ or BOOLEAN; XMLTYPE and `SYS.ANYDATA`; NCLOB and
@@ -195,9 +199,10 @@ the Oracle Contributor Agreement).
 | Object / Collection binds; typeless `DB_TYPE_OBJECT` sent malformed | not planned | C2 patch (includes the client-side guard), PR candidate |
 | Per-row batch errors; failing row index dropped on the error path | planned, [rust-oracledb#41][u41] | C3 |
 | `setinputsizes` | open, [rust-oracledb#65][u65] | C6 |
-| `OracleTimestamp` has no offset | not reported | C7 |
-| Empty inline LOB read as NULL | not reported | C8 |
-| `Lob::read` splits surrogate pairs | not reported | C9 |
+| `OracleTimestamp` has no offset | not reported | C7 patch, PR candidate |
+| Empty inline LOB read as NULL | not reported | C8 patch, PR candidate |
+| `Lob::read` splits surrogate pairs | not reported | C9 patch, PR candidate |
+| Session time zone is a fixed offset taken at connect | not reported | C20 patch, PR candidate |
 | `Lob` is not bindable | not reported | C11 |
 | Pool growth stall | reported, [rust-oracledb#97][u97] | C12 |
 | No acquire wait timeout | not reported | C13 |
