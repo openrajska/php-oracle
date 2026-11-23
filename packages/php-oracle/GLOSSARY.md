@@ -127,6 +127,18 @@ one REF CURSOR type, not the concept)
 
 ### PL/SQL types
 
+**Object type**:
+A schema-level SQL type with named attributes, created with
+`CREATE TYPE … AS OBJECT`. Its attributes may themselves be Objects or
+Collections.
+_Avoid_: UDT, user-defined type (that also covers Collection types), record (a
+PL/SQL RECORD is a different thing)
+
+**Object**:
+A value of an Object type: a set of attribute values, or NULL as a whole, which
+is not the same as every attribute being NULL.
+_Avoid_: instance (that is the database instance), DbObject, record
+
 **Collection**:
 A value of an Oracle SQL collection type: a nested table or a VARRAY.
 _Avoid_: array, list, Collection (for `Illuminate\Support\Collection`, always
