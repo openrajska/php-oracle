@@ -68,8 +68,9 @@ transaction and never commits it.
 _Avoid_: close (that is the user's call that triggers a Release), disconnect
 
 **Broken Connection**:
-A Connection whose Session was lost to a network or server failure. Every later
-operation on it fails; it never reconnects by itself.
+A Connection whose Session was lost to a network or server failure, or whose
+client-side state can no longer be trusted after an internal failure. Every
+later operation on it fails; it never reconnects by itself.
 _Avoid_: dead connection, stale connection
 
 **Round trip**:
