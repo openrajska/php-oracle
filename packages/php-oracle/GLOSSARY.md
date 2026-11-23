@@ -78,6 +78,21 @@ One exchange of messages between the client and the Oracle server over the
 network: a request and its response. The unit of latency.
 _Avoid_: call, request (for the network exchange)
 
+**Call timeout**:
+The longest a Connection waits for a single Round trip. It does not limit an
+Execution as a whole, which may take several Round trips.
+_Avoid_: query timeout, statement timeout
+
+**Statement cache**:
+The statements a Session has already parsed and keeps for reuse without a new
+parse.
+_Avoid_: prepared statement cache
+
+**Tracing**:
+The identifying attributes (module, action, client identifier, client info)
+that a Session exposes to the DBA for monitoring and auditing.
+_Avoid_: logging, telemetry
+
 ### Transactions
 
 **Autocommit**:
@@ -137,6 +152,11 @@ _Avoid_: implicit cursor (that is a different Oracle concept)
 A client-side, lazily consumed sequence of rows. A Cursor can come from a query,
 a REF CURSOR or an Implicit result.
 _Avoid_: result set, ResultSet, recordset
+
+**Fetch size**:
+How many rows a Cursor brings per Round trip, counting the rows that arrive
+with the Execution itself.
+_Avoid_: arraysize, prefetch (those are Backend details)
 
 **REF CURSOR**:
 A server-side pointer to an open query, handed to the client by PL/SQL as an OUT
