@@ -223,8 +223,7 @@ impl ConnState {
         for lob in lobs.iter().filter_map(Weak::upgrade) {
             let _ = catch_unwind(AssertUnwindSafe(|| lock(&lob).take()));
         }
-        // A Broken Session is rolled back too: on a lost transport the
-        // attempt closes it, which lets the Pool drop it.
+        // A Broken Session is rolled back too, then dropped from its Pool.
         let rolled_back = lease.session().rollback().is_ok();
         if broken || !rolled_back {
             lease.discard();

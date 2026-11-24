@@ -422,10 +422,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     #[DataProvider('kills')]
     public function a_killed_session_makes_the_connection_broken_and_never_comes_back(bool $immediate): void
     {
-        // Two, not one: until #68, a Broken Session with an open transport
-        // (a kill without `immediate`) is held out of the Pool instead of
-        // dropped, so the Pool is one Session smaller afterwards.
-        $fields = self::ownPool() + ['maxConnections' => 2];
+        $fields = self::ownPool() + ['maxConnections' => 1];
         // The Session's second loan: the crate ends the first one with a
         // request-boundary rollback of its own, which would hide a Session
         // going back to the Pool.

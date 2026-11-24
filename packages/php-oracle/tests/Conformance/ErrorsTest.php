@@ -202,9 +202,7 @@ final class ErrorsTest extends ConformanceTestCase
     #[Test]
     public function a_call_timeout_on_a_sleep_makes_the_next_call_throw_connection_lost(): void
     {
-        // Two, not one: until #68 a Broken Session may be held out of the
-        // Pool instead of dropped.
-        $fields = self::ownPool() + ['maxConnections' => 2];
+        $fields = self::ownPool() + ['maxConnections' => 1];
         $connection = $this->connect(...$fields);
         $session = self::session($connection);
 
@@ -266,9 +264,7 @@ final class ErrorsTest extends ConformanceTestCase
     #[Test]
     public function an_injected_panic_gives_connection_lost_and_makes_the_connection_broken(): void
     {
-        // Two, not one: until #68 the Broken Session is held out of the Pool
-        // instead of dropped, so the Pool is one Session smaller afterwards.
-        $fields = self::ownPool() + ['maxConnections' => 2];
+        $fields = self::ownPool() + ['maxConnections' => 1];
         $this->connect(...$fields)->close();
         $connection = $this->connect(...$fields);
         $session = self::session($connection);
