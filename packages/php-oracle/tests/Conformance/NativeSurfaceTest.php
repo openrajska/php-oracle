@@ -12,6 +12,7 @@ use Rajska\Oracle\Driver\Extension\ExtensionConnection;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
+use Rajska\Oracle\Exceptions\TimeoutException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -170,6 +171,10 @@ final class NativeSurfaceTest extends ConformanceTestCase
                     ['unknown' => 1] + self::nativeOptions(),
                 ));
                 self::assertSame('usage', $exception->kind, 'an unknown key in $options');
+                $exception = $this->nativeException(fn () => $native->trace(
+                    ['unknown' => 1] + self::nativeSession()['tracing'],
+                ));
+                self::assertSame('usage', $exception->kind, 'an unknown key in $tracing');
             }));
         } finally {
             $counter->close();
@@ -188,6 +193,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $native = $this->native();
         $wrongPassword = TestDatabase::fromEnvironment()->config(password: 'not-the-password');
         $duplicate = "insert into fx_items (id, category_id, name, price, created_at) values (1, 1, 'duplicate', 1, sysdate)";
+        $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
 
         $cases = [
             'database' => [
@@ -204,6 +210,11 @@ final class NativeSurfaceTest extends ConformanceTestCase
                 ConnectionException::class,
                 fn () => NativeConnection::connect(['password' => 'not-the-password'] + self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession()),
                 fn () => $this->driver()->connect($wrongPassword),
+            ],
+            'timeout' => [
+                TimeoutException::class,
+                fn () => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
+                fn () => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
             ],
             'unsupported' => [
                 UnsupportedException::class,
@@ -241,6 +252,68 @@ final class NativeSurfaceTest extends ConformanceTestCase
                 self::assertNull($e->getPrevious(), "$case: previous");
             }
         }
+    }
+
+    /**
+     * Native surface 5: every acquire applies its own `$session`, whatever
+     * the Session's previous Connection had.
+     */
+    #[Test]
+    public function the_session_array_is_reapplied_on_every_acquire(): void
+    {
+        $pool = ['maxConnections' => 1, 'connectTimeout' => 20_061] + self::nativePool(TestDatabase::fromEnvironment());
+        $sql = <<<'SQL'
+            select sys_context('userenv', 'sid') sid,
+                   sys_context('userenv', 'module') module,
+                   sys_context('userenv', 'action') action,
+                   sys_context('userenv', 'client_identifier') client_identifier,
+                   sys_context('userenv', 'client_info') client_info
+              from dual
+            SQL;
+        $sessions = [];
+        foreach (['A', 'B'] as $name) {
+            $connection = NativeConnection::connect($pool, [
+                'tracing' => ['module' => "module $name", 'action' => "action $name", 'clientIdentifier' => "id $name", 'clientInfo' => "info $name"],
+                'callTimeout' => 60_000,
+            ]);
+            $row = $connection->execute($sql, [], self::nativeOptions())['cursor']?->fetchBatch()[0] ?? [];
+            $connection->close();
+            $sessions[] = array_shift($row);
+            self::assertSame([
+                'MODULE' => "module $name",
+                'ACTION' => "action $name",
+                'CLIENT_IDENTIFIER' => "id $name",
+                'CLIENT_INFO' => "info $name",
+            ], $row);
+        }
+        self::assertSame($sessions[0], $sessions[1], 'One Session for both');
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function nonPositiveDurations(): iterable
+    {
+        foreach ([0, -1] as $ms) {
+            yield "\$session callTimeout $ms" => ['callTimeout', $ms];
+            yield "\$options timeout $ms" => ['timeout', $ms];
+        }
+    }
+
+    /**
+     * A Call timeout is at least 1 ms, or null for no limit.
+     */
+    #[Test]
+    #[DataProvider('nonPositiveDurations')]
+    public function a_call_timeout_under_1_ms_fails_with_kind_usage(string $key, int $ms): void
+    {
+        $native = $this->native();
+        $exception = $this->nativeException(static fn () => $key === 'callTimeout'
+            ? NativeConnection::connect(self::nativePool(TestDatabase::fromEnvironment()), ['callTimeout' => $ms] + self::nativeSession())
+            : $native->execute('select 1 from dual', [], ['timeout' => $ms] + self::nativeOptions()));
+
+        self::assertSame('usage', $exception->kind);
+        self::assertStringContainsString("'$key'", $exception->getMessage());
     }
 
     /**

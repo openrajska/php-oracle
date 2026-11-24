@@ -3,6 +3,8 @@
 //! documented keys, each with its documented type. Anything else is a `usage`
 //! error, raised before any Round trip.
 
+use std::time::Duration;
+
 use ext_php_rs::types::{ArrayKey, ZendHashTable, Zval};
 
 use crate::error::Error;
@@ -73,6 +75,18 @@ impl<'a> Fields<'a> {
             Ok(None)
         } else {
             self.int(key).map(Some)
+        }
+    }
+
+    /// A duration in milliseconds, at least 1; `null` is no limit.
+    pub fn optional_milliseconds(&self, key: &str) -> Result<Option<Duration>, Error> {
+        match self.optional_int(key)? {
+            None => Ok(None),
+            Some(ms) => u64::try_from(ms)
+                .ok()
+                .filter(|ms| *ms >= 1)
+                .map(|ms| Some(Duration::from_millis(ms)))
+                .ok_or_else(|| self.wrong(key, "at least 1 (ms), or null for no limit")),
         }
     }
 

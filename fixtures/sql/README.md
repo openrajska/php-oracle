@@ -61,7 +61,7 @@ client `NLS_LANG` does not matter.
 | `INSERT ... RETURNING ... INTO` | `fx_bind_rows` (global temporary table, rows gone at commit or rollback) | `09_bind.sql` |
 | Calls by name: IN / OUT / IN OUT with a defaulted parameter, a failing Call, one function per scalar return type, a quoted mixed-case name | `fx_call.echo` (`p_label` defaults to `'default'`), `fx_call.grow`, `fx_call.fail` / `f_fail` (ORA-20046), `fx_call.f_varchar` … `f_rowid` and `f_date` … `f_interval_ym` (a fixed value, or NULL when `p_null`), `"FX_Mixed_Case"("pValue")` | `10_call.sql` |
 | Transactions: Autocommit, Explicit transactions, a deferred constraint failing at COMMIT | `fx_tx_rows` (empty; the `qty` CHECK is deferrable initially deferred), `fx_tx.add_row`, `fx_tx.add_row_count` (inserts, returns the row count) | `11_transaction.sql` |
-| One Pool shared across threads | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.bump_counter` | `07_pool.sql` |
+| One Pool shared across threads, Call timeout | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.slow`, `fx_pool.bump_counter` | `07_pool.sql` |
 | Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
 
 ## Data and expected values
@@ -144,6 +144,9 @@ Empty. Each constraint gives a different error, so a batch can mix them:
 - `session_id`: SID of the Session that ran the Call.
 - `sleep(seconds)`: holds the Session (fractions allowed), to force
   concurrent Calls to use different Sessions.
+- `slow(value, seconds)`: returns `value` after holding the Session for
+  `seconds`. Selected per row (`select fx_pool.slow(level, 0.3) from dual
+  connect by level <= 4`), it makes each fetch slow: for Call timeout tests.
 - `bump_counter`: increments a package variable and returns it. It starts at 0
   in every new Session, so the sequence a Connection sees shows whether its
   Session changed underneath it.
