@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\UsageException;
 
@@ -21,6 +22,13 @@ final class Execution
      * @var array<string, list<mixed>>|null
      */
     private ?array $outValues = null;
+
+    /**
+     * The Implicit results, each wrapped once as a Cursor.
+     *
+     * @var list<Cursor>|null
+     */
+    private ?array $results = null;
 
     /**
      * @internal use Connection::run()
@@ -68,6 +76,21 @@ final class Execution
         $names = $values === [] ? 'the statement has none' : "they are '".implode("', '", array_keys($values))."'";
 
         throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql, $this->call);
+    }
+
+    /**
+     * The Implicit results (`DBMS_SQL.RETURN_RESULT`) in production order:
+     * always the same Cursors, each lazy and readable in any order. `[]`
+     * when the statement returned none.
+     *
+     * @return list<Cursor>
+     */
+    public function results(): array
+    {
+        return $this->results ??= array_map(
+            fn (DriverCursor $cursor): Cursor => new Cursor($cursor, $this->connection),
+            $this->driver->implicitResults(),
+        );
     }
 
     /**
