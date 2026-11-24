@@ -32,7 +32,7 @@ final class ExtensionConnection implements DriverConnection
         return new ExtensionExecution(
             $result['rowCount'],
             $result['cursor'] === null ? null : new ExtensionCursor($result['cursor'], $sql),
-            $result['outValues'],
+            ExtensionCursor::handles($result['outValues'], $sql),
             array_map(static fn ($cursor) => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
             $result['warning'],
         );

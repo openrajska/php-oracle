@@ -103,7 +103,6 @@ final class CallsTest extends TestCase
             'blob()' => $function->blob(...),
             'json()' => $function->json(...),
             'vector()' => $function->vector(...),
-            'cursor()' => $function->cursor(...),
             'struct()' => fn () => $function->struct('fx_point'),
             'collection()' => fn () => $function->collection('fx_number_list'),
             'indexed()' => fn () => $function->indexed('fx_object.t_number_map'),

@@ -1,24 +1,41 @@
 //! Values on their way to PHP: how a value the server sent becomes a PHP
 //! value (spec #32 §8). OUT values follow these rules, as columns do.
 
-use ext_php_rs::types::Zval;
+use std::sync::Arc;
+
+use ext_php_rs::convert::IntoZval;
+use ext_php_rs::types::{ZendClassObject, Zval};
 use oracledb::{
     DB_TYPE_BINARY_DOUBLE, DB_TYPE_BINARY_FLOAT, DB_TYPE_BINARY_INTEGER, DB_TYPE_BOOLEAN,
-    DB_TYPE_CHAR, DB_TYPE_LONG, DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR,
-    DB_TYPE_RAW, DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleNumber, Row,
+    DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_LONG, DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER,
+    DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleNumber,
+    Row,
 };
 
+use crate::connection::{ConnState, CursorSlot};
+use crate::cursor::NativeCursor;
 use crate::error::Error;
-use crate::options::NumberMode;
+use crate::options::{NumberMode, Options};
 
 /// The value at `index` of a row, as PHP sees it. `what` names the value in
-/// an error ("OUT bind 'x'").
-pub fn cell(row: &Row, index: usize, numbers: NumberMode, what: &str) -> Result<Zval, Error> {
+/// an error ("OUT bind 'x'"). A REF CURSOR is taken out of the row and
+/// becomes a native Cursor of the Connection, with the Execution's options.
+pub fn cell(
+    row: &mut Row,
+    index: usize,
+    state: &Arc<ConnState>,
+    options: &Options,
+    what: &str,
+) -> Result<Zval, Error> {
+    let numbers = options.numbers;
     let metadata = row
         .columns()
         .get(index)
         .ok_or_else(|| Error::unsupported(format!("{what}: no value came back.")))?;
     let db_type = metadata.db_type();
+    if db_type == DB_TYPE_CURSOR {
+        return cursor(row, index, state, options, Vec::new());
+    }
     let mut zval = Zval::new();
     if db_type == DB_TYPE_NUMBER || db_type == DB_TYPE_BINARY_INTEGER {
         match row.get::<Option<OracleNumber>>(index)? {
@@ -71,6 +88,27 @@ pub fn cell(row: &Row, index: usize, numbers: NumberMode, what: &str) -> Result<
         )));
     }
     Ok(zval)
+}
+
+/// The REF CURSOR or nested `CURSOR()` at `index` of a row, taken out of
+/// it, as a native Cursor holding `parents`: the slots of the Cursors it is
+/// nested in, outermost first. NULL gives `null`.
+pub fn cursor(
+    row: &mut Row,
+    index: usize,
+    state: &Arc<ConnState>,
+    options: &Options,
+    parents: Vec<Arc<CursorSlot>>,
+) -> Result<Zval, Error> {
+    match row.take::<Option<oracledb::Cursor>>(index)? {
+        Some(cursor) => {
+            let cursor = NativeCursor::new(Arc::clone(state), cursor, options, parents)?;
+            ZendClassObject::new(cursor)
+                .into_zval(false)
+                .map_err(|e| Error::unsupported(e.to_string()))
+        }
+        None => Ok(Zval::null()),
+    }
 }
 
 /// NUMBER: `int` when integral and within 64 bits, else the exact canonical

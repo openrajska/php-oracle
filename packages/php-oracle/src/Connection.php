@@ -102,7 +102,7 @@ final class Connection
 
         return new FunctionCall(
             $call,
-            fn (Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return),
+            fn (Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return, $this->state),
         );
     }
 

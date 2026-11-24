@@ -115,8 +115,6 @@ final class TypedBindsTest extends ConformanceTestCase
 
         $values = $execution->outValues();
         self::assertSame(['o', 'io'], array_keys($values));
-        self::assertIsArray($values['o']);
-        self::assertIsArray($values['io']);
         self::assertSameValue($out, $values['o'][0]);
         self::assertSameValue($changed, $values['io'][0]);
     }

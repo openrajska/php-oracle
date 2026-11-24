@@ -16,6 +16,13 @@ final class Execution
     private ?Cursor $rows = null;
 
     /**
+     * The OUT values, each REF CURSOR wrapped once as a Cursor.
+     *
+     * @var array<string, list<mixed>>|null
+     */
+    private ?array $outValues = null;
+
+    /**
      * @internal use Connection::run()
      *
      * @param list<string> $bindNames every bind's name as the user wrote it
@@ -45,13 +52,13 @@ final class Execution
      */
     public function out(string $name): OutValue
     {
-        $values = $this->driver->outValues();
+        $values = $this->outValues ??= array_map(
+            fn (array $values): array => Cursor::wrap($values, $this->connection),
+            $this->driver->outValues(),
+        );
         $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));
         if ($key !== null) {
-            /** @var list<mixed> $list */
-            $list = $values[$key];
-
-            return new OutValue($key, $list, $this->sql, $this->call);
+            return new OutValue($key, $values[$key], $this->sql, $this->call);
         }
 
         $in = self::find($name, $this->bindNames);

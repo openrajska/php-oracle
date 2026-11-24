@@ -42,6 +42,7 @@ pub enum KeyCase {
 }
 
 /// The options of one execute, read from `$options`.
+#[derive(Clone, Copy)]
 pub struct Options {
     /// Commit with the execute: Core sets it outside an Explicit transaction.
     pub autocommit: bool,
