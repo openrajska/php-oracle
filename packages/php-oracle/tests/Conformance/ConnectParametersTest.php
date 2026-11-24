@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\ConnectionConfig;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\Extension\ExtensionDriver;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
@@ -426,6 +427,49 @@ final class ConnectParametersTest extends ConformanceTestCase
             self::assertStringNotContainsString($password, $text);
             self::assertStringNotContainsString($walletPassword, $text);
         }
+    }
+
+    /**
+     * Pool and lifecycle 12: the adapter keeps what it built from a config
+     * only while the config lives, so its password is not held for the rest
+     * of the worker's life once the application lets the config go.
+     */
+    #[Test]
+    public function the_adapter_holds_a_configs_password_no_longer_than_the_config(): void
+    {
+        $password = 'Pa55-' . bin2hex(random_bytes(6));
+        $config = TestDatabase::fromEnvironment()->config(password: $password, standalone: true);
+        self::assertSame(1017, $this->failedConnect($config)->getCode());
+        self::assertTrue(self::adapterHolds($password), 'kept while the config lives');
+
+        unset($config);
+        gc_collect_cycles();
+
+        self::assertFalse(self::adapterHolds($password));
+    }
+
+    /**
+     * Whether any static property of the adapter holds `$secret`, in an
+     * array or a WeakMap, at any depth.
+     */
+    private static function adapterHolds(string $secret): bool
+    {
+        $holds = static function (mixed $value) use (&$holds, $secret): bool {
+            if ($value === $secret) {
+                return true;
+            }
+            if (\is_array($value) || $value instanceof \WeakMap) {
+                foreach ($value as $element) {
+                    if ($holds($element)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        };
+
+        return $holds(new \ReflectionClass(ExtensionDriver::class)->getStaticProperties());
     }
 
     /**
