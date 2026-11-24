@@ -24,6 +24,8 @@ services:
     volumes:
       # Schema de fixtures (ver fixtures/sql/README.md), instalado com `ddev fixtures`.
       - ${DDEV_APPROOT}/fixtures/sql:/fixtures/sql:ro
+      # Wallets e listeners TCPS dos testes de TLS (fixtures/tls/README.md).
+      - ${DDEV_APPROOT}/fixtures/tls:/fixtures/tls:ro
       # Necessário para os comandos em .ddev/commands/oracle/.
       - .:/mnt/ddev_config:ro
     healthcheck:

@@ -55,4 +55,23 @@ final readonly class ConnectionConfig
             }
         }
     }
+
+    /**
+     * What `var_dump()` and `print_r()` show: every field, with `password`
+     * and `walletPassword` as `SensitiveParameterValue`s, as PHP shows
+     * sensitive arguments in a trace.
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        /** @var array<string, mixed> $fields */
+        $fields = get_object_vars($this);
+        $fields['password'] = new \SensitiveParameterValue($this->password);
+        if ($this->walletPassword !== null) {
+            $fields['walletPassword'] = new \SensitiveParameterValue($this->walletPassword);
+        }
+
+        return $fields;
+    }
 }

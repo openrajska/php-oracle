@@ -99,12 +99,44 @@ impl Error {
         }
     }
 
-    /// An error of the crate while opening a Session: always `connection`,
-    /// keeping the ORA code (1017 for a wrong password).
+    /// An error of the crate while opening a Session: `connection`, keeping the
+    /// ORA code (1017 for a wrong password).
+    ///
+    /// A connect string, alias or wallet the crate cannot use is
+    /// `configuration` instead.
     pub fn connect(e: oracledb::Error) -> Self {
+        use oracledb::ErrorKind as E;
+        let kind = match e.kind() {
+            E::InvalidConnectString(..)
+            | E::InvalidDescriptorNode(..)
+            | E::InvalidNetworkName(_)
+            | E::TnsAliasNotFound(..)
+            | E::NoConfigDir
+            | E::NoConnectString
+            | E::NoCredentials
+            | E::IfileCycleDetected(..)
+            | E::WalletPasswordMissingOrInvalid(..)
+            | E::WalletPrivateKeyInvalid(_)
+            | E::WalletUnreadable(_)
+            | E::PemFileOperation => Kind::Configuration,
+            _ => Kind::Connection,
+        };
         Self {
-            kind: Kind::Connection,
+            kind,
             ..Self::from(e)
+        }
+    }
+
+    /// The transport connect ran out of `connectTimeout` (ms).
+    pub fn connect_timeout(milliseconds: i64) -> Self {
+        Self {
+            code: 12170,
+            ..Self::new(
+                Kind::Connection,
+                format!(
+                    "ORA-12170: Cannot connect. The connectTimeout of {milliseconds} ms went by before the transport connected."
+                ),
+            )
         }
     }
 
@@ -215,9 +247,21 @@ impl From<oracledb::Error> for Error {
                 lost: false,
                 pending: false,
             },
-            other => Self::new(kind_of(other), e.to_string()),
+            other => Self::new(kind_of(other), described(&e)),
         }
     }
+}
+
+/// A crate error's message with its causes: "stream operation failed" alone
+/// does not tell an unknown certificate issuer from a refused connection.
+fn described(e: &oracledb::Error) -> String {
+    let mut message = e.to_string();
+    let mut cause = std::error::Error::source(e);
+    while let Some(c) = cause {
+        message = format!("{message}: {c}");
+        cause = c.source();
+    }
+    message
 }
 
 /// The server errors that mean the Session is lost: the Broken set of spec
