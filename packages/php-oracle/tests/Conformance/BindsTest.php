@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -126,6 +127,25 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame('NULL', self::value($connection, 'select dump(:v) from dual', ['v' => null]));
         self::assertNull(self::value($connection, 'select :v from dual', ['v' => null]));
         self::assertSame(0, self::value($connection, 'select count(*) from fx_items where name = :v', ['v' => null]));
+    }
+
+    /**
+     * Binds 2: a PL/SQL block's binds match its placeholders ignoring case,
+     * in whatever order the binds come, each
+     * OUT value comes back under the key the user wrote.
+     */
+    #[Test]
+    public function a_blocks_binds_match_its_placeholders_in_any_order_and_case(): void
+    {
+        $connection = $this->connect();
+
+        $execution = $connection->execute(
+            'begin :Total := :a + :b; :Echo := to_char(:b) || :a; end;',
+            ['B' => 2, 'echo' => Varchar::out(), 'TOTAL' => Number::out(), 'a' => 40],
+            self::options(),
+        );
+
+        self::assertSame(['echo' => ['240'], 'TOTAL' => [42]], $execution->outValues());
     }
 
     /**

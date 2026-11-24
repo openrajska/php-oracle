@@ -91,6 +91,28 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
+     * Transactions 9: a row may write the first row's keys in another order
+     * and case; each value still binds to its own placeholder.
+     */
+    #[Test]
+    public function rows_bind_by_name_whatever_the_order_and_case_of_their_keys(): void
+    {
+        $connection = $this->connect();
+
+        $batch = self::many($connection, self::INSERT, [
+            ['id' => 1, 'code' => 'one', 'qty' => 10],
+            ['QTY' => 20, 'Id' => 2, 'code' => 'two'],
+            ['id' => 3, 'code' => 'three', 'qty' => 30],
+        ]);
+
+        self::assertSame(3, $batch->rowCount());
+        self::assertSame(
+            [['ID' => '1', 'CODE' => 'one', 'QTY' => '10'], ['ID' => '2', 'CODE' => 'two', 'QTY' => '20'], ['ID' => '3', 'CODE' => 'three', 'QTY' => '30']],
+            self::$observer->select('select id, code, qty from fx_batch_rows order by id'),
+        );
+    }
+
+    /**
      * Transactions 10 and Errors 12: rows 3, 5 and 7 fail (ORA-00001,
      * 01400, 02290); one BatchException lists exactly those, with row 3's
      * code, and nothing is applied: under Autocommit the valid rows are not

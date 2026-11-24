@@ -64,6 +64,36 @@ final class CallsTest extends TestCase
     }
 
     /**
+     * Calls of one shape (name and parameter names) share their validation:
+     * each still binds its own values, and a name whose text only runs into
+     * that shape's parameter names is still refused.
+     */
+    #[Test]
+    public function a_repeated_call_binds_its_own_values_and_a_colliding_name_is_still_refused(): void
+    {
+        foreach ([21 => 42, 5 => 10] as $number => $doubled) {
+            $execution = $this->connection->procedure('fx_call.echo', [
+                'p_num' => $number,
+                'o_doubled' => Number::out(),
+                'o_label' => Varchar::out(),
+                'io_text' => Varchar::inOut('hi'),
+            ]);
+            self::assertSame($doubled, $execution->out('o_doubled')->int());
+        }
+
+        try {
+            $this->connection->procedure("fx_call.echo\0p_num", [
+                'o_doubled' => Number::out(),
+                'o_label' => Varchar::out(),
+                'io_text' => Varchar::inOut('hi'),
+            ]);
+            self::fail('A name with a NUL byte ran.');
+        } catch (UsageException $e) {
+            self::assertStringStartsWith("Call name 'fx_call.echo\0p_num' is not valid", $e->getMessage());
+        }
+    }
+
+    /**
      * Seam and rows 1, the Call: a procedure gives a complete Execution,
      * with no count and no rows.
      */
