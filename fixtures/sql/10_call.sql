@@ -33,6 +33,14 @@ create or replace package fx_call as
   function f_raw(p_null in boolean default false) return raw;
   -- The ROWID of fx_items row 1.
   function f_rowid(p_null in boolean default false) return rowid;
+  -- 2026-03-01 10:00:00 (DATE), with .123456 (TIMESTAMP), with
+  -- +05:45 (TSTZ); 13:00 UTC (TSLTZ); 3 days 04:05:06.789; 2 years 5 months.
+  function f_date(p_null in boolean default false) return date;
+  function f_timestamp(p_null in boolean default false) return timestamp;
+  function f_timestamp_tz(p_null in boolean default false) return timestamp with time zone;
+  function f_timestamp_ltz(p_null in boolean default false) return timestamp with local time zone;
+  function f_interval_ds(p_null in boolean default false) return interval day to second;
+  function f_interval_ym(p_null in boolean default false) return interval year to month;
 
   -- Raises ORA-20046 'fx_call.f_fail raised'; p_value is never read.
   function f_fail(p_value in varchar2) return number;
@@ -124,6 +132,36 @@ create or replace package body fx_call as
     select rowid into l_rowid from fx_items where id = 1;
     return l_rowid;
   end f_rowid;
+
+  function f_date(p_null in boolean default false) return date is
+  begin
+    return case when p_null then null else to_date('2026-03-01 10:00:00', 'YYYY-MM-DD HH24:MI:SS') end;
+  end f_date;
+
+  function f_timestamp(p_null in boolean default false) return timestamp is
+  begin
+    return case when p_null then null else timestamp '2026-03-01 10:00:00.123456' end;
+  end f_timestamp;
+
+  function f_timestamp_tz(p_null in boolean default false) return timestamp with time zone is
+  begin
+    return case when p_null then null else timestamp '2026-03-01 10:00:00.123456 +05:45' end;
+  end f_timestamp_tz;
+
+  function f_timestamp_ltz(p_null in boolean default false) return timestamp with local time zone is
+  begin
+    return case when p_null then null else timestamp '2026-03-01 13:00:00 +00:00' end;
+  end f_timestamp_ltz;
+
+  function f_interval_ds(p_null in boolean default false) return interval day to second is
+  begin
+    return case when p_null then null else interval '3 04:05:06.789' day to second end;
+  end f_interval_ds;
+
+  function f_interval_ym(p_null in boolean default false) return interval year to month is
+  begin
+    return case when p_null then null else interval '2-5' year to month end;
+  end f_interval_ym;
 
   function f_fail(p_value in varchar2) return number is
   begin
