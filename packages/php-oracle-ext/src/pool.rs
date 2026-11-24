@@ -371,8 +371,9 @@ mod tests {
 
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicI64, Ordering};
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Barrier, Mutex, MutexGuard};
     use std::thread;
+    use std::time::{Duration, Instant};
 
     use super::{Lease, PoolKey, Registry};
 
@@ -403,8 +404,19 @@ mod tests {
         (session.session_id().unwrap(), session.serial_num().unwrap())
     }
 
-    /// Runs `check` in a forked child and tells whether it returned true.
-    /// The child leaves with `_exit`, so it never drops what it inherited.
+    /// Runs the tests one at a time. A fork copies every lock as it is: a
+    /// lock another test's thread holds at that moment (a lazy init in the
+    /// crate, say) stays held forever in the child.
+    fn one_at_a_time() -> MutexGuard<'static, ()> {
+        static TESTS: Mutex<()> = Mutex::new(());
+        TESTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Runs `check` in a forked child and tells whether it returned true
+    /// within 60 s. The child leaves with `_exit`, so it never drops what it
+    /// inherited.
     #[cfg(unix)]
     fn in_child(check: impl FnOnce() -> bool) -> bool {
         // SAFETY: the child runs only `check`, then `_exit`s.
@@ -418,10 +430,28 @@ mod tests {
                 unsafe { libc::_exit(if passed { 0 } else { 1 }) }
             }
             child => {
+                let deadline = Instant::now() + Duration::from_secs(60);
                 let mut status = 0;
-                // SAFETY: waits for the child just forked.
-                assert_eq!(unsafe { libc::waitpid(child, &mut status, 0) }, child);
-                libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0
+                loop {
+                    // SAFETY: polls the child just forked.
+                    match unsafe { libc::waitpid(child, &mut status, libc::WNOHANG) } {
+                        0 if Instant::now() < deadline => {
+                            thread::sleep(Duration::from_millis(20));
+                        }
+                        0 => {
+                            // SAFETY: kills and reaps the child just forked.
+                            unsafe {
+                                libc::kill(child, libc::SIGKILL);
+                                libc::waitpid(child, &mut status, 0);
+                            }
+                            panic!("the forked child did not finish within 60 s");
+                        }
+                        pid => {
+                            assert_eq!(pid, child);
+                            return libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0;
+                        }
+                    }
+                }
             }
         }
     }
@@ -438,6 +468,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_forked_child_forgets_the_inherited_pool_and_creates_its_own() {
+        let _one = one_at_a_time();
         let registry = Registry::default();
         let key = key();
         let inherited = registry.pool(&key).unwrap();
@@ -466,6 +497,7 @@ mod tests {
     /// under concurrent load to one Session per thread.
     #[test]
     fn threads_share_one_pool_and_never_a_session() {
+        let _one = one_at_a_time();
         const THREADS: usize = 4;
         let registry = Registry::default();
         let key = key();
@@ -499,6 +531,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn shutdown_closes_every_pool_and_joins_its_manager_thread() {
+        let _one = one_at_a_time();
         assert!(in_child(|| {
             let registry = Registry::default();
             let before = threads();
@@ -518,6 +551,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn a_pool_that_cannot_close_is_logged_and_leaked() {
+        let _one = one_at_a_time();
         assert!(in_child(|| {
             let registry = Registry::default();
             let before = threads();
