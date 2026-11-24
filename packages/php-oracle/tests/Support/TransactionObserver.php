@@ -8,7 +8,9 @@ namespace Rajska\Oracle\Tests\Support;
  * Watches fx_tx_rows (fixtures/sql/11_transaction.sql) from an
  * IndependentSession of its own, as another Connection would: it sees
  * committed rows only, and finds a row locked when a transaction holds it.
- * One per test, so a test opens one extra Session, not one per look.
+ * One per test class, emptying fx_tx_rows before each test: a logon per look,
+ * or even per test, adds to the listener's load, which refuses logons with
+ * ORA-12516 when it runs high.
  */
 final class TransactionObserver
 {
@@ -99,7 +101,10 @@ final class TransactionObserver
         }
     }
 
-    private function clear(): void
+    /**
+     * Empties fx_tx_rows.
+     */
+    public function clear(): void
     {
         $this->execute('delete from fx_tx_rows');
     }

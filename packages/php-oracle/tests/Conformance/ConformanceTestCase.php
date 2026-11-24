@@ -27,12 +27,25 @@ abstract class ConformanceTestCase extends TestCase
 
     private static int $pools = 0;
 
+    /**
+     * The Session kill() and locked() look from, opened on first use and
+     * shared by the test class: a logon per look adds to the listener's
+     * load, which refuses logons with ORA-12516 when it runs high.
+     */
+    private static ?IndependentSession $observer = null;
+
     protected function tearDown(): void
     {
         foreach ($this->connections as $connection) {
             $connection->close();
         }
         $this->connections = [];
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        self::$observer?->close();
+        self::$observer = null;
     }
 
     protected function driver(): Driver
@@ -148,13 +161,9 @@ abstract class ConformanceTestCase extends TestCase
     protected static function kill(DriverConnection $connection, bool $immediate = true): void
     {
         $sid = self::sid($connection);
-        $observer = IndependentSession::open();
-        try {
-            $serial = $observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
-            $observer->execute("alter system kill session '$sid,$serial'" . ($immediate ? ' immediate' : ''));
-        } finally {
-            $observer->close();
-        }
+        $observer = self::observer();
+        $serial = $observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
+        $observer->execute("alter system kill session '$sid,$serial'" . ($immediate ? ' immediate' : ''));
     }
 
     /**
@@ -163,7 +172,7 @@ abstract class ConformanceTestCase extends TestCase
      */
     protected static function locked(int $item): bool
     {
-        $observer = IndependentSession::open();
+        $observer = self::observer();
         try {
             $observer->select('select id from fx_items where id = :id for update nowait', ['id' => $item]);
 
@@ -174,7 +183,11 @@ abstract class ConformanceTestCase extends TestCase
             return true;
         } finally {
             $observer->rollback();
-            $observer->close();
         }
+    }
+
+    private static function observer(): IndependentSession
+    {
+        return self::$observer ??= IndependentSession::open();
     }
 }

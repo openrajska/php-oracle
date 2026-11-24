@@ -25,18 +25,36 @@ final class TransactionsTest extends TestCase
 {
     private Connection $connection;
 
-    private TransactionObserver $observer;
+    /**
+     * One observer and one Round trip counter serve the whole file: a logon
+     * per test adds to the listener's load, which refuses logons with
+     * ORA-12516 when it runs high.
+     */
+    private static TransactionObserver $observer;
+
+    private static RoundTripCounter $counter;
+
+    public static function setUpBeforeClass(): void
+    {
+        self::$observer = TransactionObserver::open();
+        self::$counter = RoundTripCounter::open();
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        self::$counter->close();
+        self::$observer->close();
+    }
 
     protected function setUp(): void
     {
-        $this->observer = TransactionObserver::open();
+        self::$observer->clear();
         $this->connection = self::connect();
     }
 
     protected function tearDown(): void
     {
         $this->connection->close();
-        $this->observer->close();
     }
 
     /**
@@ -47,11 +65,11 @@ final class TransactionsTest extends TestCase
     {
         $this->connection->begin();
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
 
         $this->connection->commit();
 
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
     }
 
     /**
@@ -69,7 +87,7 @@ final class TransactionsTest extends TestCase
 
         $this->connection->run('insert into fx_tx_rows (id) values (3)');
 
-        self::assertSame([3], $this->observer->committed());
+        self::assertSame([3], self::$observer->committed());
     }
 
     /**
@@ -84,7 +102,7 @@ final class TransactionsTest extends TestCase
 
         $this->connection->run('insert into fx_tx_rows (id) values (2)');
 
-        self::assertSame([1, 2], $this->observer->committed());
+        self::assertSame([1, 2], self::$observer->committed());
     }
 
     /**
@@ -95,16 +113,16 @@ final class TransactionsTest extends TestCase
     public function under_autocommit_every_verb_commits_at_once(): void
     {
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
 
         $this->connection->procedure('fx_tx.add_row', ['p_id' => 2]);
-        self::assertSame([1, 2], $this->observer->committed());
+        self::assertSame([1, 2], self::$observer->committed());
 
         self::assertSame(3, $this->connection->function('fx_tx.add_row_count', ['p_id' => 3])->number());
-        self::assertSame([1, 2, 3], $this->observer->committed());
+        self::assertSame([1, 2, 3], self::$observer->committed());
 
         $this->connection->run('begin fx_tx.add_row(4); end;');
-        self::assertSame([1, 2, 3, 4], $this->observer->committed());
+        self::assertSame([1, 2, 3, 4], self::$observer->committed());
     }
 
     /**
@@ -118,7 +136,7 @@ final class TransactionsTest extends TestCase
 
         self::assertSame(1, $this->connection->select('select id from fx_tx_rows where id = 1 for update')->value());
 
-        self::assertFalse($this->observer->locked(1));
+        self::assertFalse(self::$observer->locked(1));
     }
 
     /**
@@ -137,11 +155,11 @@ final class TransactionsTest extends TestCase
         $this->connection->run('begin fx_tx.add_row(4); end;');
         self::assertSame(5, $this->connection->select('select id from fx_tx_rows where id = 5 for update')->value());
 
-        self::assertSame([5], $this->observer->committed());
-        self::assertTrue($this->observer->locked(5));
+        self::assertSame([5], self::$observer->committed());
+        self::assertTrue(self::$observer->locked(5));
         $this->connection->rollback();
-        self::assertFalse($this->observer->locked(5));
-        self::assertSame([5], $this->observer->committed());
+        self::assertFalse(self::$observer->locked(5));
+        self::assertSame([5], self::$observer->committed());
     }
 
     /**
@@ -152,19 +170,14 @@ final class TransactionsTest extends TestCase
     public function begin_costs_no_round_trip_and_commit_and_rollback_one_each(): void
     {
         $sid = self::sid($this->connection);
-        $counter = RoundTripCounter::open();
 
-        try {
-            self::assertSame(0, $counter->during($sid, $this->connection->begin(...)));
-            $this->connection->run('insert into fx_tx_rows (id) values (1)');
-            self::assertSame(1, $counter->during($sid, $this->connection->commit(...)));
-            $this->connection->begin();
-            $this->connection->run('insert into fx_tx_rows (id) values (2)');
-            self::assertSame(1, $counter->during($sid, $this->connection->rollback(...)));
-        } finally {
-            $counter->close();
-        }
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame(0, self::$counter->during($sid, $this->connection->begin(...)));
+        $this->connection->run('insert into fx_tx_rows (id) values (1)');
+        self::assertSame(1, self::$counter->during($sid, $this->connection->commit(...)));
+        $this->connection->begin();
+        $this->connection->run('insert into fx_tx_rows (id) values (2)');
+        self::assertSame(1, self::$counter->during($sid, $this->connection->rollback(...)));
+        self::assertSame([1], self::$observer->committed());
     }
 
     /**
@@ -228,20 +241,15 @@ final class TransactionsTest extends TestCase
     public function misusing_a_transaction_verb_throws_usage_exception_before_any_round_trip(\Closure $misuse, string $message, int $trips = 0): void
     {
         $sid = self::sid($this->connection);
-        $counter = RoundTripCounter::open();
 
-        try {
-            $thrown = null;
-            $made = $counter->during($sid, function () use ($misuse, &$thrown): void {
-                try {
-                    $misuse($this->connection);
-                } catch (\Throwable $e) {
-                    $thrown = $e;
-                }
-            });
-        } finally {
-            $counter->close();
-        }
+        $thrown = null;
+        $made = self::$counter->during($sid, function () use ($misuse, &$thrown): void {
+            try {
+                $misuse($this->connection);
+            } catch (\Throwable $e) {
+                $thrown = $e;
+            }
+        });
 
         self::assertInstanceOf(UsageException::class, $thrown);
         self::assertStringContainsString($message, $thrown->getMessage());
@@ -263,7 +271,7 @@ final class TransactionsTest extends TestCase
         } catch (UsageException) {
         }
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
 
         $this->connection->begin();
         try {
@@ -271,9 +279,9 @@ final class TransactionsTest extends TestCase
         } catch (UsageException) {
         }
         $this->connection->run('insert into fx_tx_rows (id) values (2)');
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
         $this->connection->commit();
-        self::assertSame([1, 2], $this->observer->committed());
+        self::assertSame([1, 2], self::$observer->committed());
     }
 
     /**
@@ -288,15 +296,15 @@ final class TransactionsTest extends TestCase
             self::assertSame($this->connection, $connection);
             $connection->run('insert into fx_tx_rows (id) values (1)');
             $connection->procedure('fx_tx.add_row', ['p_id' => 2]);
-            self::assertSame([], $this->observer->committed());
+            self::assertSame([], self::$observer->committed());
 
             return 'done';
         });
 
         self::assertSame('done', $result);
-        self::assertSame([1, 2], $this->observer->committed());
+        self::assertSame([1, 2], self::$observer->committed());
         $this->connection->run('insert into fx_tx_rows (id) values (3)');
-        self::assertSame([1, 2, 3], $this->observer->committed());
+        self::assertSame([1, 2, 3], self::$observer->committed());
     }
 
     /**
@@ -324,7 +332,7 @@ final class TransactionsTest extends TestCase
 
         self::assertSame(0, $this->connection->select('select count(*) from fx_tx_rows')->value());
         $this->connection->run('insert into fx_tx_rows (id) values (2)');
-        self::assertSame([2], $this->observer->committed());
+        self::assertSame([2], self::$observer->committed());
     }
 
     /**
@@ -381,7 +389,7 @@ final class TransactionsTest extends TestCase
         self::assertSame($thrown, $caught);
         self::assertInstanceOf(ConnectionLostException::class, $thrown->getPrevious());
 
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
     }
 
     /**
@@ -407,7 +415,7 @@ final class TransactionsTest extends TestCase
 
         self::assertSame($thrown, $caught);
         self::assertNull($thrown->getPrevious());
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
     }
 
     /**
@@ -428,9 +436,9 @@ final class TransactionsTest extends TestCase
             self::assertSame(2091, $e->getCode());
         }
 
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
         $this->connection->run('insert into fx_tx_rows (id) values (3)');
-        self::assertSame([3], $this->observer->committed());
+        self::assertSame([3], self::$observer->committed());
     }
 
     /**
@@ -449,9 +457,9 @@ final class TransactionsTest extends TestCase
             self::assertSame(2091, $e->getCode());
         }
 
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
         $this->connection->run('insert into fx_tx_rows (id) values (3)');
-        self::assertSame([3], $this->observer->committed());
+        self::assertSame([3], self::$observer->committed());
     }
 
     /**
@@ -467,11 +475,11 @@ final class TransactionsTest extends TestCase
         $this->connection->run('insert into fx_tx_rows (id) values (2)');
         $this->connection->run('rollback to savepoint before_two');
         $this->connection->run('insert into fx_tx_rows (id) values (3)');
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
 
         $this->connection->commit();
 
-        self::assertSame([1, 3], $this->observer->committed());
+        self::assertSame([1, 3], self::$observer->committed());
     }
 
     /**
@@ -487,19 +495,19 @@ final class TransactionsTest extends TestCase
         $destroyed->begin();
         $destroyed->run("update fx_tx_rows set note = 'destroyed' where id = 1");
         $destroyed->run('insert into fx_tx_rows (id) values (2)');
-        self::assertTrue($this->observer->locked(1));
+        self::assertTrue(self::$observer->locked(1));
         unset($destroyed);
 
-        self::assertFalse($this->observer->locked(1));
-        self::assertSame([['ID' => '1', 'NOTE' => 'committed']], $this->observer->select('select id, note from fx_tx_rows'));
+        self::assertFalse(self::$observer->locked(1));
+        self::assertSame([['ID' => '1', 'NOTE' => 'committed']], self::$observer->select('select id, note from fx_tx_rows'));
 
         $closed = self::connect();
         $closed->begin();
         $closed->run("update fx_tx_rows set note = 'closed' where id = 1");
         $closed->close();
 
-        self::assertFalse($this->observer->locked(1));
-        self::assertSame([['ID' => '1', 'NOTE' => 'committed']], $this->observer->select('select id, note from fx_tx_rows'));
+        self::assertFalse(self::$observer->locked(1));
+        self::assertSame([['ID' => '1', 'NOTE' => 'committed']], self::$observer->select('select id, note from fx_tx_rows'));
     }
 
     /**
@@ -528,8 +536,8 @@ final class TransactionsTest extends TestCase
     private function kill(Connection $connection): void
     {
         $sid = self::sid($connection);
-        $serial = $this->observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
-        $this->observer->execute("alter system kill session '$sid,$serial' immediate");
+        $serial = self::$observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
+        self::$observer->execute("alter system kill session '$sid,$serial' immediate");
     }
 
     private static function sid(Connection $connection): int
