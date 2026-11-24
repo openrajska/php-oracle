@@ -55,8 +55,8 @@ final class SeamAndRowsTest extends ConformanceTestCase
     }
 
     /**
-     * Seam and rows 1 (Calls come with `procedure()`): every statement kind
-     * returns a complete Execution; the count is the DML count, else 0.
+     * Seam and rows 1: every statement kind returns a complete Execution; the
+     * count is the DML count, else 0. Calls are Core's (Api\CallsTest).
      */
     #[Test]
     public function every_statement_kind_returns_a_complete_execution(): void
@@ -259,6 +259,38 @@ final class SeamAndRowsTest extends ConformanceTestCase
         self::assertSame('bfile', $cursor->columns()[0]['type']);
         $this->expectException(UnsupportedException::class);
         $cursor->fetchBatch();
+    }
+
+    /**
+     * Seam and rows 12, for query Cursors: a Cursor of a closed Connection
+     * fails as use after close, and the Session's next owner reads normally.
+     */
+    #[Test]
+    public function after_close_the_connections_cursors_fail_as_use_after_close_and_the_next_owner_is_unaffected(): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1];
+        $connection = $this->connect(...$fields);
+        $session = self::session($connection);
+        $sql = 'select level as n from dual connect by level <= 3';
+        $cursor = $connection->execute($sql, [], self::options(fetchSize: 1))->cursor();
+        self::assertNotNull($cursor);
+        self::assertSame([['N' => 1]], $cursor->fetchBatch());
+
+        $connection->close();
+
+        foreach (['fetchBatch()' => static fn () => $cursor->fetchBatch(), 'columns()' => static fn () => $cursor->columns()] as $call => $read) {
+            try {
+                $read();
+                self::fail("$call after close() succeeded.");
+            } catch (UsageException $e) {
+                self::assertSame('The Connection is closed.', $e->getMessage(), $call);
+            }
+        }
+        $cursor->close();
+
+        $next = $this->connect(...$fields);
+        self::assertSame($session, self::session($next));
+        self::assertSame([['N' => 1], ['N' => 2], ['N' => 3]], self::rows($next, $sql, [], self::options(fetchSize: 1)));
     }
 
     /**

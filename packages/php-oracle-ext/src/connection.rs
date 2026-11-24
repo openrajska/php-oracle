@@ -2,7 +2,8 @@
 //! process's Pool for its key (or a Standalone one), and the statements run
 //! on it (spec #32 §14).
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::exception::PhpResult;
@@ -12,10 +13,10 @@ use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 
 use crate::bind::Binds;
 use crate::cursor::NativeCursor;
-use crate::error::{Error, run};
+use crate::error::{Error, run, run_seeing};
 use crate::input::Fields;
 use crate::options::Options;
-use crate::pool::{self, Lease, PoolKey};
+use crate::pool::{self, Lease, PoolKey, lock};
 
 /// The keys of `$pool`: the Pool-key fields of `ConnectionConfig`.
 const POOL_KEYS: &[&str] = &[
@@ -36,34 +37,148 @@ const POOL_KEYS: &[&str] = &[
 const SESSION_KEYS: &[&str] = &["tracing", "callTimeout"];
 const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientInfo"];
 
-/// What a Connection and its Cursors share: the Session, on loan until the
-/// Connection is closed or the last of them goes.
+/// SQL starting with this runs into a panic, in debug builds only: the
+/// test-only hook for Errors 15 (spec #32 §12, Panics).
+#[cfg(debug_assertions)]
+const PANIC_HOOK: &str = "/* rajska_oracle: panic */";
+
+/// Where a native cursor lives: shared by its `Cursor` object and, weakly,
+/// by its Connection, which empties it on Release.
+pub type CursorSlot = Mutex<Option<oracledb::Cursor>>;
+
+/// What a Connection and its Cursors share: the Session, on loan until
+/// Release (`close()`, or the last of them going).
 pub struct ConnState {
-    session: Mutex<Option<Lease>>,
+    inner: Mutex<Inner>,
+    /// Every native cursor opened on this Connection and still alive. A
+    /// lock of its own: a cursor registers while the Session is in use.
+    cursors: Mutex<Vec<Weak<CursorSlot>>>,
+}
+
+struct Inner {
+    /// `None` once released.
+    lease: Option<Lease>,
+    /// Set by the first error that lost the Session, for good.
+    broken: Option<Broken>,
+}
+
+/// The error that made the Connection Broken.
+struct Broken {
+    code: i32,
+    message: String,
 }
 
 impl ConnState {
-    fn session(&self) -> MutexGuard<'_, Option<Lease>> {
-        // A panic while holding the lock leaves the Session as it was.
-        self.session
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    fn new(lease: Lease) -> Self {
+        Self {
+            inner: Mutex::new(Inner {
+                lease: Some(lease),
+                broken: None,
+            }),
+            cursors: Mutex::new(Vec::new()),
+        }
     }
 
-    /// Fails if the Connection is closed.
-    pub fn ensure_open(&self) -> Result<(), Error> {
-        self.with(|_| Ok(()))
+    fn inner(&self) -> MutexGuard<'_, Inner> {
+        // A panic while holding the lock leaves the state as it was; the
+        // panic itself makes the Connection Broken.
+        lock(&self.inner)
     }
 
-    /// Runs `f` on the Session, or fails if the Connection is closed.
+    /// The Session, or why this Connection cannot be used: released
+    /// (`usage`), then Broken (`connection_lost`).
+    fn lease(inner: &Inner) -> Result<&Lease, Error> {
+        let lease = inner
+            .lease
+            .as_ref()
+            .ok_or_else(|| Error::usage("The Connection is closed."))?;
+        match &inner.broken {
+            Some(broken) => Err(Error::broken(broken.code, &broken.message)),
+            None => Ok(lease),
+        }
+    }
+
+    /// Fails if the Connection is released or Broken.
+    pub fn ensure_usable(&self) -> Result<(), Error> {
+        Self::lease(&self.inner()).map(|_| ())
+    }
+
+    /// Runs `f` on the Session, or fails if the Connection is released or
+    /// Broken.
     fn with<T>(
         &self,
         f: impl FnOnce(&oracledb::Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        match self.session().as_ref() {
-            Some(lease) => f(lease.session()),
-            None => Err(Error::usage("The Connection is closed.")),
+        let inner = self.inner();
+        f(Self::lease(&inner)?.session())
+    }
+
+    /// Registers a native cursor of this Connection, so Release can drop it.
+    pub fn register(&self, cursor: oracledb::Cursor) -> Arc<CursorSlot> {
+        let slot = Arc::new(Mutex::new(Some(cursor)));
+        let mut cursors = lock(&self.cursors);
+        cursors.retain(|cursor| cursor.strong_count() > 0);
+        cursors.push(Arc::downgrade(&slot));
+        slot
+    }
+
+    /// Runs a native method body of this Connection or of one of its
+    /// Cursors (see [`run`]). An error that lost the Session, or a panic,
+    /// makes the Connection Broken.
+    pub fn run<T>(&self, body: impl FnOnce() -> Result<T, Error>) -> PhpResult<T> {
+        run_seeing(body, |e| {
+            if e.is_connection_lost() {
+                self.inner().broken.get_or_insert_with(|| Broken {
+                    code: e.code(),
+                    message: e.message().to_string(),
+                });
+            }
+        })
+    }
+
+    /// Release (spec #32 §11), once; it never fails and never commits:
+    /// 1. drops every native cursor, so their closes queue on the Session;
+    /// 2. rolls back (C14: here, outside the Pool's mutex), carrying those
+    ///    closes;
+    /// 3. returns the Session to the Pool (or logs it off), or discards it
+    ///    if the Connection is Broken or the rollback failed.
+    ///
+    /// A panic in it is swallowed: Release runs in `close()` and in PHP's
+    /// free handler, and neither may throw.
+    fn release(&self) {
+        let _ = catch_unwind(AssertUnwindSafe(|| self.end_loan()));
+    }
+
+    fn end_loan(&self) {
+        let (lease, broken) = {
+            let mut inner = self.inner();
+            let Some(lease) = inner.lease.take() else {
+                return;
+            };
+            (lease, inner.broken.is_some())
+        };
+        let cursors = std::mem::take(&mut *lock(&self.cursors));
+        for cursor in cursors.iter().filter_map(Weak::upgrade) {
+            // The crate's statement drop panics on a poisoned lock: that
+            // must not stop the Release.
+            let _ = catch_unwind(AssertUnwindSafe(|| lock(&cursor).take()));
         }
+        // A Broken Session is rolled back too: on a lost transport the
+        // attempt closes it, which lets the Pool drop it.
+        let rolled_back = lease.session().rollback().is_ok();
+        if broken || !rolled_back {
+            lease.discard();
+        } else {
+            drop(lease);
+        }
+    }
+}
+
+impl Drop for ConnState {
+    /// The last native reference is gone (the Connection and all its
+    /// Cursors): Release, in the native free path.
+    fn drop(&mut self) {
+        self.release();
     }
 }
 
@@ -125,9 +240,7 @@ impl NativeConnection {
         run(|| {
             let session = pool::acquire(&read_pool(pool, session)?)?;
             Ok(Self {
-                state: Arc::new(ConnState {
-                    session: Mutex::new(Some(session)),
-                }),
+                state: Arc::new(ConnState::new(session)),
             })
         })
     }
@@ -142,10 +255,14 @@ impl NativeConnection {
         binds: &ZendHashTable,
         options: &ZendHashTable,
     ) -> PhpResult<ZBox<ZendHashTable>> {
-        run(|| {
+        self.state.run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
             let (row_count, cursor, warning, out_values) = self.state.with(|session| {
+                #[cfg(debug_assertions)]
+                if sql.starts_with(PANIC_HOOK) {
+                    panic!("injected through the test hook");
+                }
                 // The crate keeps the Session's last warning for the
                 // Session's whole life, across pooled Connections, so a
                 // warning belongs to this execute only if it changed during
@@ -227,7 +344,8 @@ impl NativeConnection {
         options: &ZendHashTable,
     ) -> PhpResult<ZBox<ZendHashTable>> {
         let _ = (sql, rows, options);
-        run(|| {
+        self.state.run(|| {
+            self.state.ensure_usable()?;
             Err(Error::unsupported(
                 "Connection::executeMany() is not implemented yet.",
             ))
@@ -235,18 +353,21 @@ impl NativeConnection {
     }
 
     pub fn commit(&self) -> PhpResult<()> {
-        run(|| self.state.with(|session| Ok(session.commit()?)))
+        self.state
+            .run(|| self.state.with(|session| Ok(session.commit()?)))
     }
 
     pub fn rollback(&self) -> PhpResult<()> {
-        run(|| self.state.with(|session| Ok(session.rollback()?)))
+        self.state
+            .run(|| self.state.with(|session| Ok(session.rollback()?)))
     }
 
     /// Replaces the whole tracing set (`module`, `action`,
     /// `clientIdentifier`, `clientInfo`), with no Round trip.
     pub fn trace(&self, tracing: &ZendHashTable) -> PhpResult<()> {
         let _ = tracing;
-        run(|| {
+        self.state.run(|| {
+            self.state.ensure_usable()?;
             Err(Error::unsupported(
                 "Connection::trace() is not implemented yet.",
             ))
@@ -255,16 +376,18 @@ impl NativeConnection {
 
     /// The Server version from the connect handshake: five parts.
     pub fn server_version(&self) -> PhpResult<String> {
-        run(|| {
+        self.state.run(|| {
             self.state
                 .with(|session| Ok(session.version()?.to_string()))
         })
     }
 
-    /// Ends the loan of the Session. Idempotent.
+    /// Release, now: the Connection's Cursors stop working, the transaction
+    /// rolls back, and the Session goes back to its Pool (or is discarded,
+    /// if Broken). Idempotent; never throws for a failed rollback.
     pub fn close(&self) -> PhpResult<()> {
         run(|| {
-            self.state.session().take();
+            self.state.release();
             Ok(())
         })
     }
