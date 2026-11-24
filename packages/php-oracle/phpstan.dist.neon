@@ -3,6 +3,7 @@ parameters:
     paths:
         - src
         - tests
+        - bench/src
     excludePaths:
         # Raises PHP issues on purpose (see SuiteRulesTest).
         - tests/Harness/Probes

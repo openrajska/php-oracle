@@ -18,6 +18,7 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "Rajska\\Oracle\\Bench\\": "bench/src/",
             "Rajska\\Oracle\\Tests\\": "tests/"
         }
     },

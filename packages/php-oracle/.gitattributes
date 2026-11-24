@@ -5,3 +5,4 @@
 /phpstan.dist.neon export-ignore
 /phpunit.xml.dist export-ignore
 /stubs export-ignore
+/bench export-ignore
