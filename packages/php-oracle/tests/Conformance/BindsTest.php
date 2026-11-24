@@ -15,6 +15,13 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
 /**
  * Conformance catalog, Binds (#22): plain PHP values, named only.
+ *
+ * The Connections run without a Statement cache: these tests bind one SQL
+ * text with values of different types, and a pooled Session reused from an
+ * earlier test could serve a cached statement described for other bind
+ * types (on one Session, `select :v from dual` bound 'x' and then 2
+ * returns '2'). That is a bug of the crate's Statement cache, found with
+ * #39, not what these tests cover.
  */
 final class BindsTest extends ConformanceTestCase
 {
@@ -51,7 +58,7 @@ final class BindsTest extends ConformanceTestCase
     #[DataProvider('inferred')]
     public function a_plain_value_binds_as_its_inferred_type(mixed $value, string $dump, mixed $readBack): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
 
         self::assertSame($dump, self::value($connection, 'select dump(:v) from dual', ['v' => $value]));
         self::assertSame($readBack, self::value($connection, 'select :v from dual', ['v' => $value]));
@@ -63,7 +70,7 @@ final class BindsTest extends ConformanceTestCase
     #[Test]
     public function a_bool_binds_as_boolean(): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
 
         self::assertSame('Typ=252 Len=4: 1,0,0,0', self::value($connection, 'select dump(:v) from dual', ['v' => true]));
         self::assertSame('Typ=252 Len=4: 0,0,0,0', self::value($connection, 'select dump(:v) from dual', ['v' => false]));
@@ -77,7 +84,7 @@ final class BindsTest extends ConformanceTestCase
     #[Test]
     public function null_binds_as_null(): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
 
         self::assertSame('NULL', self::value($connection, 'select dump(:v) from dual', ['v' => null]));
         self::assertNull(self::value($connection, 'select :v from dual', ['v' => null]));
@@ -90,7 +97,7 @@ final class BindsTest extends ConformanceTestCase
     #[Test]
     public function the_float_0_1_stores_exactly_0_1(): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
 
         // Bound as BINARY_DOUBLE (C4), 0.1 would become
         // 0.1000000000000000055511151231257827 once cast to NUMBER.
@@ -109,7 +116,7 @@ final class BindsTest extends ConformanceTestCase
     #[Test]
     public function floats_bind_exactly_across_number_range(): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
 
         foreach (['1e-130' => 1e-130, '-1.5e-7' => -1.5e-7, '1e30' => 1e30, '9.99e125' => 9.99e125, '0.30000000000000004' => 0.1 + 0.2] as $literal => $float) {
             self::assertSame(1, self::value(
@@ -170,7 +177,7 @@ final class BindsTest extends ConformanceTestCase
     #[DataProvider('mistakes')]
     public function a_bind_mistake_fails_before_any_round_trip_naming_the_fix(array $binds, string $sql, string $fix): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
         $sid = self::sid($connection);
         $counter = RoundTripCounter::open();
 
@@ -199,7 +206,7 @@ final class BindsTest extends ConformanceTestCase
     #[Test]
     public function an_exception_from_to_string_reaches_the_caller(): void
     {
-        $connection = $this->connect();
+        $connection = $this->connect(statementCacheSize: 0);
         $thrown = new \DomainException('from __toString');
 
         try {
