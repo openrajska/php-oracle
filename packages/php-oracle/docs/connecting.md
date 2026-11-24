@@ -38,6 +38,28 @@ I/O:
   `walletLocation`), `TRANSPORT_CONNECT_TIMEOUT` (use `connectTimeout`),
   `SSL_SERVER_DN_MATCH`, `SSL_SERVER_CERT_DN` and `POOL_PURITY` (remove them).
 
+### Packet size (SDU)
+
+A Session exchanges data with the server in packets of the Session Data
+Unit, Oracle Net's 8 KiB by default (as in Oracle's own clients). A larger
+SDU means fewer packets for large values: set `(SDU=65535)` in the
+`DESCRIPTION` of the descriptor or the `tnsnames.ora` entry.
+
+```php no-run
+$connection = Oracle::connect(new ConnectionConfig(
+    dsn: '(DESCRIPTION=(SDU=65535)(ADDRESS=(PROTOCOL=TCP)(HOST=db.example.com)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=FREEPDB1)))',
+    user: 'shop',
+    password: $password,
+));
+```
+
+It pays off for large LOBs: in Core's benchmark, reading a 16 MiB BLOB took
+about 22% less time (12.0 ms down to 9.3 ms). A fetch of 10,000 ordinary
+rows did not change measurably, even with a `fetchSize` of 1000. It costs
+memory: each Session keeps buffers of up to about 2 × SDU (128 KiB at
+65535, 16 KiB by default). The server negotiates the SDU down to its own
+setting (`DEFAULT_SDU_SIZE` in its `sqlnet.ora`) when that is smaller.
+
 ## TLS and mTLS
 
 Use `tcps://` (or `PROTOCOL=TCPS`). The server certificate is checked against

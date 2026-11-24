@@ -112,6 +112,10 @@ server error, unless this page says otherwise.
   column is executed twice (one extra Round trip): mind functions with side
   effects in such a query.
 - A `Lob` reads in one pass: once read, `contents()` gives `''`.
+- A large LOB reads slower than with oci8: a 16 MiB BLOB takes about twice
+  oci8's time (0.5×), far from the goal of being 2× faster.
+  `(SDU=65535)` in the `dsn` brings it to about 0.65×
+  ([Packet size](connecting.md#packet-size-sdu)).
 
 ## JSON and VECTOR
 

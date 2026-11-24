@@ -105,6 +105,10 @@ $text = $body->contents();
 
 - `stream()` returns a read-only stream resource, for large values in
   constant memory: `stream_copy_to_stream($lob->stream(), $output)`.
+- A large LOB is read 1 MiB per Round trip, and each Round trip's data
+  arrives in packets of the Session Data Unit, 8 KiB by default.
+  `(SDU=65535)` in the `dsn` reads a 16 MiB BLOB about 22% faster, at more
+  memory per Session ([Packet size](connecting.md#packet-size-sdu)).
 - A `Lob` reads in one pass: after `contents()` or `stream()` consumed it,
   the next read gives `''`.
 - It is valid only while its Connection keeps its Session. After the Release,
