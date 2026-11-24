@@ -8,8 +8,6 @@ server error, unless this page says otherwise.
 
 These are being fixed in the oracledb fork for v1; until then:
 
-- After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
-  read in any Session (`UnsupportedException`).
 - `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
   `UnsupportedException`; write the statement inside a PL/SQL block instead.
 - `LobMode::Inline` costs one extra Round trip per non-empty LOB.
@@ -131,8 +129,12 @@ These are being fixed in the oracledb fork for v1; until then:
 
 ## Objects, Collections and Associative arrays
 
-- An Object type's description is cached per Session and never refreshed:
-  a Session keeps the shape it first saw until it ends.
+- An Object type's description is cached per Session and never refreshed.
+  After `ALTER TYPE`, a Session that described the type before the change
+  fails to read or bind its values until the Session ends, also for the
+  next users of a pooled Session: `QueryException`, or `UsageException` for
+  an attribute it does not know. Sessions opened after the change read and
+  bind the new shape.
 - Nested tables and VARRAYs are both `Collection`, and the client never
   checks a VARRAY's limit.
 - Types reached through a public synonym do not resolve: write the owner,
