@@ -10,11 +10,13 @@ use ext_php_rs::exception::PhpResult;
 use ext_php_rs::flags::ClassFlags;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
+use oracledb::DbObjectType;
 
 use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, run, run_seeing};
 use crate::input::Fields;
+use crate::object::{self, Path};
 use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey, lock};
 
@@ -97,6 +99,14 @@ impl ConnState {
             Some(broken) => Err(Error::broken(broken.code, &broken.message)),
             None => Ok(lease),
         }
+    }
+
+    /// Describes an Object or Collection type on the Session, which keeps
+    /// the description (see [`object::describe`]).
+    pub fn describe(&self, what: &Path<'_>, lookup: &str) -> Result<Arc<DbObjectType>, Error> {
+        let inner = self.inner();
+        let lease = Self::lease(&inner)?;
+        object::describe(lease.session(), lease.notes(), what, lookup)
     }
 
     /// Fails if the Connection is released or Broken.
@@ -269,7 +279,9 @@ impl NativeConnection {
     ) -> PhpResult<ZBox<ZendHashTable>> {
         self.state.run(|| {
             let options = Options::read(options)?;
-            let binds = Binds::read(binds)?;
+            // Types are described here, outside the Session's lock: reading
+            // the binds may run PHP code.
+            let binds = Binds::read(binds, &|what, lookup| self.state.describe(what, lookup))?;
             let mut implicit = Vec::new();
             let (row_count, cursor, warning, out_values) = self.state.with(|session| {
                 #[cfg(debug_assertions)]
@@ -297,6 +309,7 @@ impl NativeConnection {
                     .build()?;
                 // Building parses the SQL on the client: no Round trip yet.
                 let matched = binds.matched(statement.bind_names())?;
+                binds.refuse_returned_objects(statement.is_plsql())?;
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
                 let (row_count, cursor, out_values) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;

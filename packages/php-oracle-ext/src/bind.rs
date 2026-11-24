@@ -30,6 +30,7 @@ use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::connection::ConnState;
 use crate::error::Error;
+use crate::object::Describe;
 use crate::options::Options;
 use crate::temporal::Temporal;
 use crate::typed::{self, Typed};
@@ -82,8 +83,9 @@ impl Value {
 pub struct Binds(Vec<(String, Value)>);
 
 impl Binds {
-    /// Reads every bind: its name, then its value by inference.
-    pub fn read(binds: &ZendHashTable) -> Result<Self, Error> {
+    /// Reads every bind: its name, then its value by inference. `describe`
+    /// describes the type an Object or Collection bind names.
+    pub fn read(binds: &ZendHashTable, describe: &Describe<'_>) -> Result<Self, Error> {
         let mut values = Vec::with_capacity(binds.len());
         let mut seen: HashMap<String, String> = HashMap::with_capacity(binds.len());
         for (key, zval) in binds {
@@ -93,7 +95,7 @@ impl Binds {
                     "Binds '{other}' and '{name}' differ only in case; placeholder names are case-insensitive, so keep one of them."
                 )));
             }
-            let value = infer(&name, zval)?;
+            let value = infer(&name, zval, describe)?;
             values.push((name, value));
         }
         Ok(Self(values))
@@ -128,6 +130,25 @@ impl Binds {
             }
         }
         Ok(params)
+    }
+
+    /// Fails, before any Round trip, for an Object or Collection OUT bind of
+    /// a SQL statement (`RETURNING … INTO`): the crate cannot read one back
+    /// (it panics), so that is later.
+    pub fn refuse_returned_objects(&self, is_plsql: bool) -> Result<(), Error> {
+        if is_plsql {
+            return Ok(());
+        }
+        match self
+            .0
+            .iter()
+            .find(|(_, value)| matches!(value, Value::Typed(t) if t.is_out() && t.is_object()))
+        {
+            Some((name, _)) => Err(Error::unsupported(format!(
+                "Bind '{name}': RETURNING … INTO an Object or Collection is not supported yet; select it after the statement instead."
+            ))),
+            None => Ok(()),
+        }
     }
 
     /// The OUT and IN OUT values, keyed by the name the user wrote. Each is
@@ -205,7 +226,7 @@ fn extra(name: &str, placeholders: &[String]) -> String {
 }
 
 /// Infers how a plain PHP value binds (spec #32 §7).
-fn infer(name: &str, zval: &Zval) -> Result<Value, Error> {
+fn infer(name: &str, zval: &Zval, describe: &Describe<'_>) -> Result<Value, Error> {
     let zval = zval.dereference();
     if zval.is_null() {
         Ok(Value::Null(None))
@@ -218,7 +239,7 @@ fn infer(name: &str, zval: &Zval) -> Result<Value, Error> {
     } else if zval.is_string() {
         text(name, zval)
     } else if let Some(object) = zval.object() {
-        object_value(name, object)
+        object_value(name, object, describe)
     } else if zval.is_array() {
         Err(Error::usage(format!(
             "Bind '{name}': an array does not bind by itself; use Json::in() or a typed bind."
@@ -254,9 +275,15 @@ fn float(name: &str, value: f64) -> Result<Value, Error> {
 
 /// A float as the NUMBER its shortest round-trip text writes (C4).
 pub fn exact_number(name: &str, value: f64) -> Result<OracleNumber, Error> {
+    exact(value).ok_or_else(|| out_of_number_range(name))
+}
+
+/// A float as the NUMBER its shortest round-trip text writes (C4), or
+/// `None` when NUMBER cannot hold it.
+pub fn exact(value: f64) -> Option<OracleNumber> {
     if value == 0.0 {
         // -0.0 too: NUMBER has no negative zero.
-        return Ok(OracleNumber::from(0));
+        return Some(OracleNumber::from(0));
     }
     // Rust's float formatting writes the shortest text that round-trips.
     let exponent = format!("{value:e}")
@@ -264,10 +291,10 @@ pub fn exact_number(name: &str, value: f64) -> Result<OracleNumber, Error> {
         .and_then(|(_, e)| e.parse::<i32>().ok());
     // NUMBER holds 1e-130 <= |x| < 1e126; NaN and ±INF have no exponent.
     match exponent {
-        Some(e) if value.is_finite() && (-130..=125).contains(&e) => format!("{value}")
-            .parse()
-            .map_err(|_| out_of_number_range(name)),
-        _ => Err(out_of_number_range(name)),
+        Some(e) if value.is_finite() && (-130..=125).contains(&e) => {
+            format!("{value}").parse().ok()
+        }
+        _ => None,
     }
 }
 
@@ -279,10 +306,10 @@ fn out_of_number_range(name: &str) -> Error {
 
 /// An object: a `BackedEnum` or a `Stringable`. `DateTimeInterface` is
 /// checked first, as Carbon is `Stringable` too.
-fn object_value(name: &str, object: &ZendObject) -> Result<Value, Error> {
+fn object_value(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<Value, Error> {
     let is = |class: &str| ClassEntry::try_find(class).is_some_and(|ce| object.instance_of(ce));
     if is(typed::BIND_CLASS) {
-        return typed::read(name, object).map(Value::Typed);
+        return typed::read(name, object, describe).map(Value::Typed);
     }
     if is(CORE_CURSOR_CLASS) || is(NATIVE_CURSOR_CLASS) {
         return Err(typed::cursor_in(name));
@@ -302,7 +329,7 @@ fn object_value(name: &str, object: &ZendObject) -> Result<Value, Error> {
             .ok_or_else(|| {
                 Error::usage(format!("Bind '{name}': the enum has no backing value."))
             })?;
-        return infer(name, backing);
+        return infer(name, backing, describe);
     }
     if is("JsonSerializable") {
         return Err(Error::usage(format!(

@@ -9,9 +9,11 @@ use Rajska\Oracle\Bind\BinaryDouble;
 use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\Cursor as CursorBind;
 use Rajska\Oracle\Bind\Date;
 use Rajska\Oracle\Bind\IntervalDs;
+use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\IntervalYm;
 use Rajska\Oracle\Bind\NChar;
 use Rajska\Oracle\Bind\Number;
@@ -19,6 +21,7 @@ use Rajska\Oracle\Bind\NVarchar;
 use Rajska\Oracle\Bind\PlsInteger;
 use Rajska\Oracle\Bind\Raw;
 use Rajska\Oracle\Bind\Rowid;
+use Rajska\Oracle\Bind\Struct;
 use Rajska\Oracle\Bind\Timestamp;
 use Rajska\Oracle\Bind\TimestampLtz;
 use Rajska\Oracle\Bind\TimestampTz;
@@ -227,32 +230,38 @@ final class FunctionCall
     }
 
     /**
-     * An Object of `$type`, as an array keyed by attribute name.
+     * An Object of `$type`, as an array keyed by attribute name (see
+     * `Struct`).
      *
      * @return array<string, mixed>|null
      */
     public function struct(string $type): ?array
     {
-        throw $this->call->unsupported('struct()');
+        /** @var array<string, mixed>|null */
+        return ($this->run)(Struct::out($type))->array();
     }
 
     /**
-     * A Collection of `$type` (nested table or VARRAY), as a list.
+     * A Collection of `$type` (nested table or VARRAY), as a list (see
+     * `Collection`).
      *
      * @return list<mixed>|null
      */
     public function collection(string $type): ?array
     {
-        throw $this->call->unsupported('collection()');
+        /** @var list<mixed>|null */
+        return ($this->run)(Collection::out($type))->array();
     }
 
     /**
-     * An Associative array of `$type`, keys kept in key order.
+     * An Associative array of `$type`, keys kept in key order (see
+     * `Indexed`).
      *
      * @return array<int, mixed>|null
      */
     public function indexed(string $type): ?array
     {
-        throw $this->call->unsupported('indexed()');
+        /** @var array<int, mixed>|null */
+        return ($this->run)(Indexed::out($type))->array();
     }
 }

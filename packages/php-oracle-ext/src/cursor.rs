@@ -21,6 +21,7 @@ use oracledb::{
 
 use crate::connection::{ConnState, CursorSlot};
 use crate::error::{Error, run};
+use crate::object;
 use crate::options::{KeyCase, NumberMode, Options, RowShape, TemporalMode};
 use crate::pool::lock;
 use crate::temporal::{self, Temporal};
@@ -43,6 +44,8 @@ enum Mapping {
     /// A nested `CURSOR()` (or a REF CURSOR in a select list): a native
     /// Cursor nested in this one, with its options.
     Cursor,
+    /// An Object or Collection: a PHP array (see [`object`]).
+    Object,
     /// A type whose values cannot be fetched yet; describing it is fine.
     Unsupported(String),
 }
@@ -225,6 +228,8 @@ impl Column {
             Mapping::Text
         } else if db_type == DB_TYPE_CURSOR {
             Mapping::Cursor
+        } else if db_type == DB_TYPE_OBJECT {
+            Mapping::Object
         } else if let Some(temporal) = Temporal::of(db_type) {
             Mapping::Temporal(temporal, options.temporals)
         } else if db_type == DB_TYPE_INTERVAL_DS {
@@ -249,9 +254,9 @@ impl Column {
     fn value(&self, row: &Row, index: usize) -> Result<Zval, Error> {
         let mut zval = Zval::new();
         match &self.mapping {
-            Mapping::Cursor => {
+            Mapping::Cursor | Mapping::Object => {
                 return Err(Error::unsupported(format!(
-                    "Column {}: a Cursor is not a scalar value.",
+                    "Column {}: not a scalar value.",
                     self.name
                 )));
             }
@@ -396,6 +401,10 @@ impl NativeCursor {
                     let mut parents = self.parents.clone();
                     parents.push(Arc::clone(&self.cursor));
                     value::cursor(row, index, &self.state, &self.options, parents)?
+                }
+                Mapping::Object => {
+                    let what = format!("Column {}", column.name);
+                    object::cell(row, index, &self.options, &object::Path::Root(&what))?
                 }
                 _ => column.value(row, index)?,
             };

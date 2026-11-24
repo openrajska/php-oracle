@@ -16,6 +16,7 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod object;
 mod options;
 mod pool;
 mod temporal;

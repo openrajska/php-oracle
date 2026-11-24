@@ -69,6 +69,25 @@ impl Temporal {
         }
     }
 
+    /// The SQL name, for messages.
+    fn sql_name(self) -> &'static str {
+        match self {
+            Self::Date => "DATE",
+            Self::Timestamp => "TIMESTAMP",
+            Self::TimestampTz => "TIMESTAMP WITH TIME ZONE",
+            Self::TimestampLtz => "TIMESTAMP WITH LOCAL TIME ZONE",
+        }
+    }
+
+    /// A value as `TemporalMode::String` writes it, for messages.
+    fn example(self) -> &'static str {
+        match self {
+            Self::Date => "2026-03-01 10:00:00",
+            Self::Timestamp => "2026-03-01 10:00:00.123456789",
+            Self::TimestampTz | Self::TimestampLtz => "2026-03-01 10:00:00.123456789 -03:00",
+        }
+    }
+
     fn db_type(self) -> &'static DbType {
         match self {
             Self::Date => DB_TYPE_DATE,
@@ -323,52 +342,84 @@ fn php_error(e: ext_php_rs::error::Error) -> Error {
 // ---------------------------------------------------------------------------
 
 /// A `Date`, `Timestamp`, `TimestampTz` or `TimestampLtz` bind's value: NULL,
-/// or a `DateTimeInterface`.
+/// or a `DateTimeInterface` (see [`timestamp_of`]).
 ///
-/// - DATE and TIMESTAMP store the object's Wall clock, its zone ignored
-///   (DATE drops the fraction). Both go as TIMESTAMP, the only type the
-///   crate sends a Wall clock as; the server converts.
-/// - TSTZ stores the Instant with the object's offset at that Instant. An
-///   offset in seconds (a zone's local mean time, before about 1900) or
-///   beyond ±15:59 cannot be stored and fails before any Round trip.
-/// - TSLTZ stores the Instant: it goes as a TSTZ at UTC, the only way the
-///   crate sends an Instant, and the server converts.
-///
-/// NULL (and an OUT bind) goes as the declared type itself.
+/// DATE and TIMESTAMP both go as TIMESTAMP, the only type the crate sends a
+/// Wall clock as; TSLTZ goes as a TSTZ at UTC, the only way the crate sends
+/// an Instant; the server converts. NULL (and an OUT bind) goes as the
+/// declared type itself.
 pub fn timestamp_bind(
     name: &str,
     value: &Zval,
     temporal: Temporal,
 ) -> Result<Box<dyn ToDbValue>, Error> {
+    Ok(
+        match timestamp_of(&format!("Bind '{name}'"), value, temporal, false)? {
+            Some(timestamp) => Box::new(timestamp),
+            None => Box::new(temporal.db_type()),
+        },
+    )
+}
+
+/// A timestamp value from PHP, stored as `temporal`; `None` for NULL.
+/// `what` starts every message ("Bind 'x'").
+///
+/// - DATE and TIMESTAMP store the object's Wall clock, its zone ignored
+///   (DATE drops the fraction).
+/// - TSTZ stores the Instant with the object's offset at that Instant. An
+///   offset in seconds (a zone's local mean time, before about 1900) or
+///   beyond ±15:59 cannot be stored and fails before any Round trip.
+/// - TSLTZ stores the Instant, as UTC fields.
+///
+/// With `text`, the ISO text `TemporalMode::String` gives is read too, so
+/// such a value binds back unchanged.
+pub fn timestamp_of(
+    what: &str,
+    value: &Zval,
+    temporal: Temporal,
+    text: bool,
+) -> Result<Option<OracleTimestamp>, Error> {
     if value.is_null() {
-        return Ok(Box::new(temporal.db_type()));
+        return Ok(None);
     }
-    let object = value
-        .object()
-        .filter(|object| {
-            ClassEntry::try_find("DateTimeInterface").is_some_and(|ce| object.instance_of(ce))
-        })
-        .ok_or_else(|| {
+    let expected = if text {
+        "a DateTimeInterface, ISO text or null"
+    } else {
+        "a DateTimeInterface or null"
+    };
+    let (clock, nanoseconds, offset) = if text && let Some(iso) = value.str() {
+        read_iso(iso, temporal).ok_or_else(|| {
             Error::usage(format!(
-                "Bind '{name}': the value must be a DateTimeInterface or null."
+                "{what}: the text is not a {} as TemporalMode::String writes it, such as '{}'.",
+                temporal.sql_name(),
+                temporal.example()
             ))
-        })?;
-    let text = object
-        .try_call_method("format", vec![&"X-m-d H:i:s.u Z"])
-        .map_err(php_error)?;
-    if ExecutorGlobals::has_exception() {
-        return Err(Error::php_exception());
-    }
-    let (clock, microseconds, offset) = text
-        .str()
-        .and_then(read_format)
-        .ok_or_else(|| Error::usage(format!("Bind '{name}': the date cannot be read.")))?;
+        })?
+    } else {
+        let object = value
+            .object()
+            .filter(|object| {
+                ClassEntry::try_find("DateTimeInterface").is_some_and(|ce| object.instance_of(ce))
+            })
+            .ok_or_else(|| Error::usage(format!("{what}: the value must be {expected}.")))?;
+        let text = object
+            .try_call_method("format", vec![&"X-m-d H:i:s.u Z"])
+            .map_err(php_error)?;
+        if ExecutorGlobals::has_exception() {
+            return Err(Error::php_exception());
+        }
+        let (clock, microseconds, offset) = text
+            .str()
+            .and_then(read_format)
+            .ok_or_else(|| Error::usage(format!("{what}: the date cannot be read.")))?;
+        (clock, microseconds * 1000, offset)
+    };
     let timestamp = match temporal {
-        Temporal::Date => oracle_timestamp(name, clock, 0, false)?,
-        Temporal::Timestamp => oracle_timestamp(name, clock, microseconds * 1000, false)?,
+        Temporal::Date => oracle_timestamp(what, clock, 0, false)?,
+        Temporal::Timestamp => oracle_timestamp(what, clock, nanoseconds, false)?,
         Temporal::TimestampTz | Temporal::TimestampLtz => {
             let utc = clock - Duration::seconds(offset.into());
-            let timestamp = oracle_timestamp(name, utc, microseconds * 1000, true)?;
+            let timestamp = oracle_timestamp(what, utc, nanoseconds, true)?;
             let offset = if temporal == Temporal::TimestampTz {
                 offset
             } else {
@@ -376,16 +427,75 @@ pub fn timestamp_bind(
             };
             if offset % 60 != 0 || offset.abs() > MAX_OFFSET_SECONDS {
                 return Err(Error::usage(format!(
-                    "Bind '{name}': the date's UTC offset of {offset} seconds cannot be stored in a TIMESTAMP WITH TIME ZONE, which holds whole minutes up to ±15:59; convert the date to another zone (such as UTC) first."
+                    "{what}: the date's UTC offset of {offset} seconds cannot be stored in a TIMESTAMP WITH TIME ZONE, which holds whole minutes up to ±15:59; convert the date to another zone (such as UTC) first."
                 )));
             }
             #[allow(clippy::cast_possible_truncation)] // within ±15 h, ±59 min
             timestamp
                 .with_tz_offset((offset / 3600) as i8, (offset % 3600 / 60) as i8)
-                .map_err(|e| Error::usage(format!("Bind '{name}': {e}.")))?
+                .map_err(|e| Error::usage(format!("{what}: {e}.")))?
         }
     };
-    Ok(Box::new(timestamp))
+    Ok(Some(timestamp))
+}
+
+/// The ISO text of `TemporalMode::String` → the clock, its nanoseconds and
+/// its UTC offset in seconds: `2026-03-01 10:00:00` (DATE), nine fractional
+/// digits for the others, and ` -03:00` after a TSTZ or TSLTZ. A year BC
+/// starts with `-`.
+fn read_iso(text: &str, temporal: Temporal) -> Option<(NaiveDateTime, u32, i32)> {
+    let (negative, text) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let mut parts = text.split(' ');
+    let (date, time) = (parts.next()?, parts.next()?);
+    let offset = parts.next();
+    if parts.next().is_some() {
+        return None;
+    }
+    let mut date = date.split('-');
+    let year: i32 = date.next()?.parse().ok()?;
+    let year = if negative { -year } else { year };
+    let (month, day) = (date.next()?.parse().ok()?, date.next()?.parse().ok()?);
+    if date.next().is_some() {
+        return None;
+    }
+    let (time, nanoseconds) = match time.split_once('.') {
+        Some((time, fraction))
+            if temporal != Temporal::Date
+                && (1..=9).contains(&fraction.len())
+                && fraction.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            (time, format!("{fraction:0<9}").parse().ok()?)
+        }
+        Some(_) => return None,
+        None => (time, 0),
+    };
+    let mut time = time.split(':');
+    let clock = NaiveDate::from_ymd_opt(year, month, day)?.and_hms_opt(
+        time.next()?.parse().ok()?,
+        time.next()?.parse().ok()?,
+        time.next()?.parse().ok()?,
+    )?;
+    if time.next().is_some() {
+        return None;
+    }
+    let offset = match (offset, temporal) {
+        (None, Temporal::Date | Temporal::Timestamp) => 0,
+        (Some(offset), Temporal::TimestampTz | Temporal::TimestampLtz) => {
+            let (sign, offset) = offset.split_at_checked(1)?;
+            let (hours, minutes) = offset.split_once(':')?;
+            let seconds = hours.parse::<i32>().ok()? * 3600 + minutes.parse::<i32>().ok()? * 60;
+            match sign {
+                "+" => seconds,
+                "-" => -seconds,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    Some((clock, nanoseconds, offset))
 }
 
 /// `X-m-d H:i:s.u Z` → the clock, its µs and its UTC offset in seconds.
@@ -411,7 +521,7 @@ fn read_format(text: &str) -> Option<(NaiveDateTime, u32, i32)> {
 /// An Oracle timestamp of `clock` (ISO year numbering), within Oracle's
 /// years 4712 BC to 9999.
 fn oracle_timestamp(
-    name: &str,
+    what: &str,
     clock: NaiveDateTime,
     nanoseconds: u32,
     utc: bool,
@@ -419,7 +529,7 @@ fn oracle_timestamp(
     let year = clock.year();
     if !(-4711..=9999).contains(&year) {
         return Err(Error::usage(format!(
-            "Bind '{name}': the year {year} is outside Oracle's range, -4711 (4712 BC) to 9999."
+            "{what}: the year {year} is outside Oracle's range, -4711 (4712 BC) to 9999."
         )));
     }
     // ISO's year 0 is Oracle's -1 (1 BC).
@@ -443,15 +553,24 @@ fn oracle_timestamp(
     })
 }
 
-/// An `IntervalDs` bind's value: NULL, or a `DateInterval` with no years or
-/// months. Its fields are added up, so `PT36H` is 1 day 12 hours.
+/// An `IntervalDs` bind's value: NULL, or a `DateInterval` (see
+/// [`interval_ds_of`]).
 pub fn interval_ds_bind(name: &str, value: &Zval) -> Result<Box<dyn ToDbValue>, Error> {
-    let Some(interval) = interval_fields(name, value)? else {
-        return Ok(Box::new(DB_TYPE_INTERVAL_DS));
+    Ok(match interval_ds_of(&format!("Bind '{name}'"), value)? {
+        Some(interval) => Box::new(interval),
+        None => Box::new(DB_TYPE_INTERVAL_DS),
+    })
+}
+
+/// An INTERVAL DAY TO SECOND from PHP: NULL, or a `DateInterval` with no
+/// years or months. Its fields are added up, so `PT36H` is 1 day 12 hours.
+pub fn interval_ds_of(what: &str, value: &Zval) -> Result<Option<OracleIntervalDS>, Error> {
+    let Some(interval) = interval_fields(what, value)? else {
+        return Ok(None);
     };
     if interval.years != 0 || interval.months != 0 {
         return Err(Error::usage(format!(
-            "Bind '{name}': an IntervalDs holds days and smaller units, but the DateInterval has years or months; bind those with IntervalYm::in()."
+            "{what}: an IntervalDs holds days and smaller units, but the DateInterval has years or months; bind those with IntervalYm::in()."
         )));
     }
     let seconds =
@@ -461,7 +580,7 @@ pub fn interval_ds_bind(name: &str, value: &Zval) -> Result<Box<dyn ToDbValue>, 
     let day = 86_400 * 1_000_000_i128;
     let days = i32::try_from(total / day).map_err(|_| {
         Error::usage(format!(
-            "Bind '{name}': the interval has too many days for an INTERVAL DAY TO SECOND."
+            "{what}: the interval has too many days for an INTERVAL DAY TO SECOND."
         ))
     })?;
     let rest = total % day;
@@ -473,14 +592,23 @@ pub fn interval_ds_bind(name: &str, value: &Zval) -> Result<Box<dyn ToDbValue>, 
         (rest % 60_000_000 / 1_000_000) as i8,
         (rest % 1_000_000 * 1000) as i32,
     );
-    Ok(Box::new(value))
+    Ok(Some(value))
 }
 
-/// An `IntervalYm` bind's value: NULL, or a `DateInterval` of years and
-/// months only.
+/// An `IntervalYm` bind's value: NULL, or a `DateInterval` (see
+/// [`interval_ym_of`]).
 pub fn interval_ym_bind(name: &str, value: &Zval) -> Result<Box<dyn ToDbValue>, Error> {
-    let Some(interval) = interval_fields(name, value)? else {
-        return Ok(Box::new(DB_TYPE_INTERVAL_YM));
+    Ok(match interval_ym_of(&format!("Bind '{name}'"), value)? {
+        Some(interval) => Box::new(interval),
+        None => Box::new(DB_TYPE_INTERVAL_YM),
+    })
+}
+
+/// An INTERVAL YEAR TO MONTH from PHP: NULL, or a `DateInterval` of years
+/// and months only.
+pub fn interval_ym_of(what: &str, value: &Zval) -> Result<Option<OracleIntervalYM>, Error> {
+    let Some(interval) = interval_fields(what, value)? else {
+        return Ok(None);
     };
     if interval.days != 0
         || interval.hours != 0
@@ -489,19 +617,19 @@ pub fn interval_ym_bind(name: &str, value: &Zval) -> Result<Box<dyn ToDbValue>, 
         || interval.microseconds != 0
     {
         return Err(Error::usage(format!(
-            "Bind '{name}': an IntervalYm holds years and months only, but the DateInterval has days or smaller units; bind those with IntervalDs::in()."
+            "{what}: an IntervalYm holds years and months only, but the DateInterval has days or smaller units; bind those with IntervalDs::in()."
         )));
     }
     let months = interval.years * 12 + interval.months;
     let months = if interval.invert { -months } else { months };
     let years = i32::try_from(months / 12).map_err(|_| {
         Error::usage(format!(
-            "Bind '{name}': the interval has too many years for an INTERVAL YEAR TO MONTH."
+            "{what}: the interval has too many years for an INTERVAL YEAR TO MONTH."
         ))
     })?;
     #[allow(clippy::cast_possible_truncation)] // below 12
     let value = OracleIntervalYM::new(years, (months % 12) as i8);
-    Ok(Box::new(value))
+    Ok(Some(value))
 }
 
 struct Interval {
@@ -516,7 +644,7 @@ struct Interval {
 }
 
 /// A `DateInterval`'s fields, or `None` for NULL.
-fn interval_fields(name: &str, value: &Zval) -> Result<Option<Interval>, Error> {
+fn interval_fields(what: &str, value: &Zval) -> Result<Option<Interval>, Error> {
     if value.is_null() {
         return Ok(None);
     }
@@ -526,18 +654,16 @@ fn interval_fields(name: &str, value: &Zval) -> Result<Option<Interval>, Error> 
             ClassEntry::try_find("DateInterval").is_some_and(|ce| object.instance_of(ce))
         })
         .ok_or_else(|| {
-            Error::usage(format!(
-                "Bind '{name}': the value must be a DateInterval or null."
-            ))
+            Error::usage(format!("{what}: the value must be a DateInterval or null."))
         })?;
     let int = |field: &str| -> Result<i64, Error> {
         object
             .get_property::<i64>(field)
-            .map_err(|_| Error::usage(format!("Bind '{name}': the DateInterval has no {field}.")))
+            .map_err(|_| Error::usage(format!("{what}: the DateInterval has no {field}.")))
     };
     let fraction = object
         .get_property::<f64>("f")
-        .map_err(|_| Error::usage(format!("Bind '{name}': the DateInterval has no f.")))?;
+        .map_err(|_| Error::usage(format!("{what}: the DateInterval has no f.")))?;
     #[allow(clippy::cast_possible_truncation)] // a fraction of a second
     let microseconds = (fraction * 1e6).round() as i64;
     Ok(Some(Interval {
