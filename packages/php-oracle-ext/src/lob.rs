@@ -13,23 +13,22 @@
 
 use std::alloc::Layout;
 use std::io::{self, Read, Seek};
-use std::mem::offset_of;
+use std::mem::{ManuallyDrop, offset_of};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Mutex, Weak};
+use std::ptr::{self, NonNull};
+use std::slice;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
-use std::{ptr, slice};
 
-use ext_php_rs::alloc::emalloc;
+use ext_php_rs::alloc::{efree, emalloc};
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::convert::IntoZval;
 use ext_php_rs::exception::PhpResult;
-use ext_php_rs::ffi::{
-    _zend_refcounted_h__bindgen_ty_1, GC_FLAGS_SHIFT, IS_STRING, zend_refcounted_h,
-};
+use ext_php_rs::ffi::{_zend_refcounted_h__bindgen_ty_1, zend_refcounted_h};
 use ext_php_rs::flags::ClassFlags;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendStr, Zval};
-use ext_php_rs::zend::Function;
+use ext_php_rs::zend::ProcessGlobals;
 use oracledb::{DB_TYPE_BLOB, DB_TYPE_CLOB, DB_TYPE_NCLOB, DbType, Row};
 
 use crate::bind::MAX_VARCHAR2;
@@ -56,9 +55,6 @@ pub const PREFETCH: u32 = MAX_VARCHAR2 as u32;
 /// What one `readChunk()` asks for: this many bytes of a BLOB, or UCS-2
 /// code units of a CLOB / NCLOB (up to 3 UTF-8 bytes each).
 const CHUNK: usize = 1 << 20;
-
-/// Zend's GC_NOT_COLLECTABLE flag, part of a string's GC_STRING type info.
-const GC_NOT_COLLECTABLE: u32 = 1 << 4;
 
 /// `LobType`'s backing value for a LOB type, or `None` for any other type
 /// (BFILE included).
@@ -104,80 +100,159 @@ fn inline(mut lob: oracledb::Lob, what: &str) -> Result<Zval, Error> {
     // From the locator: no Round trip.
     let size = lob.get_size()?;
     let character = lob.db_type() != DB_TYPE_BLOB;
-    let left = memory_left();
+    let refuse = |left| too_large(what, character, size, left);
     // A CLOB / NCLOB takes at least one UTF-8 byte per code unit.
-    if left.is_some_and(|left| size > left) {
-        return Err(too_large(what, character, size, left));
-    }
+    fits(size).map_err(refuse)?;
     // One read of the whole value, from the prefetched data when it holds it.
-    let zval = read(&mut lob, size)?;
-    if let Some(left) = memory_left()
-        && zval.zend_str().is_some_and(|filled| filled.len() > left)
-    {
-        return Err(too_large(what, character, size, Some(left)));
-    }
-    Ok(zval)
+    let mut target = Target::new(!character, size, |len| fits(len).map_err(refuse))?;
+    let filled = target.fill(&mut lob)?;
+    target.finish(filled, |len| fits(len).map_err(refuse))
 }
 
-/// The LOB's next `units` bytes (BLOB) or UCS-2 code units (CLOB / NCLOB,
-/// as UTF-8), or fewer at its end, as a PHP string: one Round trip, or none
-/// when the data came with the locator.
-fn read(lob: &mut oracledb::Lob, units: usize) -> Result<Zval, Error> {
-    if lob.db_type() == DB_TYPE_BLOB {
-        return read_bytes(lob, units);
-    }
-    // Up to 3 UTF-8 bytes a code unit; room for 2, a surrogate pair, at
-    // least (C9). Only the pages written are touched.
-    let mut buffer = vec![0u8; units.max(2).saturating_mul(3)];
-    let filled = fill(lob, &mut buffer)?;
-    buffer.truncate(filled);
-    Ok(binary(buffer))
+/// Where one read of a LOB lands, allocated before the read: a new PHP
+/// string for a BLOB, filled in place (no copy after the crate's); a buffer
+/// for a CLOB / NCLOB, whose UTF-8 length is known only once read.
+enum Target {
+    Bytes(NewString),
+    Text(Vec<u8>),
 }
 
-/// A BLOB's next `len` bytes, or fewer at its end, read straight into a new
-/// PHP string: no buffer of their own, no copy after the crate's.
-fn read_bytes(lob: &mut oracledb::Lob, len: usize) -> Result<Zval, Error> {
-    let header = offset_of!(ZendStr, val);
-    let layout = Layout::from_size_align(header.saturating_add(len).saturating_add(1), 8)
-        .map_err(|_| Error::unsupported("The LOB is too large to read into memory."))?;
-    let string = emalloc(layout).cast::<ZendStr>();
-    if string.is_null() {
-        return Err(Error::unsupported(
-            "The LOB is too large to read into memory.",
-        ));
+impl Target {
+    /// Room for a LOB's next `units` bytes (a BLOB) or UCS-2 code units (a
+    /// CLOB / NCLOB). `fits` checks a PHP allocation first.
+    fn new(
+        blob: bool,
+        units: usize,
+        fits: impl FnOnce(usize) -> Result<(), Error>,
+    ) -> Result<Self, Error> {
+        if blob {
+            fits(units)?;
+            return Ok(Self::Bytes(NewString::new(units)?));
+        }
+        // Up to 3 UTF-8 bytes a code unit; room for 2, a surrogate pair, at
+        // least (C9). Only the pages written are touched.
+        Ok(Self::Text(vec![0u8; units.max(2).saturating_mul(3)]))
     }
-    // SAFETY: `string` is a fresh allocation of `layout`: a zend_string
-    // header and `len` + 1 bytes after it. The header is that of
-    // zend_string_alloc(len, false); zeroing the bytes makes them a valid
-    // `&mut [u8]`. ZBox frees the string if the read fails.
-    unsafe {
-        string.write(ZendStr {
-            gc: zend_refcounted_h {
-                refcount: 1,
-                u: _zend_refcounted_h__bindgen_ty_1 {
-                    type_info: IS_STRING | (GC_NOT_COLLECTABLE << GC_FLAGS_SHIFT),
+
+    /// One read: as many bytes as fit, or as many code units as a third of
+    /// the buffer holds (C9), up to the LOB's end; the count of bytes read.
+    /// One Round trip, or none when the data came with the locator.
+    fn fill(&mut self, lob: &mut oracledb::Lob) -> Result<usize, Error> {
+        let buffer = match self {
+            Self::Bytes(string) => string.bytes(),
+            Self::Text(buffer) => buffer.as_mut_slice(),
+        };
+        lob.read(buffer).map_err(|e| io_error(e, "read"))
+    }
+
+    /// The `filled` bytes read, as a PHP string. `fits` checks the copy of
+    /// a CLOB / NCLOB's text into one first.
+    fn finish(
+        self,
+        filled: usize,
+        fits: impl FnOnce(usize) -> Result<(), Error>,
+    ) -> Result<Zval, Error> {
+        match self {
+            Self::Bytes(string) => Ok(string.finish(filled)),
+            Self::Text(mut buffer) => {
+                buffer.truncate(filled);
+                fits(buffer.len())?;
+                Ok(binary(buffer))
+            }
+        }
+    }
+}
+
+/// A PHP string being filled: allocated and headed as `zend_string_alloc()`
+/// makes a request string, handed to PHP only once its bytes and length are
+/// final, and freed if it never is.
+struct NewString {
+    string: NonNull<ZendStr>,
+    capacity: usize,
+}
+
+impl NewString {
+    /// Room for `capacity` bytes. The caller checked that `memory_limit`
+    /// allows them ([`fits`]): PHP's allocator ends the request with a
+    /// fatal error, through the Extension's frames, when it does not.
+    fn new(capacity: usize) -> Result<Self, Error> {
+        let too_large = || Error::unsupported("The LOB is too large to read into memory.");
+        let size = offset_of!(ZendStr, val)
+            .checked_add(capacity)
+            .and_then(|size| size.checked_add(1))
+            .ok_or_else(too_large)?;
+        let layout =
+            Layout::from_size_align(size, align_of::<ZendStr>()).map_err(|_| too_large())?;
+        let string = NonNull::new(emalloc(layout).cast::<ZendStr>()).ok_or_else(too_large)?;
+        // SAFETY: `string` is a fresh allocation of `layout`: a zend_string
+        // header, then `capacity` + 1 bytes. The header is the one
+        // zend_string_alloc(capacity, false) writes, its type info taken
+        // from a string PHP made; zeroed, the bytes are a valid `[u8]`.
+        unsafe {
+            string.as_ptr().write(ZendStr {
+                gc: zend_refcounted_h {
+                    refcount: 1,
+                    u: _zend_refcounted_h__bindgen_ty_1 {
+                        type_info: request_string_type_info(),
+                    },
                 },
-            },
-            h: 0,
-            len,
-            val: [0],
-        });
-        let bytes = (&raw mut (*string).val).cast::<u8>();
-        ptr::write_bytes(bytes, 0, len + 1);
-        let boxed = ZBox::from_raw(string);
-        let filled = fill(lob, slice::from_raw_parts_mut(bytes, len))?;
-        (*string).len = filled;
-        *bytes.add(filled) = 0;
+                h: 0,
+                len: capacity,
+                val: [0],
+            });
+            ptr::write_bytes(Self::val(string), 0, capacity + 1);
+        }
+        Ok(Self { string, capacity })
+    }
+
+    /// The string's first byte.
+    fn val(string: NonNull<ZendStr>) -> *mut u8 {
+        // SAFETY: a place projection, no read: the bytes follow the header
+        // in the same allocation.
+        unsafe { (&raw mut (*string.as_ptr()).val).cast::<u8>() }
+    }
+
+    fn bytes(&mut self) -> &mut [u8] {
+        // SAFETY: `capacity` initialised bytes, borrowed through `self`.
+        unsafe { slice::from_raw_parts_mut(Self::val(self.string), self.capacity) }
+    }
+
+    /// The string of its first `len` bytes, owned by PHP from here on.
+    fn finish(self, len: usize) -> Zval {
+        let len = len.min(self.capacity);
+        let string = ManuallyDrop::new(self).string;
+        // SAFETY: the length and the terminating NUL are set before ZBox
+        // takes the string; nothing else points at it.
+        let boxed = unsafe {
+            (*string.as_ptr()).len = len;
+            *Self::val(string).add(len) = 0;
+            ZBox::from_raw(string.as_ptr())
+        };
         let mut zval = Zval::new();
         zval.set_zend_string(boxed);
-        Ok(zval)
+        zval
     }
 }
 
-/// One read into `buffer`: as many bytes as fit, or as many code units as a
-/// third of it holds (C9), up to the LOB's end; the count of bytes read.
-fn fill(lob: &mut oracledb::Lob, buffer: &mut [u8]) -> Result<usize, Error> {
-    lob.read(buffer).map_err(|e| io_error(e, "read"))
+impl Drop for NewString {
+    /// Never handed to PHP: the read failed.
+    fn drop(&mut self) {
+        // SAFETY: emalloc()ed by `new`, and never boxed.
+        unsafe { efree(self.string.as_ptr().cast::<u8>()) };
+    }
+}
+
+/// The type info (`GC_STRING`: a string, not collectable, not persistent)
+/// that `zend_string_alloc()` gives a request string, read once from one
+/// PHP made rather than built from its header's constants.
+fn request_string_type_info() -> u32 {
+    static TYPE_INFO: OnceLock<u32> = OnceLock::new();
+    *TYPE_INFO.get_or_init(|| {
+        // Two bytes: zend_string_init(), not an interned one-byte string.
+        let sample = ZendStr::new("ab", false);
+        // SAFETY: every zend_string's refcount header holds its type info.
+        unsafe { sample.gc.u.type_info }
+    })
 }
 
 /// A PHP string of these bytes.
@@ -187,31 +262,44 @@ fn binary(bytes: Vec<u8>) -> Zval {
     zval
 }
 
-fn too_large(what: &str, character: bool, size: usize, left: Option<usize>) -> Error {
+fn too_large(what: &str, character: bool, size: usize, left: usize) -> Error {
     let unit = if character {
         "UCS-2 code units"
     } else {
         "bytes"
     };
     Error::unsupported(format!(
-        "{what}: the LOB holds {size} {unit}, too large to read into memory under LobMode::Inline (memory_limit leaves {} bytes); read it as a Lob with LobMode::Locator, the default, and stream it with stream().",
-        left.unwrap_or(0)
+        "{what}: the LOB holds {size} {unit}, too large to read into memory under LobMode::Inline (memory_limit leaves {left} bytes); read it as a Lob with LobMode::Locator, the default, and stream it with stream().",
     ))
 }
 
-/// The bytes PHP may still allocate under `memory_limit`; `None` when there
-/// is no limit (or it cannot be read).
-fn memory_left() -> Option<usize> {
-    let call = |name: &str, arguments: Vec<&dyn ext_php_rs::convert::IntoZvalDyn>| {
-        Function::try_from_function(name).and_then(|function| function.try_call(arguments).ok())
+/// Zend's memory manager takes memory from the system 2 MiB at a time
+/// (`ZEND_MM_CHUNK_SIZE`): any allocation may need one more such chunk.
+const ZEND_MM_CHUNK: usize = 2 << 20;
+
+unsafe extern "C" {
+    /// What the request uses as `memory_limit` counts it, with `true`:
+    /// `memory_get_usage(true)`.
+    fn zend_memory_usage(real_usage: bool) -> usize;
+}
+
+/// Whether PHP can allocate `bytes` more under `memory_limit`; else the
+/// bytes it leaves. Over the limit, PHP's allocator ends the request with
+/// a fatal error that unwinds through the Extension's frames (and any lock
+/// they hold): so the Extension checks first, with room for a new chunk.
+fn fits(bytes: usize) -> Result<(), usize> {
+    let limit = ProcessGlobals::get().memory_limit;
+    // No limit: -1.
+    let Some(limit) = usize::try_from(limit).ok().filter(|limit| *limit > 0) else {
+        return Ok(());
     };
-    let limit = call("ini_get", vec![&"memory_limit".to_string()])?.string()?;
-    let limit = call("ini_parse_quantity", vec![&limit])?.long()?;
-    if limit <= 0 {
-        return None;
+    // SAFETY: reads the memory manager's counters.
+    let left = limit.saturating_sub(unsafe { zend_memory_usage(true) });
+    if bytes.saturating_add(ZEND_MM_CHUNK) > left {
+        Err(left)
+    } else {
+        Ok(())
     }
-    let used = call("memory_get_usage", vec![])?.long()?;
-    Some(usize::try_from(limit.saturating_sub(used)).unwrap_or(0))
 }
 
 /// A read or write error: the crate's own error inside, when there is one.
@@ -271,23 +359,31 @@ impl NativeLob {
         })
     }
 
-    /// Runs a method body on the LOB, or fails if its Connection is gone,
-    /// released or Broken, or the LOB is closed.
-    fn on_lob<T>(
-        &self,
-        body: impl FnOnce(&ConnState, &mut oracledb::Lob) -> Result<T, Error>,
-    ) -> PhpResult<T> {
+    /// Runs a method body, or fails if the LOB's Connection is gone,
+    /// released or Broken, or the LOB is closed. The body reaches the LOB
+    /// through [`Self::locked`].
+    fn on_lob<T>(&self, body: impl FnOnce(&ConnState) -> Result<T, Error>) -> PhpResult<T> {
         let Some(state) = self.state.upgrade() else {
             return run(|| Err(Error::usage("The Connection is closed.")));
         };
         state.run(|| {
             state.ensure_usable()?;
-            let mut slot = lock(&self.lob);
-            let lob = slot
-                .as_mut()
-                .ok_or_else(|| Error::usage("The Lob is closed."))?;
-            body(&state, lob)
+            self.locked(|_| Ok(()))?;
+            body(&state)
         })
+    }
+
+    /// Runs `f` on the LOB under its lock, which nothing that allocates
+    /// PHP memory holds (see [`fits`]); fails if the LOB is closed.
+    fn locked<T>(
+        &self,
+        f: impl FnOnce(&mut oracledb::Lob) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut slot = lock(&self.lob);
+        let lob = slot
+            .as_mut()
+            .ok_or_else(|| Error::usage("The Lob is closed."))?;
+        f(lob)
     }
 }
 
@@ -296,30 +392,42 @@ impl NativeLob {
     /// `LobType`'s backing value: clob, nClob or blob.
     #[php(name = "type")]
     pub fn lob_type(&self) -> PhpResult<&'static str> {
-        self.on_lob(|_, _| Ok(self.lob_type))
+        self.on_lob(|_| Ok(self.lob_type))
     }
 
     /// In UCS-2 code units for CLOB / NCLOB, in bytes for BLOB. No Round
     /// trip.
     pub fn size(&self) -> PhpResult<i64> {
-        self.on_lob(|_, _| Ok(self.size))
+        self.on_lob(|_| Ok(self.size))
     }
 
     /// The next chunk, UTF-8 for CLOB / NCLOB: '' at the end and on every
     /// later call. At most one Round trip, under the execute's Call timeout;
-    /// none at the end. A chunk never splits a character (C9).
+    /// none at the end. A chunk never splits a character (C9). A chunk
+    /// PHP's `memory_limit` cannot hold fails with `unsupported`.
     pub fn read_chunk(&self) -> PhpResult<Zval> {
-        self.on_lob(|state, lob| {
+        self.on_lob(|state| {
             // What is left, from the locator's size and the LOB's own
             // position: no Round trip.
-            let size = lob.get_size()?;
-            let next = lob.stream_position().map_err(|e| io_error(e, "read"))?;
-            let left = size.saturating_sub(usize::try_from(next).unwrap_or(usize::MAX) - 1);
-            if left == 0 {
+            let units = self.locked(|lob| {
+                let size = lob.get_size()?;
+                let next = lob.stream_position().map_err(|e| io_error(e, "read"))?;
+                let left = size.saturating_sub(usize::try_from(next).unwrap_or(usize::MAX) - 1);
+                Ok(left.min(CHUNK))
+            })?;
+            if units == 0 {
                 return Ok(binary(Vec::new()));
             }
-            let units = left.min(CHUNK);
-            state.timed(self.timeout, || read(lob, units))
+            let refuse = |left| {
+                Error::unsupported(format!(
+                    "The Lob's next chunk does not fit in memory_limit, which leaves {left} bytes; raise memory_limit to read it."
+                ))
+            };
+            let blob = self.lob_type == "blob";
+            let mut target = Target::new(blob, units, |len| fits(len).map_err(refuse))?;
+            let filled =
+                state.timed(self.timeout, || self.locked(|lob| target.fill(lob)))?;
+            target.finish(filled, |len| fits(len).map_err(refuse))
         })
     }
 

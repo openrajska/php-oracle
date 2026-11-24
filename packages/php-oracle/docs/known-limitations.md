@@ -109,7 +109,10 @@ server error, unless this page says otherwise.
 - A database whose `DBTIMEZONE` is a region name cannot fetch TIMESTAMP WITH
   LOCAL TIME ZONE values.
 - With `LobMode::Inline`, a LOB too large for `memory_limit` throws
-  `UnsupportedException`.
+  `UnsupportedException`, and so does a `Lob` chunk (up to 1 MiB of bytes
+  or code units) that `memory_limit` cannot hold. Both count PHP's real
+  memory use (`memory_get_usage(true)`) plus 2 MiB for the allocator's next
+  chunk, so they refuse a little before PHP's own fatal error would.
 - A row of a query, a REF CURSOR, a nested `CURSOR()` or an Implicit result
   brings up to 32767 characters (CLOB, NCLOB) or bytes (BLOB) of each LOB with
   it, read or not. A larger LOB, and every non-empty LOB of an OUT bind, costs
