@@ -682,11 +682,11 @@ final class ObjectsTest extends ConformanceTestCase
      *
      * Observed on 26ai, recorded for Known limitations:
      * - in the Session that described the type before, binding the old
-     *   shape fails on the server (ORA-03101) and the new attribute is
-     *   unknown (`UsageException`); the Session stays usable;
-     * - in every Session, old or new, a value of the evolved type cannot be
-     *   read (`UnsupportedException`): the crate takes the version prefix of
-     *   its image for a subtype instance (#72). A new Session binds it IN.
+     *   shape fails on the server (ORA-03101), the new attribute is unknown
+     *   (`UsageException`), and reading a value fails on the client
+     *   (`QueryException`, the image carries the type's new version), every
+     *   time; the Session stays usable;
+     * - a Session opened after the change reads and binds the new shape (#72).
      */
     #[Test]
     public function after_alter_type_elsewhere_a_session_fails_loudly_or_stays_consistent(): void
@@ -708,10 +708,12 @@ final class ObjectsTest extends ConformanceTestCase
 
             $fresh = $this->connect(standalone: true);
             $outcomes = [];
+            $messages = [];
             foreach ([
                 'bind the old shape' => static fn (): mixed => $echo(['a' => 2]),
                 'bind the new shape' => static fn (): mixed => $echo(['a' => 3, 'b' => 'x']),
                 'fetch a value' => fn (): mixed => self::value($connection, "select $type(4, 'y') from dual"),
+                'fetch a value again' => fn (): mixed => self::value($connection, "select $type(4, 'y') from dual"),
                 'still usable' => fn (): mixed => self::value($connection, 'select 1 from dual'),
                 'a new Session fetches' => fn (): mixed => self::value($fresh, "select $type(5, 'z') from dual"),
                 'a new Session binds' => fn (): mixed => $fresh->execute(
@@ -729,6 +731,7 @@ final class ObjectsTest extends ConformanceTestCase
                     $outcomes[$case] = $run();
                 } catch (OracleException $e) {
                     $outcomes[$case] = $e::class.($e->getCode() === 0 ? '' : ' '.$e->getCode());
+                    $messages[$case] = $e->getMessage();
                 }
             }
 
@@ -736,13 +739,18 @@ final class ObjectsTest extends ConformanceTestCase
                 [
                     'bind the old shape' => QueryException::class.' 3101',
                     'bind the new shape' => UsageException::class,
-                    'fetch a value' => UnsupportedException::class,
+                    'fetch a value' => QueryException::class,
+                    'fetch a value again' => QueryException::class,
                     'still usable' => 1,
-                    'a new Session fetches' => UnsupportedException::class,
+                    'a new Session fetches' => ['A' => 5, 'B' => 'z'],
                     'a new Session binds' => '6w',
-                    'a new Session binds OUT' => UnsupportedException::class,
+                    'a new Session binds OUT' => ['A' => 7, 'B' => 'v'],
                 ],
                 $outcomes,
+            );
+            self::assertStringContainsString(
+                strtoupper($type).' has changed since this connection described it',
+                $messages['fetch a value'] ?? '',
             );
         } finally {
             $other->execute("drop type $type force", [], self::options());
