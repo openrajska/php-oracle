@@ -29,4 +29,14 @@ final readonly class DriverOptions
         public KeyCase $keyCase,
     ) {
     }
+
+    /**
+     * These options, committing with each execute or not.
+     */
+    public function withAutocommit(bool $autocommit): self
+    {
+        return $autocommit === $this->autocommit
+            ? $this
+            : new self($autocommit, $this->timeout, $this->fetchSize, $this->values, $this->rowShape, $this->keyCase);
+    }
 }

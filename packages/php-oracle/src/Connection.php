@@ -436,17 +436,8 @@ final class Connection
     private function dbmsOutput(string $sql, array $binds = []): Execution
     {
         $this->ensureOpen();
-        $options = $this->resolve(null);
-
         return new Execution(
-            $this->driver->execute($sql, $binds, new DriverOptions(
-                autocommit: false,
-                timeout: $options->timeout,
-                fetchSize: $options->fetchSize,
-                values: $options->values,
-                rowShape: $options->rowShape,
-                keyCase: $options->keyCase,
-            )),
+            $this->driver->execute($sql, $binds, $this->resolve(null)->withAutocommit(false)),
             $sql,
             $this->state,
             array_keys($binds),
