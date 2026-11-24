@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Bind\BinaryDouble;
+use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Date;
+use Rajska\Oracle\Bind\Number;
+use Rajska\Oracle\Bind\Rowid;
 use Rajska\Oracle\Bind\Timestamp;
 use Rajska\Oracle\Bind\TimestampLtz;
 use Rajska\Oracle\Bind\TimestampTz;
+use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\TemporalMode;
@@ -331,6 +336,177 @@ final class ValuesTest extends ConformanceTestCase
             );
             self::assertSame($expected, array_map(Temporals::shown(...), self::rows($connection, $sql, options: $string)[0]));
             self::assertSame('+2026-03-01 10:00:00.123456 America/Sao_Paulo', Temporals::shown(self::rows($connection, $sql)[0]['T9']));
+        });
+    }
+
+    /**
+     * Values 3, Scope 1: BINARY_FLOAT and BINARY_DOUBLE give a `float`;
+     * `0.1` stays `0.1` (BINARY_FLOAT widened through its shortest
+     * round-trip text), NaN and the infinities included.
+     */
+    #[Test]
+    public function binary_float_and_double_give_floats_nan_and_infinities_included(): void
+    {
+        $row = self::rows($this->connect(), <<<'SQL'
+            select to_binary_float(0.1) bf, to_binary_double(0.1) bd,
+                   to_binary_float(-12.5) negative_bf, to_binary_double('1e300') huge_bd,
+                   binary_float_nan bf_nan, binary_double_nan bd_nan,
+                   binary_float_infinity bf_inf, -binary_double_infinity bd_minus_inf,
+                   cast(null as binary_float) no_bf, cast(null as binary_double) no_bd
+              from dual
+            SQL)[0];
+
+        self::assertSame([
+            'BF' => 0.1,
+            'BD' => 0.1,
+            'NEGATIVE_BF' => -12.5,
+            'HUGE_BD' => 1e300,
+            'BF_INF' => INF,
+            'BD_MINUS_INF' => -INF,
+            'NO_BF' => null,
+            'NO_BD' => null,
+        ], array_diff_key($row, ['BF_NAN' => true, 'BD_NAN' => true]));
+        self::assertIsFloat($row['BF_NAN']);
+        self::assertNan($row['BF_NAN']);
+        self::assertIsFloat($row['BD_NAN']);
+        self::assertNan($row['BD_NAN']);
+    }
+
+    /**
+     * Values 3: NaN and the infinities round-trip through `BinaryFloat::in()`
+     * and `BinaryDouble::in()`, and the server stores them as such.
+     */
+    #[Test]
+    public function nan_and_infinities_round_trip(): void
+    {
+        $connection = $this->connect();
+        foreach (['Nan' => NAN, 'Inf' => INF, '-Inf' => -INF] as $stored => $value) {
+            foreach ([BinaryFloat::in($value), BinaryDouble::in($value)] as $bind) {
+                $row = self::rows($connection, 'select :v value, to_char(:v) text from dual', ['v' => $bind])[0];
+
+                self::assertSame($stored, $row['TEXT'], $bind->type->value);
+                self::assertIsFloat($row['VALUE']);
+                self::assertSame(is_nan($value) ? 'NAN' : (string) $value, is_nan($row['VALUE']) ? 'NAN' : (string) $row['VALUE'], $bind->type->value);
+            }
+        }
+        self::assertSame(0.1, self::value($connection, 'select :v from dual', ['v' => BinaryFloat::in(0.1)]));
+        self::assertSame(0.1, self::value($connection, 'select :v from dual', ['v' => BinaryDouble::in(0.1)]));
+    }
+
+    /**
+     * Values 10, Scope 1: CHAR and NCHAR keep their blank padding; RAW and
+     * LONG RAW give bytes; ROWID and UROWID their text; BOOLEAN a `bool`;
+     * LONG a `string`; and NULL of every one of them `null`.
+     */
+    #[Test]
+    public function char_raw_rowid_boolean_and_long_map_as_stated(): void
+    {
+        $connection = $this->connect();
+        $row = self::rows($connection, <<<'SQL'
+            select cast('ab' as char(5)) ch, cast(unistr('\00e7b') as nchar(4)) nch,
+                   hextoraw('00FF10') bytes, true yes, false no,
+                   i.rowid rid, cast(i.rowid as varchar2(18)) rid_text,
+                   cast(null as char(1)) no_ch, cast(null as nchar(1)) no_nch,
+                   cast(null as raw(1)) no_bytes, cast(null as boolean) no_flag,
+                   cast(null as rowid) no_rid, cast(null as urowid) no_urid
+              from fx_items i
+             where i.id = 1
+            SQL)[0];
+        self::assertIsString($row['RID']);
+        self::assertSame(18, strlen($row['RID']));
+
+        self::assertSame([
+            'CH' => 'ab   ',
+            'NCH' => 'çb  ',
+            'BYTES' => "\x00\xff\x10",
+            'YES' => true,
+            'NO' => false,
+            'RID' => $row['RID_TEXT'],
+            'RID_TEXT' => $row['RID'],
+            'NO_CH' => null,
+            'NO_NCH' => null,
+            'NO_BYTES' => null,
+            'NO_FLAG' => null,
+            'NO_RID' => null,
+            'NO_URID' => null,
+        ], $row);
+
+        // The ROWID binds back and finds its row.
+        self::assertSame(1, self::value($connection, 'select id from fx_items where rowid = :r', ['r' => Rowid::in($row['RID'])]));
+
+        // An index-organized table's ROWID is a UROWID: its text, which
+        // finds the row again.
+        $urowid = self::rows($connection, 'select rowid urid, cast(rowid as varchar2(4000)) urid_text from fx_iot')[0];
+        self::assertIsString($urowid['URID']);
+        self::assertSame($urowid['URID_TEXT'], $urowid['URID']);
+        self::assertSame('one', self::value($connection, 'select label from fx_iot where rowid = :r', ['r' => Rowid::in($urowid['URID'])]));
+
+        self::assertSame(
+            [['ID' => 1, 'TEXT' => 'long text'], ['ID' => 2, 'TEXT' => null]],
+            self::rows($connection, 'select id, text from fx_long_rows order by id'),
+        );
+        self::assertSame(
+            [['ID' => 1, 'BYTES' => "\x00\xff\x10"], ['ID' => 2, 'BYTES' => null]],
+            self::rows($connection, 'select id, bytes from fx_long_raw_rows order by id'),
+        );
+    }
+
+    /**
+     * Values 17: every scalar type gives the same value whatever the NLS
+     * settings of the Session.
+     */
+    #[Test]
+    public function values_are_identical_under_unusual_nls_settings(): void
+    {
+        Temporals::inZone('America/Sao_Paulo', function (): void {
+            // Standalone: a pooled Session would keep the ALTER SESSION.
+            $connection = $this->connect(standalone: true);
+            $sql = <<<'SQL'
+                select 12.5 num, 1e-5 tiny, 123456789 whole, to_binary_float(1.5) bf, to_binary_double(0.1) bd,
+                       date '2026-03-01' + 1/24 d,
+                       cast(timestamp '2026-03-01 10:00:00.123456789' as timestamp(9)) ts,
+                       timestamp '2026-03-01 10:00:00.5 +05:45' tz,
+                       cast(timestamp '2026-03-01 13:00:00.25 +00:00' as timestamp with local time zone) ltz,
+                       interval '1 02:03:04.5' day to second ds, interval '-2-5' year to month ym,
+                       cast('ab' as char(3)) ch, hextoraw('0A') bytes, true flag,
+                       to_char(:n) number_text
+                  from dual
+                SQL;
+            $binds = ['n' => Number::in('12.30')];
+            $float = self::options(values: new ValueMapping(numbers: NumberMode::Float));
+            $read = static fn (?DriverOptions $options = null): array => array_map(
+                Temporals::shown(...),
+                self::rows($connection, $sql, $binds, $options)[0],
+            );
+            $before = [$read(), $read($float)];
+            self::assertSame([
+                'NUM' => '12.5', 'TINY' => '0.00001', 'WHOLE' => 123456789, 'BF' => 1.5, 'BD' => 0.1,
+                'D' => '+2026-03-01 01:00:00.000000 America/Sao_Paulo',
+                'TS' => '+2026-03-01 10:00:00.123456 America/Sao_Paulo',
+                'TZ' => '+2026-03-01 10:00:00.500000 +05:45',
+                'LTZ' => '+2026-03-01 10:00:00.250000 America/Sao_Paulo',
+                'DS' => '+0Y0M1DT2H3M4S.500000',
+                'YM' => '-2Y5M0DT0H0M0S.000000',
+                'CH' => 'ab ', 'BYTES' => "\x0a", 'FLAG' => true,
+                'NUMBER_TEXT' => '12.3',
+            ], $before[0]);
+            self::assertSame(12.5, $before[1]['NUM']);
+
+            $connection->execute(
+                <<<'SQL'
+                    alter session set nls_numeric_characters = ',.' nls_date_format = 'DD/MON/RR HH:MI'
+                        nls_timestamp_format = 'DD.MM.YYYY FF3' nls_timestamp_tz_format = 'TZR DD.MM.YYYY'
+                        nls_date_language = 'GERMAN' nls_territory = 'GERMANY' nls_language = 'GERMAN'
+                    SQL,
+                [],
+                self::options(),
+            );
+
+            // Only the server's own TO_CHAR follows the NLS settings.
+            $after = [$read(), $read($float)];
+            self::assertSame('12,3', $after[0]['NUMBER_TEXT']);
+            $after[0]['NUMBER_TEXT'] = $after[1]['NUMBER_TEXT'] = '12.3';
+            self::assertSame($before, $after);
         });
     }
 }

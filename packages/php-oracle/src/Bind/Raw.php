@@ -7,7 +7,9 @@ namespace Rajska\Oracle\Bind;
 use Rajska\Oracle\Type;
 
 /**
- * RAW: bytes, at most 32767.
+ * RAW: bytes, at most 32767. It also writes a LONG RAW column; more than
+ * 32767 bytes would take a LONG bind, which is not supported yet
+ * (UnsupportedException). Bind a BLOB's longer bytes with `Blob::in()`.
  */
 final readonly class Raw extends Bind
 {
