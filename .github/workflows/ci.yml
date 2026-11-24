@@ -83,13 +83,6 @@ jobs:
           cargo build --locked
           php -d extension="$EXTENSION" --ri rajska_oracle
 
-      - name: Extension suite
-        working-directory: packages/php-oracle-ext
-        run: |
-          cargo fmt --check
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked
-
       - name: Install the fixtures
         run: |
           oracle="${{ job.services.oracle.id }}"
@@ -106,6 +99,14 @@ jobs:
           sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba @grants.sql $ORACLE_USER
           sqlplus -s -l $ORACLE_USER/$ORACLE_PASSWORD@//localhost/FREEPDB1 @install.sql
           EOF
+
+      # After the fixtures: the Pool's tests log on as the suites' user.
+      - name: Extension suite
+        working-directory: packages/php-oracle-ext
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
 
       - name: Install Core's dependencies
         working-directory: packages/php-oracle
