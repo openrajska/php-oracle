@@ -226,7 +226,7 @@ final class ObjectsTest extends ConformanceTestCase
         $sql = self::value($connection, "select $built from dual");
         self::assertIsArray($sql);
         if ($sql['C_BOOLEAN'] === false) {
-            self::markTestIncomplete('Needs the oracledb fork to read a BOOLEAN attribute of an Object built in SQL (#58 hand-off).');
+            self::markTestIncomplete('Needs the oracledb fork to read a BOOLEAN attribute of an Object built in SQL (#71).');
         }
         self::assertTrue($sql['C_BOOLEAN']);
     }
@@ -287,7 +287,7 @@ final class ObjectsTest extends ConformanceTestCase
     /**
      * Objects 4: Struct and Collection bind into SQL too. `RETURNING …
      * INTO` an Object fails before the statement runs, leaving the
-     * Connection usable: the crate cannot read one back yet.
+     * Connection usable: the crate cannot read one back yet (#73).
      */
     #[Test]
     public function struct_and_collection_bind_into_sql_but_not_returning_into(): void
@@ -678,7 +678,7 @@ final class ObjectsTest extends ConformanceTestCase
      *   unknown (`UsageException`); the Session stays usable;
      * - in every Session, old or new, a value of the evolved type cannot be
      *   read (`UnsupportedException`): the crate takes the version prefix of
-     *   its image for a subtype instance. A new Session binds it IN.
+     *   its image for a subtype instance (#72). A new Session binds it IN.
      */
     #[Test]
     public function after_alter_type_elsewhere_a_session_fails_loudly_or_stays_consistent(): void

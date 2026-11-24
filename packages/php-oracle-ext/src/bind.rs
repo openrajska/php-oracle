@@ -132,9 +132,9 @@ impl Binds {
         Ok(params)
     }
 
-    /// Fails, before any Round trip, for an Object or Collection OUT bind of
+    /// Fails, before the statement runs, for an Object or Collection OUT bind of
     /// a SQL statement (`RETURNING … INTO`): the crate cannot read one back
-    /// (it panics), so that is later.
+    /// (it panics), so that is later (#73).
     pub fn refuse_returned_objects(&self, is_plsql: bool) -> Result<(), Error> {
         if is_plsql {
             return Ok(());
