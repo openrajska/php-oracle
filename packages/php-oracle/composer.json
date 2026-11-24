@@ -1,0 +1,30 @@
+{
+    "name": "openrajska/php-oracle",
+    "description": "A typed API for Oracle Database in PHP",
+    "type": "library",
+    "license": ["MIT", "Apache-2.0"],
+    "require": {
+        "php": "~8.4.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.3",
+        "phpunit/phpunit": "^13.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Rajska\\Oracle\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Rajska\\Oracle\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "analyse": "phpstan analyse --no-progress --memory-limit=1G",
+        "test": "phpunit"
+    }
+}
