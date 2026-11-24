@@ -169,6 +169,63 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
+     * Errors 8, the honoured break: a CPU-bound query over the Call timeout
+     * throws TimeoutException, the server stops it, and the Connection
+     * works on.
+     */
+    #[Test]
+    public function a_call_timeout_on_a_cpu_bound_query_throws_and_the_connection_survives(): void
+    {
+        $connection = $this->connect(...self::ownPool());
+        $sql = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
+        $started = microtime(true);
+
+        try {
+            $connection->execute($sql, [], self::options(timeout: 0.5))->cursor()?->fetchBatch();
+            self::fail('The query finished within its Call timeout.');
+        } catch (TimeoutException $e) {
+            self::assertSame(0, $e->getCode());
+            self::assertSame('Call timeout of 500 ms exceeded.', $e->getMessage());
+            self::assertSame($sql, $e->sql());
+        }
+        self::assertLessThan(5, microtime(true) - $started, 'The break stopped the query.');
+
+        self::assertSame(1, self::value($connection, 'select 1 from dual'));
+    }
+
+    /**
+     * Errors 8, the ignored break: the server answers no break during a
+     * sleep, so the Session is lost. The call that timed out throws
+     * TimeoutException; the Connection is Broken, and the next call throws
+     * ConnectionLostException.
+     */
+    #[Test]
+    public function a_call_timeout_on_a_sleep_makes_the_next_call_throw_connection_lost(): void
+    {
+        // Two, not one: until #68 a Broken Session may be held out of the
+        // Pool instead of dropped.
+        $fields = self::ownPool() + ['maxConnections' => 2];
+        $connection = $this->connect(...$fields);
+        $session = self::session($connection);
+
+        try {
+            $connection->execute('begin fx_pool.sleep(3); end;', [], self::options(timeout: 0.5));
+            self::fail('The sleep finished within its Call timeout.');
+        } catch (TimeoutException $e) {
+            self::assertStringStartsWith('Call timeout of 500 ms exceeded', $e->getMessage());
+        }
+        try {
+            $connection->execute('select 1 from dual', [], self::options());
+            self::fail('A Broken Connection ran a statement.');
+        } catch (ConnectionLostException $later) {
+            self::assertSame('Connection is broken: ' . $e->getMessage(), $later->getMessage());
+        }
+        $connection->close();
+
+        self::assertNotSame($session, self::session($this->connect(...$fields)), 'The lost Session came back.');
+    }
+
+    /**
      * @return iterable<string, array{bool}>
      */
     public static function releases(): iterable

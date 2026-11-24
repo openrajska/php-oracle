@@ -7,15 +7,20 @@ namespace Rajska\Oracle\Driver\Extension;
 use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Extension\Cursor as NativeCursor;
 use Rajska\Oracle\Extension\Exception as NativeException;
+use Rajska\Oracle\Extension\Lob as NativeLob;
 
 /**
  * @internal
  */
 final class ExtensionCursor implements DriverCursor
 {
+    /** The column types whose cells are handles (a LOB is a string under `LobMode::Inline`). */
+    private const array HANDLES = ['cursor', 'clob', 'nClob', 'blob'];
+
     /**
-     * The positions of the nested `CURSOR()` columns, whose cells are
-     * native Cursors to wrap; known from `columns()` on the first rows.
+     * The positions of the handle columns (nested `CURSOR()`, CLOB, NCLOB,
+     * BLOB), whose cells are native Cursors or Lobs to wrap; known from
+     * `columns()` on the first rows.
      *
      * @var list<int>|null
      */
@@ -29,7 +34,7 @@ final class ExtensionCursor implements DriverCursor
     }
 
     /**
-     * OUT values with each native Cursor (a REF CURSOR) wrapped.
+     * OUT values with each native handle (a REF CURSOR, a LOB) wrapped.
      *
      * @param array<string, list<mixed>> $outValues each bind's list of values
      *
@@ -41,6 +46,8 @@ final class ExtensionCursor implements DriverCursor
             foreach ($values as $index => $value) {
                 if ($value instanceof NativeCursor) {
                     $outValues[$name][$index] = new self($value, $sql);
+                } elseif ($value instanceof NativeLob) {
+                    $outValues[$name][$index] = new ExtensionLob($value, $sql);
                 }
             }
         }
@@ -66,7 +73,7 @@ final class ExtensionCursor implements DriverCursor
             }
             $this->handles ??= array_keys(array_filter(
                 $this->native->columns(),
-                static fn (array $column): bool => $column['type'] === 'cursor',
+                static fn (array $column): bool => \in_array($column['type'], self::HANDLES, true),
             ));
         } catch (NativeException $e) {
             throw ExceptionTranslator::translate($e, $this->sql);
@@ -82,6 +89,8 @@ final class ExtensionCursor implements DriverCursor
                 $cell = $row[$keys[$position]];
                 if ($cell instanceof NativeCursor) {
                     $rows[$index][$keys[$position]] = new self($cell, $this->sql);
+                } elseif ($cell instanceof NativeLob) {
+                    $rows[$index][$keys[$position]] = new ExtensionLob($cell, $this->sql);
                 }
             }
         }

@@ -12,12 +12,14 @@ use Rajska\Oracle\Driver\Extension\ExtensionConnection;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
+use Rajska\Oracle\Exceptions\TimeoutException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Extension\Connection as NativeConnection;
 use Rajska\Oracle\Extension\Cursor as NativeCursor;
 use Rajska\Oracle\Extension\Exception as NativeException;
+use Rajska\Oracle\Extension\Lob as NativeLob;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
@@ -51,9 +53,11 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $connection = $this->native();
         $cursor = $connection->execute('select 1 from dual', [], self::nativeOptions())['cursor'];
         self::assertInstanceOf(NativeCursor::class, $cursor);
+        $lob = $connection->execute("select to_clob('x') as c from dual", [], self::nativeOptions())['cursor']?->fetchBatch()[0]['C'] ?? null;
+        self::assertInstanceOf(NativeLob::class, $lob);
         $exception = $this->nativeException(fn () => $connection->execute('select 1 from dual', [], ['unknown' => 1] + self::nativeOptions()));
 
-        foreach ([$connection, $cursor, $exception] as $object) {
+        foreach ([$connection, $cursor, $lob, $exception] as $object) {
             $class = $object::class;
             self::assertTrue(new \ReflectionClass($class)->isFinal(), "$class is final");
             $this->assertFails(static fn () => new $class(), "new $class");
@@ -170,6 +174,10 @@ final class NativeSurfaceTest extends ConformanceTestCase
                     ['unknown' => 1] + self::nativeOptions(),
                 ));
                 self::assertSame('usage', $exception->kind, 'an unknown key in $options');
+                $exception = $this->nativeException(fn () => $native->trace(
+                    ['unknown' => 1] + self::nativeSession()['tracing'],
+                ));
+                self::assertSame('usage', $exception->kind, 'an unknown key in $tracing');
             }));
         } finally {
             $counter->close();
@@ -188,6 +196,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $native = $this->native();
         $wrongPassword = TestDatabase::fromEnvironment()->config(password: 'not-the-password');
         $duplicate = "insert into fx_items (id, category_id, name, price, created_at) values (1, 1, 'duplicate', 1, sysdate)";
+        $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
 
         $cases = [
             'database' => [
@@ -204,6 +213,11 @@ final class NativeSurfaceTest extends ConformanceTestCase
                 ConnectionException::class,
                 fn () => NativeConnection::connect(['password' => 'not-the-password'] + self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession()),
                 fn () => $this->driver()->connect($wrongPassword),
+            ],
+            'timeout' => [
+                TimeoutException::class,
+                fn () => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
+                fn () => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
             ],
             'unsupported' => [
                 UnsupportedException::class,
@@ -241,6 +255,112 @@ final class NativeSurfaceTest extends ConformanceTestCase
                 self::assertNull($e->getPrevious(), "$case: previous");
             }
         }
+    }
+
+    /**
+     * Native surface 5: every acquire applies its own `$session`, whatever
+     * the Session's previous Connection had.
+     */
+    #[Test]
+    public function the_session_array_is_reapplied_on_every_acquire(): void
+    {
+        $pool = ['maxConnections' => 1, 'connectTimeout' => 20_061] + self::nativePool(TestDatabase::fromEnvironment());
+        $sql = <<<'SQL'
+            select sys_context('userenv', 'sid') sid,
+                   sys_context('userenv', 'module') module,
+                   sys_context('userenv', 'action') action,
+                   sys_context('userenv', 'client_identifier') client_identifier,
+                   sys_context('userenv', 'client_info') client_info
+              from dual
+            SQL;
+        $sessions = [];
+        foreach (['A', 'B'] as $name) {
+            $connection = NativeConnection::connect($pool, [
+                'tracing' => ['module' => "module $name", 'action' => "action $name", 'clientIdentifier' => "id $name", 'clientInfo' => "info $name"],
+                'callTimeout' => 60_000,
+            ]);
+            $row = $connection->execute($sql, [], self::nativeOptions())['cursor']?->fetchBatch()[0] ?? [];
+            $connection->close();
+            $sessions[] = array_shift($row);
+            self::assertSame([
+                'MODULE' => "module $name",
+                'ACTION' => "action $name",
+                'CLIENT_IDENTIFIER' => "id $name",
+                'CLIENT_INFO' => "info $name",
+            ], $row);
+        }
+        self::assertSame($sessions[0], $sessions[1], 'One Session for both');
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function nonPositiveDurations(): iterable
+    {
+        foreach ([0, -1] as $ms) {
+            yield "\$session callTimeout $ms" => ['callTimeout', $ms];
+            yield "\$options timeout $ms" => ['timeout', $ms];
+        }
+    }
+
+    /**
+     * A Call timeout is at least 1 ms, or null for no limit.
+     */
+    #[Test]
+    #[DataProvider('nonPositiveDurations')]
+    public function a_call_timeout_under_1_ms_fails_with_kind_usage(string $key, int $ms): void
+    {
+        $native = $this->native();
+        $exception = $this->nativeException(static fn () => $key === 'callTimeout'
+            ? NativeConnection::connect(self::nativePool(TestDatabase::fromEnvironment()), ['callTimeout' => $ms] + self::nativeSession())
+            : $native->execute('select 1 from dual', [], ['timeout' => $ms] + self::nativeOptions()));
+
+        self::assertSame('usage', $exception->kind);
+        self::assertStringContainsString("'$key'", $exception->getMessage());
+    }
+
+    /**
+     * Native surface 8 and 10, for Lobs: `type()` gives a LobType backing
+     * value; after `close()` of their Connection every call fails with
+     * `kind: usage`. Over 1000 cycles on one Session, the temporary LOBs
+     * dropped by the Release are freed, and the next owner reads its own.
+     */
+    #[Test]
+    public function after_close_its_lobs_fail_with_kind_usage_and_the_sessions_next_owner_is_unaffected(): void
+    {
+        $pool = ['maxConnections' => 1, 'connectTimeout' => 20_051] + self::nativePool(TestDatabase::fromEnvironment());
+        $sql = "select to_clob('x') as c, to_blob(hextoraw('ff')) as b from dual";
+        $orphans = [];
+        for ($i = 0; $i < 1000; ++$i) {
+            $connection = NativeConnection::connect($pool, self::nativeSession());
+            $row = $connection->execute($sql, [], self::nativeOptions())['cursor']?->fetchBatch()[0] ?? [];
+            self::assertInstanceOf(NativeLob::class, $row['C'] ?? null);
+            self::assertInstanceOf(NativeLob::class, $row['B'] ?? null);
+            self::assertSame(['clob', 'blob'], [$row['C']->type(), $row['B']->type()]);
+            $connection->close();
+            $orphans[] = $row;
+        }
+
+        $lob = $orphans[999]['C'];
+        foreach (['type()' => $lob->type(...), 'size()' => $lob->size(...), 'readChunk()' => $lob->readChunk(...)] as $call => $read) {
+            $e = $this->nativeException($read);
+            self::assertSame('usage', $e->kind, $call);
+            self::assertSame('The Connection is closed.', $e->getMessage(), $call);
+        }
+        $lob->close();
+
+        $next = NativeConnection::connect($pool, self::nativeSession());
+        $this->natives[] = $next;
+        $row = $next->execute($sql, [], self::nativeOptions())['cursor']?->fetchBatch()[0] ?? [];
+        unset($lob, $orphans);
+        self::assertInstanceOf(NativeLob::class, $row['C'] ?? null);
+        self::assertSame('x', $row['C']->readChunk());
+        $temporary = $next->execute(
+            'select count(*) as n from v$temporary_lobs t join v$session s on s.sid = t.sid where s.audsid = userenv(\'sessionid\') and t.cache_lobs + t.nocache_lobs + t.abstract_lobs > 2',
+            [],
+            self::nativeOptions(),
+        );
+        self::assertSame([['N' => 0]], $temporary['cursor']?->fetchBatch(), 'No temporary LOB of the earlier owners is left');
     }
 
     /**

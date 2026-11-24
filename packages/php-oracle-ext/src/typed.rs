@@ -8,8 +8,9 @@
 
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use oracledb::{
-    BindValue, DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_NCHAR, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT,
-    DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
+    BindValue, DB_TYPE_BLOB, DB_TYPE_CHAR, DB_TYPE_CLOB, DB_TYPE_CURSOR, DB_TYPE_NCHAR,
+    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType,
+    OracleNumber, ToDbValue,
 };
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
@@ -29,6 +30,8 @@ pub struct Typed {
     direction: Direction,
     /// The timestamp type declared, which may travel as another type.
     reads_as: Option<Temporal>,
+    /// A CLOB, NCLOB or BLOB.
+    lob: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,6 +55,11 @@ impl Typed {
     /// whatever type the server sent it back as.
     pub fn reads_as(&self) -> Option<Temporal> {
         self.reads_as
+    }
+
+    /// Whether it is a CLOB, NCLOB or BLOB bind.
+    pub fn is_lob(&self) -> bool {
+        self.lob
     }
 
     /// Whether it is an Object or a Collection (`Struct`, `Collection`,
@@ -112,6 +120,11 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         // A REF CURSOR goes as NULL, and the server opens it.
         "cursor" if value.is_null() => Box::new(DB_TYPE_CURSOR),
         "cursor" => return Err(cursor_in(name)),
+        // The server sends back a locator (a temporary LOB for a PL/SQL
+        // value); IN and IN OUT come with the LOB writes.
+        "clob" if direction == Direction::Out => Box::new(DB_TYPE_CLOB),
+        "nClob" if direction == Direction::Out => Box::new(DB_TYPE_NCLOB),
+        "blob" if direction == Direction::Out => Box::new(DB_TYPE_BLOB),
         "date" | "timestamp" | "timestampTz" | "timestampLtz" => temporal::timestamp_bind(
             name,
             value,
@@ -139,6 +152,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         value,
         direction,
         reads_as: Temporal::of_bind(&type_name),
+        lob: matches!(type_name.as_str(), "clob" | "nClob" | "blob"),
     })
 }
 

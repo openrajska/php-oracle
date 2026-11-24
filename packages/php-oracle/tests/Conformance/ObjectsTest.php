@@ -285,12 +285,13 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 4: Struct and Collection bind into SQL too. `RETURNING …
+     * Objects 4: Struct and Collection bind into SQL too. SQL `RETURNING …
      * INTO` an Object fails before the statement runs, leaving the
-     * Connection usable: the crate cannot read one back yet (#73).
+     * Connection usable (the crate cannot read one back yet, #73); inside
+     * a PL/SQL block it works.
      */
     #[Test]
-    public function struct_and_collection_bind_into_sql_but_not_returning_into(): void
+    public function struct_and_collection_bind_into_sql_and_returning_into_needs_a_block(): void
     {
         $connection = $this->connect();
         $options = self::options(autocommit: false);
@@ -306,8 +307,17 @@ final class ObjectsTest extends ConformanceTestCase
             $connection->execute("$insert returning center into :returned", $binds + ['returned' => Struct::out('fx_point')], $options);
             self::fail('RETURNING INTO an Object ran.');
         } catch (UnsupportedException $e) {
-            self::assertSame("Bind 'returned': RETURNING … INTO an Object or Collection is not supported yet; select it after the statement instead.", $e->getMessage());
+            self::assertSame("OUT bind 'returned': an Object or Collection cannot be read back from RETURNING … INTO yet; wrap the statement in a PL/SQL block (begin … returning … into :returned; end;), or select it afterwards.", $e->getMessage());
         }
+
+        $block = $connection->execute(
+            "begin $insert returning center, tags into :center_o, :tags_o; end;",
+            $binds + ['center_o' => Struct::out('fx_point'), 'tags_o' => Collection::out('fx_string_varray')],
+            $options,
+        );
+        self::assertSame([['X' => 5, 'Y' => 6, 'LABEL' => 'new']], $block->outValues()['center_o']);
+        self::assertSame([['t']], $block->outValues()['tags_o']);
+        $connection->execute('delete from fx_shapes where id = 99', [], $options);
 
         self::assertSame(1, $connection->execute($insert, $binds, $options)->rowCount());
         self::assertSame(

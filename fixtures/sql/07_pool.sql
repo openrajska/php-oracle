@@ -1,11 +1,16 @@
 -- Cheap calls for running one Pool from several threads: which Session served
--- the Call, a controllable delay, and package state that lives in the Session.
+-- the Call, a controllable delay (per Call or per row), and package state that
+-- lives in the Session.
 create or replace package fx_pool as
   -- SID of the Session running the Call.
   function session_id return number;
 
   -- Holds the Session for p_seconds (fractions allowed).
   procedure sleep(p_seconds in number);
+
+  -- p_value, after holding the Session for p_seconds: a query selecting it
+  -- makes every row slow, so each fetch takes its own time.
+  function slow(p_value in number, p_seconds in number) return number;
 
   -- Increments and returns a package variable. It starts at 0 in each new
   -- Session, so a Connection that sees a jump or a reset changed Session.
@@ -25,6 +30,12 @@ create or replace package body fx_pool as
   begin
     dbms_session.sleep(p_seconds);
   end sleep;
+
+  function slow(p_value in number, p_seconds in number) return number is
+  begin
+    dbms_session.sleep(p_seconds);
+    return p_value;
+  end slow;
 
   function bump_counter return number is
   begin

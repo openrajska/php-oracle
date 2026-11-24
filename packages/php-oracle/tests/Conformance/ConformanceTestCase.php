@@ -63,13 +63,14 @@ abstract class ConformanceTestCase extends TestCase
     protected static function options(
         int $fetchSize = 100,
         bool $autocommit = true,
+        int|float|null $timeout = null,
         ValueMapping $values = new ValueMapping(),
         RowShape $rowShape = RowShape::Assoc,
         KeyCase $keyCase = KeyCase::Native,
     ): DriverOptions {
         return new DriverOptions(
             autocommit: $autocommit,
-            timeout: null,
+            timeout: $timeout,
             fetchSize: $fetchSize,
             values: $values,
             rowShape: $rowShape,

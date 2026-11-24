@@ -6,6 +6,7 @@
 
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::time::Duration;
 
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::class::RegisteredClass;
@@ -29,6 +30,8 @@ pub enum Kind {
     ConnectionLost,
     /// No Session of the Pool became free within `acquireTimeout`.
     PoolExhausted,
+    /// A Round trip took longer than the Call timeout.
+    Timeout,
     /// A config value the Backend cannot use.
     Configuration,
     /// A feature that is not available (yet) was reached.
@@ -44,6 +47,7 @@ impl Kind {
             Kind::Connection => "connection",
             Kind::ConnectionLost => "connection_lost",
             Kind::PoolExhausted => "pool_exhausted",
+            Kind::Timeout => "timeout",
             Kind::Configuration => "configuration",
             Kind::Unsupported => "unsupported",
             Kind::Usage => "usage",
@@ -58,6 +62,9 @@ pub struct Error {
     code: i32,
     message: String,
     offset: Option<i64>,
+    /// The Session is lost although the kind is not `connection_lost`: a
+    /// Call timeout whose break the server ignored.
+    lost: bool,
     /// A PHP exception is already pending (thrown by user code the
     /// Extension called): it goes to the caller as is.
     pending: bool,
@@ -70,6 +77,7 @@ impl Error {
             code: 0,
             message: message.into(),
             offset: None,
+            lost: false,
             pending: false,
         }
     }
@@ -112,9 +120,30 @@ impl Error {
         }
     }
 
+    /// A Round trip over the Call timeout `limit`. With `lost`, the server
+    /// ignored the break, and the Session is gone with it.
+    pub fn timeout(limit: Duration, lost: bool) -> Self {
+        let message = format!("Call timeout of {} ms exceeded.", limit.as_millis());
+        Self {
+            lost,
+            ..Self::new(
+                Kind::Timeout,
+                if lost {
+                    format!("{message} The server did not stop the call, so the Session is lost.")
+                } else {
+                    message
+                },
+            )
+        }
+    }
+
     /// Whether the Session is lost: the Connection is Broken.
     pub fn is_connection_lost(&self) -> bool {
-        self.kind == Kind::ConnectionLost
+        self.kind == Kind::ConnectionLost || self.lost
+    }
+
+    pub fn kind(&self) -> Kind {
+        self.kind
     }
 
     pub fn code(&self) -> i32 {
@@ -183,6 +212,7 @@ impl From<oracledb::Error> for Error {
                 code: i32::try_from(db.code()).unwrap_or(0),
                 message: db.message().to_string(),
                 offset: i64::try_from(db.offset()).ok(),
+                lost: false,
                 pending: false,
             },
             other => Self::new(kind_of(other), e.to_string()),
@@ -240,6 +270,7 @@ fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
         E::WrongDbObjectTypeKind(..)
         | E::CannotStoreDbObjectValue(..)
         | E::MissingDbObjectType(_) => Kind::Usage,
+        E::CallTimeoutExceeded => Kind::Timeout,
         _ => Kind::Database,
     }
 }
@@ -404,10 +435,14 @@ mod tests {
     }
 
     #[test]
+    fn a_call_timeout_classifies_as_timeout() {
+        assert_eq!(kind_of(&ErrorKind::CallTimeoutExceeded), Kind::Timeout);
+    }
+
+    #[test]
     fn other_error_kinds_classify_as_database() {
         for kind in [
             ErrorKind::NotConnected,
-            ErrorKind::CallTimeoutExceeded,
             ErrorKind::NoDataFound,
             ErrorKind::LockPoisoned,
             ErrorKind::InvalidColumnIndex(3),

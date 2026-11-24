@@ -29,8 +29,8 @@ The scripts need `CREATE TABLE`, `CREATE PROCEDURE` and `CREATE TYPE`, plus
 enough tablespace quota for about 70 MB of LOB segments.
 
 The test suites also read V$ views (`V$SESSTAT` for Round-trip counts,
-`V$SESSION`, `V$SQL`). `grants.sql` grants them, run as SYSDBA with the user
-as the argument; `ddev fixtures` runs it before `install.sql`:
+`V$SESSION`, `V$SQL`, `V$TEMPORARY_LOBS`). `grants.sql` grants them, run as
+SYSDBA with the user as the argument; `ddev fixtures` runs it before `install.sql`:
 
 ```bash
 sqlplus -s -l sys/password@//host:1521/service as sysdba @grants.sql user
@@ -59,14 +59,14 @@ client `NLS_LANG` does not matter.
 | Large LOB for streaming | `fx_lobs` row 4: 16 MiB CLOB and 16 MiB BLOB with deterministic content; rows 1–3: small, empty, NULL; `fx_lob.generate`, `text_line`, `text_length`, `binary_length` | `05_lob.sql` |
 | `execute_batch` with per-row errors | `fx_batch_rows` (empty; PK, UNIQUE, NOT NULL and CHECK constraints) | `06_batch.sql` |
 | `INSERT ... RETURNING ... INTO` | `fx_bind_rows` (global temporary table, rows gone at commit or rollback) | `09_bind.sql` |
-| Calls by name: IN / OUT / IN OUT with a defaulted parameter, a failing Call, one function per scalar return type, a quoted mixed-case name | `fx_call.echo` (`p_label` defaults to `'default'`), `fx_call.grow`, `fx_call.fail` / `f_fail` (ORA-20046), `fx_call.f_varchar` … `f_rowid` and `f_date` … `f_interval_ym` (a fixed value, or NULL when `p_null`), `"FX_Mixed_Case"("pValue")` | `10_call.sql` |
+| Calls by name: IN / OUT / IN OUT with a defaulted parameter, a failing Call, one function per scalar return type, a quoted mixed-case name | `fx_call.echo` (`p_label` defaults to `'default'`), `fx_call.grow`, `fx_call.fail` / `f_fail` (ORA-20046), `fx_call.f_varchar` … `f_rowid` and `f_date` … `f_interval_ym`, `f_clob` / `f_nclob` / `f_blob` (a fixed value, or NULL when `p_null`; an empty LOB when `p_empty`), `"FX_Mixed_Case"("pValue")` | `10_call.sql` |
 | Transactions: Autocommit, Explicit transactions, a deferred constraint failing at COMMIT | `fx_tx_rows` (empty; the `qty` CHECK is deferrable initially deferred), `fx_tx.add_row`, `fx_tx.add_row_count` (inserts, returns the row count) | `11_transaction.sql` |
 | Every Object attribute type v1 maps, NULL included | `fx_all_scalars` (CHAR … INTERVAL YEAR TO MONTH, one attribute each), `fx_all_scalars_tab` (row 1: a value in every attribute; row 2: all NULL); `fx_kinds.t_record` (PL/SQL record with a PLS_INTEGER field) | `12_object_kinds.sql` |
 | Object attributes v1 does not map yet | `fx_lob_holder` (CLOB, NCLOB, BLOB), `fx_xml_holder` (XMLTYPE), `fx_ref_holder` (REF), `fx_bfile_holder` (BFILE), `fx_tstz_holder` (TSTZ, for a region-named value); JSON, VECTOR and LONG cannot be attributes | `12_object_kinds.sql` |
 | Inheritance: a subtype instance in a supertype column | `fx_animal` (NOT FINAL), `fx_dog` (UNDER `fx_animal`), `fx_animals` (row 1: a `fx_animal`; row 2: a `fx_dog`) | `12_object_kinds.sql` |
 | Type names: quoted, synonym, package types | `"FX_Mixed_Point"` (quoted, with a quoted attribute `"x"`), `fx_point_alias` (synonym of `fx_point`), `fx_kinds.t_numbers` (packaged nested table), `fx_kinds.t_point_map` (Associative array of Objects), `fx_kinds.t_string_map` (`INDEX BY VARCHAR2`, not supported yet) | `12_object_kinds.sql` |
 | Collection of Collections; sparse nested table | `fx_number_matrix` (table of `fx_number_list`); `fx_kinds.sparse_numbers` (1 .. 5 with 2 and 4 deleted); `fx_kinds.string_map`, `echo_numbers`, `echo_map` | `12_object_kinds.sql` |
-| One Pool shared across threads | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.bump_counter` | `07_pool.sql` |
+| One Pool shared across threads, Call timeout | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.slow`, `fx_pool.bump_counter` | `07_pool.sql` |
 | Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
 
 ## Data and expected values
@@ -156,6 +156,9 @@ Empty. Each constraint gives a different error, so a batch can mix them:
 - `session_id`: SID of the Session that ran the Call.
 - `sleep(seconds)`: holds the Session (fractions allowed), to force
   concurrent Calls to use different Sessions.
+- `slow(value, seconds)`: returns `value` after holding the Session for
+  `seconds`. Selected per row (`select fx_pool.slow(level, 0.3) from dual
+  connect by level <= 4`), it makes each fetch slow: for Call timeout tests.
 - `bump_counter`: increments a package variable and returns it. It starts at 0
   in every new Session, so the sequence a Connection sees shows whether its
   Session changed underneath it.

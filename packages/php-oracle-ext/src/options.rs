@@ -1,6 +1,8 @@
 //! `$options`: what Core resolved for one execute (spec #32 §13, §14). Every
 //! Cursor born of that execute keeps them for its whole life.
 
+use std::time::Duration;
+
 use ext_php_rs::types::ZendHashTable;
 use oracledb::StatementBuilder;
 
@@ -36,6 +38,15 @@ pub enum TemporalMode {
     String,
 }
 
+/// How CLOB, NCLOB and BLOB values reach PHP.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LobMode {
+    /// A native `Lob` over the locator, read chunk by chunk.
+    Locator,
+    /// The whole value as a string, read through the locator at fetch.
+    Inline,
+}
+
 /// Rows keyed by column name, or lists in column order.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RowShape {
@@ -55,9 +66,13 @@ pub enum KeyCase {
 pub struct Options {
     /// Commit with the execute: Core sets it outside an Explicit transaction.
     pub autocommit: bool,
+    /// The Call timeout for every Round trip of the execute and of the
+    /// Cursors born of it; `None` is no limit.
+    pub timeout: Option<Duration>,
     pub fetch_size: u32,
     pub numbers: NumberMode,
     pub temporals: TemporalMode,
+    pub lobs: LobMode,
     pub row_shape: RowShape,
     pub key_case: KeyCase,
 }
@@ -66,8 +81,11 @@ impl Options {
     pub fn read(options: &ZendHashTable) -> Result<Self, Error> {
         let fields = Fields::new("$options", options, OPTION_KEYS)?;
         let autocommit = fields.bool("autocommit")?;
-        fields.optional_int("timeout")?;
-        fields.choice("lobs", &["locator", "inline"])?;
+        let timeout = fields.optional_milliseconds("timeout")?;
+        let lobs = match fields.choice("lobs", &["locator", "inline"])? {
+            "inline" => LobMode::Inline,
+            _ => LobMode::Locator,
+        };
         let numbers = match fields.choice("numbers", &["exact", "float"])? {
             "float" => NumberMode::Float,
             _ => NumberMode::Exact,
@@ -91,9 +109,11 @@ impl Options {
             .ok_or_else(|| Error::usage("'fetchSize' in $options must be at least 1."))?;
         Ok(Self {
             autocommit,
+            timeout,
             fetch_size,
             numbers,
             temporals,
+            lobs,
             row_shape,
             key_case,
         })

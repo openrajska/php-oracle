@@ -97,9 +97,6 @@ final class CallsTest extends TestCase
         $counter = RoundTripCounter::open();
         $function = $this->connection->function('fx_scalar.add_days', ['p_date' => null, 'p_days' => 1]);
         $terminals = [
-            'clob()' => $function->clob(...),
-            'nclob()' => $function->nclob(...),
-            'blob()' => $function->blob(...),
             'json()' => $function->json(...),
             'vector()' => $function->vector(...),
         ];

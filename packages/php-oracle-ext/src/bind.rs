@@ -69,6 +69,11 @@ impl Value {
         matches!(self, Value::Typed(typed) if typed.is_out())
     }
 
+    /// Whether it is a LOB OUT or IN OUT bind.
+    fn is_lob_out(&self) -> bool {
+        matches!(self, Value::Typed(typed) if typed.is_out() && typed.is_lob())
+    }
+
     /// The timestamp type a typed bind declared.
     fn reads_as(&self) -> Option<Temporal> {
         match self {
@@ -132,20 +137,28 @@ impl Binds {
         Ok(params)
     }
 
-    /// Fails, before the statement runs, for an Object or Collection OUT bind of
-    /// a SQL statement (`RETURNING … INTO`): the crate cannot read one back
-    /// (it panics), so that is later (#73).
-    pub fn refuse_returned_objects(&self, is_plsql: bool) -> Result<(), Error> {
-        if is_plsql {
-            return Ok(());
+    /// Fails for a LOB OUT bind of SQL `RETURNING … INTO`, before any Round
+    /// trip: the crate cannot read LOBs back from it yet (it panics).
+    pub fn refuse_returned_lobs(&self) -> Result<(), Error> {
+        match self.0.iter().find(|(_, value)| value.is_lob_out()) {
+            Some((name, _)) => Err(Error::unsupported(format!(
+                "OUT bind '{name}': a LOB cannot be read back from RETURNING … INTO yet; wrap the statement in a PL/SQL block (begin … returning … into :{name}; end;), or select the LOB afterwards."
+            ))),
+            None => Ok(()),
         }
+    }
+
+    /// Fails for an Object or Collection OUT bind of SQL `RETURNING …
+    /// INTO`, before any Round trip: the crate cannot read one back from it
+    /// yet (it panics, #73).
+    pub fn refuse_returned_objects(&self) -> Result<(), Error> {
         match self
             .0
             .iter()
             .find(|(_, value)| matches!(value, Value::Typed(t) if t.is_out() && t.is_object()))
         {
             Some((name, _)) => Err(Error::unsupported(format!(
-                "Bind '{name}': RETURNING … INTO an Object or Collection is not supported yet; select it after the statement instead."
+                "OUT bind '{name}': an Object or Collection cannot be read back from RETURNING … INTO yet; wrap the statement in a PL/SQL block (begin … returning … into :{name}; end;), or select it afterwards."
             ))),
             None => Ok(()),
         }
