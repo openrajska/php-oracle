@@ -50,6 +50,11 @@ enum Mapping {
     Lob,
     /// An Object or Collection: a PHP array (see [`object`]).
     Object,
+    /// Native JSON, decoded under the Cursor's `ValueMapping` (see
+    /// [`json`]).
+    Json,
+    /// VECTOR: a list, or a `SparseVector` (see [`vector`]).
+    Vector,
     /// A type whose values cannot be fetched yet; describing it is fine.
     Unsupported(String),
 }
@@ -236,6 +241,10 @@ impl Column {
             Mapping::Lob
         } else if db_type == DB_TYPE_OBJECT {
             Mapping::Object
+        } else if db_type == DB_TYPE_JSON {
+            Mapping::Json
+        } else if db_type == DB_TYPE_VECTOR {
+            Mapping::Vector
         } else if let Some(temporal) = Temporal::of(db_type) {
             Mapping::Temporal(temporal, options.temporals)
         } else if db_type == DB_TYPE_INTERVAL_DS {
@@ -261,7 +270,7 @@ impl Column {
     fn value(&self, row: &Row, index: usize) -> Result<Zval, Error> {
         let mut zval = Zval::new();
         match &self.mapping {
-            Mapping::Cursor | Mapping::Lob | Mapping::Object => {
+            Mapping::Cursor | Mapping::Lob | Mapping::Object | Mapping::Json | Mapping::Vector => {
                 return Err(Error::unsupported(format!(
                     "Column {}: not a scalar value.",
                     self.name
@@ -420,6 +429,14 @@ impl NativeCursor {
                     let what = format!("Column {}", column.name);
                     object::cell(row, index, &self.options, &object::Path::Root(&what))?
                 }
+                Mapping::Json | Mapping::Vector => value::cell(
+                    row,
+                    index,
+                    &self.state,
+                    &self.options,
+                    &format!("Column {}", column.name),
+                    None,
+                )?,
                 _ => column.value(row, index)?,
             };
             match self.options.row_shape {

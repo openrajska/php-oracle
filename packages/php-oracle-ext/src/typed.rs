@@ -15,9 +15,11 @@ use oracledb::{
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
 use crate::error::Error;
+use crate::json;
 use crate::object::{self, Describe};
 use crate::temp_lob::TempLob;
 use crate::temporal::{self, Temporal};
+use crate::vector;
 
 /// The base class every typed bind extends.
 pub const BIND_CLASS: &str = "Rajska\\Oracle\\Bind\\Bind";
@@ -163,6 +165,9 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         )?,
         "intervalDs" => temporal::interval_ds_bind(name, value)?,
         "intervalYm" => temporal::interval_ym_bind(name, value)?,
+        "json" => json::bind(name, value)?,
+        // The VectorFormat's backing value travels as typeName.
+        "vector" => vector::bind(name, value, properties.get("typeName").and_then(Zval::str))?,
         "object" | "collection" | "associativeArray" => {
             let kind =
                 object::Kind::of_bind(&type_name).unwrap_or_else(|| unreachable!("matched above"));

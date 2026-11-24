@@ -18,9 +18,9 @@ use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
-use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\TemporalMode;
+use Rajska\Oracle\SparseVector;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\Tests\Support\TestDatabase;
@@ -86,37 +86,26 @@ final class CallsTest extends TestCase
     }
 
     /**
-     * A terminal whose type comes later fails with UnsupportedException
-     * before any Round trip.
+     * Binds 13 for these types: `json()` decodes the returned JSON like
+     * `json_decode($text, true)` under the Call's ValueMapping; `vector()`
+     * gives a list, or a `SparseVector` for a sparse VECTOR; NULL gives
+     * null (fixture package fx_json_vector).
      */
     #[Test]
-    public function a_terminal_of_a_later_type_fails_before_any_round_trip(): void
+    public function the_json_and_vector_terminals_return_the_mapped_value(): void
     {
-        $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-        self::assertIsString($sid);
-        $counter = RoundTripCounter::open();
-        $function = $this->connection->function('fx_scalar.add_days', ['p_date' => null, 'p_days' => 1]);
-        $terminals = [
-            'json()' => $function->json(...),
-            'vector()' => $function->vector(...),
-        ];
+        self::assertSame(['a' => [1, '2.5']], $this->connection->function('fx_json_vector.f_json')->json());
+        self::assertSame(
+            ['a' => [1, 2.5]],
+            $this->connection->function('fx_json_vector.f_json', [], new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float)))->json(),
+        );
+        self::assertNull($this->connection->function('fx_json_vector.f_json', ['p_null' => true])->json());
 
-        try {
-            foreach ($terminals as $terminal => $call) {
-                $trips = $counter->during((int) $sid, static function () use ($call, $terminal): void {
-                    try {
-                        $call();
-                        self::fail("$terminal ran.");
-                    } catch (UnsupportedException $e) {
-                        self::assertSame("FunctionCall::$terminal is not implemented yet.", $e->getMessage());
-                        self::assertSame('fx_scalar.add_days', $e->call());
-                    }
-                });
-                self::assertSame(0, $trips, $terminal);
-            }
-        } finally {
-            $counter->close();
-        }
+        self::assertSame([1.5, 2.0], $this->connection->function('fx_json_vector.f_vector')->vector());
+        self::assertNull($this->connection->function('fx_json_vector.f_vector', ['p_null' => true])->vector());
+        $sparse = $this->connection->function('fx_json_vector.f_sparse')->vector();
+        self::assertInstanceOf(SparseVector::class, $sparse);
+        self::assertSame([10, [3 => -1]], [$sparse->dimensions, $sparse->values]);
     }
 
     /**

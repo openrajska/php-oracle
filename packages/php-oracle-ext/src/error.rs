@@ -289,10 +289,18 @@ impl From<oracledb::Error> for Error {
                 pending: false,
                 rows: Vec::new(),
             },
+            // The crate cannot decode an OSON id (the `_id` of a JSON
+            // collection table) yet.
+            oracledb::ErrorKind::UnsupportedOsonNodeType(OSON_ID) => {
+                crate::json::oson_id("A JSON value")
+            }
             other => Self::new(kind_of(other), described(&e)),
         }
     }
 }
+
+/// The OSON node type of an id.
+const OSON_ID: u8 = 0x7e;
 
 /// A crate error's message with its causes: "stream operation failed" alone
 /// does not tell an unknown certificate issuer from a refused connection.
@@ -350,7 +358,8 @@ fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
         | E::UnsupportedTdsType(_)
         | E::UnsupportedObjectMetadataType(_)
         | E::UnsupportedDbObjectAttributeType(..)
-        | E::UnsupportedDbObjectSubtype(_) => Kind::Unsupported,
+        | E::UnsupportedDbObjectSubtype(_)
+        | E::UnsupportedOsonNodeType(_) => Kind::Unsupported,
         // A value that does not fit an Object type, checked on the client
         // before any Round trip.
         E::WrongDbObjectTypeKind(..)

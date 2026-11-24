@@ -20,6 +20,7 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod json;
 mod lob;
 mod object;
 mod options;
@@ -29,6 +30,7 @@ mod temp_lob;
 mod temporal;
 mod typed;
 mod value;
+mod vector;
 
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {

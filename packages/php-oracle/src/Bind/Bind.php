@@ -14,6 +14,9 @@ use Rajska\Oracle\Type;
  */
 abstract readonly class Bind
 {
+    /**
+     * @param ?string $typeName the type a `Struct`, `Collection` or `Indexed` names; for a `Vector`, its `VectorFormat`'s backing value
+     */
     final protected function __construct(
         public Type $type,
         public Direction $direction,

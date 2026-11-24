@@ -119,15 +119,6 @@ final readonly class Call
     }
 
     /**
-     * A terminal whose type is not implemented yet: it fails before any
-     * Round trip.
-     */
-    public function unsupported(string $terminal): UnsupportedException
-    {
-        return new UnsupportedException("FunctionCall::$terminal is not implemented yet.", 0, null, $this->name);
-    }
-
-    /**
      * @param array<string, mixed> $binds
      */
     private function execute(DriverConnection $driver, string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution

@@ -15,6 +15,7 @@ use Rajska\Oracle\KeyCase;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\RowShape;
+use Rajska\Oracle\SparseVector;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Type;
@@ -292,6 +293,25 @@ final class CursorTest extends TestCase
         ], $columns);
         self::assertSame(Type::Number, $cursor->columns()[0]->type);
         $cursor->close();
+    }
+
+    /**
+     * Values 11 and 12 through the public API: a JSON column decodes to
+     * arrays, a VECTOR column to a list or a `SparseVector`.
+     */
+    #[Test]
+    public function json_and_vector_columns_arrive_decoded(): void
+    {
+        $row = $this->connection->select(
+            "select json('{\"a\": [1, 0.5]}') doc, v8, s8 from fx_vectors where id = 1",
+            [],
+            new ExecuteOptions(keyCase: KeyCase::Lower),
+        )->first();
+
+        self::assertNotNull($row);
+        self::assertSame(['a' => [1, '0.5']], $row['doc']);
+        self::assertSame([1, -2, 127], $row['v8']);
+        self::assertEquals(new SparseVector(10, [0 => -128, 9 => 127]), $row['s8']);
     }
 
     /**
