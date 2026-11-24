@@ -89,7 +89,7 @@ client `NLS_LANG` does not matter.
 | Native JSON and VECTOR (23ai and later; skipped on older databases) | `fx_vectors` (one column per format, dense and sparse, plus a flexible one; row 1: values, row 2: NULLs), `fx_vector_rows` (global temporary table to bind into), `fx_json_docs` (JSON collection table: its `_id` is an OSON id), `fx_json_vector.f_json`, `f_vector`, `f_sparse` | `13_json_vector.sql` |
 | Column-only scalar types: LONG, LONG RAW, UROWID | `fx_long_rows` (LONG), `fx_long_raw_rows` (LONG RAW); row 1: a value, row 2: NULL; writes use ids from 100 and roll back. `fx_iot` (index-organized: its ROWID is a UROWID; one row) | `14_scalar_types.sql` |
 | One Pool shared across threads, Call timeout | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.slow`, `fx_pool.bump_counter` | `07_pool.sql` |
-| Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
+| Fetch benchmark (10k rows, mixed columns; 1k small LOBs) | `fx_bench_rows`, `fx_bench_lobs` | `08_bench.sql` |
 
 ## Data and expected values
 
@@ -200,3 +200,14 @@ Empty. Each constraint gives a different error, so a batch can mix them:
 | `note` | `VARCHAR2(60)` | NULL when `n mod 3 = 0`, else `note n` |
 | `created_at` | `DATE` | 2026-01-01 00:00 + `(n - 1)` minutes |
 | `updated_at` | `TIMESTAMP(6)` | 2026-01-01 00:00:00 + `n` milliseconds |
+
+### `fx_bench_lobs`
+
+1,000 rows for the LOB benchmark, each LOB under the 32767 characters or
+bytes a query brings with its row. Row `n`:
+
+| Column | Type | Value |
+| --- | --- | --- |
+| `id` | `NUMBER(10)` | `n` |
+| `body` | `CLOB` | `Ação café 日本 ` and the 8-digit zero-padded `n`, then `x` up to 1,000 characters |
+| `data` | `BLOB` | 1,000 bytes, each `n mod 256` |

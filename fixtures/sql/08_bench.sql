@@ -39,3 +39,24 @@ select level,
        timestamp '2026-01-01 00:00:00' + numtodsinterval(level / 1000, 'SECOND')
   from dual
 connect by level <= 10000;
+
+-- Rows for the LOB benchmark: 1,000 rows with a small CLOB and BLOB each,
+-- under the 32767 the Extension prefetches with a row.
+--
+-- Row n:
+--   id    n
+--   body  'Ação café 日本 ' || 8-digit zero-padded n, then 'x' up to
+--         1,000 characters (CLOB)
+--   data  1,000 bytes, each n mod 256 (BLOB)
+create table fx_bench_lobs (
+  id   number(10) constraint fx_bench_lobs_pk primary key,
+  body clob       not null,
+  data blob       not null
+);
+
+insert into fx_bench_lobs
+select level,
+       to_clob(rpad(to_char(unistr('A\00e7\00e3o caf\00e9 \65e5\672c ')) || lpad(level, 8, '0'), 1000, 'x')),
+       to_blob(utl_raw.copies(hextoraw(to_char(mod(level, 256), 'FM0X')), 1000))
+  from dual
+connect by level <= 1000;
