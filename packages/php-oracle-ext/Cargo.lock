@@ -1022,7 +1022,7 @@ dependencies = [
 [[package]]
 name = "oracledb"
 version = "26.0.0-beta.6"
-source = "git+https://github.com/openrajska/rust-oracledb?rev=dcabfe437fb989e93cf9a6bf724202edbfe96563#dcabfe437fb989e93cf9a6bf724202edbfe96563"
+source = "git+https://github.com/openrajska/rust-oracledb?rev=03924b35c095b98adea730a812fc4ecb819d2b09#03924b35c095b98adea730a812fc4ecb819d2b09"
 dependencies = [
  "aes",
  "base16ct",
