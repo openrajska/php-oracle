@@ -200,6 +200,22 @@ final class Connection
     }
 
     /**
+     * Replaces the whole tracing set a DBA sees in V$SESSION (module,
+     * action, client identifier, client info): what `$tracing` leaves unset
+     * becomes empty. It makes no Round trip of its own; the next one carries
+     * it. The next Connection on this Session starts from its own config's
+     * tracing again.
+     *
+     * @throws UsageException after `close()`
+     * @throws OracleException for a Broken Connection
+     */
+    public function trace(Tracing $tracing): void
+    {
+        $this->ensureOpen();
+        $this->driver->trace($tracing);
+    }
+
+    /**
      * Releases the Session now: an open transaction rolls back (never
      * commits), the Session goes back to the Pool, and every later call on
      * this Connection or its Cursors fails. Idempotent.
