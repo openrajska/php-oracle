@@ -57,9 +57,6 @@ server error, unless this page says otherwise.
   bring a whole `fetchSize` batch.
 - Two columns with the same name in an Implicit result, under
   `RowShape::Assoc`, make the whole Execution throw.
-- `warning()`: the same warning twice in a row on one Session (two
-  `create or replace` with the same compilation error) is reported only the
-  first time.
 - A cursor cannot be passed back as IN.
 - Under Autocommit, `SELECT … FOR UPDATE` commits as it runs and loses its
   locks at once; a later fetch from it fails with ORA-01002. Lock rows inside
