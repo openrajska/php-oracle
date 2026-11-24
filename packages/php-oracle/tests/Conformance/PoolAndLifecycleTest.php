@@ -368,7 +368,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     {
         $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config());
         $connection->execute("update fx_items set name = 'uncommitted' where id = 42", [], self::options(autocommit: false));
-        $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2))->cursor();
+        $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2, autocommit: false))->cursor();
         self::assertNotNull($cursor);
         self::assertSame([['N' => 1], ['N' => 2]], $cursor->fetchBatch());
 
