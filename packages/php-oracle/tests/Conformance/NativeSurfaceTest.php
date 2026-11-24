@@ -413,15 +413,16 @@ final class NativeSurfaceTest extends ConformanceTestCase
     public function cores_dist_archive_has_no_stubs(): void
     {
         $package = \dirname(__DIR__, 2);
-        [$status, $prefix] = self::command(['git', '-C', $package, 'rev-parse', '--show-prefix']);
+        [$status, $paths] = self::command(['git', '-C', $package, 'rev-parse', '--show-toplevel', '--show-prefix']);
         if ($status !== 0) {
-            self::markTestSkipped("No git repository here: $prefix");
+            self::markTestSkipped("No git repository here: $paths");
         }
+        [$root, $prefix] = explode("\n", trim($paths)) + ['', ''];
         $archive = tempnam(sys_get_temp_dir(), 'core-dist');
         self::assertIsString($archive);
 
         try {
-            [$status, $output] = self::command(['git', '-C', $package, 'archive', '--format=tar', '-o', $archive, 'HEAD:' . rtrim(trim($prefix), '/')]);
+            [$status, $output] = self::command(['git', '-C', $root, 'archive', '--format=tar', '-o', $archive, 'HEAD:' . rtrim($prefix, '/')]);
             self::assertSame(0, $status, $output);
             [$status, $listing] = self::command(['tar', '-tf', $archive]);
             self::assertSame(0, $status, $listing);
@@ -430,7 +431,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
         $entries = explode("\n", trim($listing));
 
-        self::assertContains('src/Oracle.php', $entries);
+        self::assertContains('src/Oracle.php', $entries, $listing);
         self::assertSame([], array_values(array_filter($entries, static fn (string $entry): bool => str_starts_with($entry, 'stubs'))));
     }
 
