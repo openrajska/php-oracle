@@ -145,7 +145,7 @@ impl NativeConnection {
         run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
-            let (row_count, cursor, warning) = self.state.with(|session| {
+            let (row_count, cursor, warning, out_values) = self.state.with(|session| {
                 // The crate keeps the Session's last warning for the
                 // Session's whole life, across pooled Connections, so a
                 // warning belongs to this execute only if it changed during
@@ -168,24 +168,33 @@ impl NativeConnection {
                 // Building parses the SQL on the client: no Round trip yet.
                 let matched = binds.matched(statement.bind_names())?;
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
-                let (row_count, cursor) = if statement.is_query() {
+                let (row_count, cursor, out_values) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;
                     let cursor = NativeCursor::new(Arc::clone(&self.state), cursor, &options)?;
-                    (0, Some(cursor))
+                    (
+                        0,
+                        Some(cursor),
+                        binds.out_values(None, false, options.numbers)?,
+                    )
                 } else {
-                    let result = statement.execute_named(&params)?;
+                    let mut result = statement.execute_named(&params)?;
                     // The server counts 1 for a PL/SQL block; only DML counts.
                     let count = if statement.is_dml() {
                         result.rows_affected()
                     } else {
                         0
                     };
-                    (count, None)
+                    let out_values = binds.out_values(
+                        Some(&mut result),
+                        statement.is_plsql(),
+                        options.numbers,
+                    )?;
+                    (count, None, out_values)
                 };
                 let warning = session
                     .last_warning()?
                     .filter(|w| before.as_ref() != Some(w));
-                Ok((row_count, cursor, warning))
+                Ok((row_count, cursor, warning, out_values))
             })?;
 
             let mut result = ZendHashTable::with_capacity(5);
@@ -199,9 +208,7 @@ impl NativeConnection {
                     .map_err(put)?,
                 None => result.insert("cursor", ()).map_err(put)?,
             }
-            result
-                .insert("outValues", ZendHashTable::new())
-                .map_err(put)?;
+            result.insert("outValues", out_values).map_err(put)?;
             result
                 .insert("implicitResults", ZendHashTable::new())
                 .map_err(put)?;

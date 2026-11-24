@@ -28,7 +28,11 @@ final class Connection
      */
     public function run(string $sql, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
     {
-        return new Execution($this->driver->execute($sql, $binds, $this->resolve($options)), $sql);
+        return new Execution(
+            $this->driver->execute($sql, $binds, $this->resolve($options)),
+            $sql,
+            array_map(strval(...), array_keys($binds)),
+        );
     }
 
     /**
