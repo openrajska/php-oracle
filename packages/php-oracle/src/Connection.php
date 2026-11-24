@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rajska\Oracle;
 
 use Rajska\Oracle\Bind\Bind;
+use Rajska\Oracle\Bind\Collection;
+use Rajska\Oracle\Bind\PlsInteger;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\OracleException;
@@ -32,6 +34,17 @@ final class Connection
      * end.
      */
     private bool $inCallback = false;
+
+    /**
+     * DBMS_OUTPUT was turned on through `enableOutput()`: it is turned off
+     * before the Release.
+     */
+    private bool $outputEnabled = false;
+
+    /**
+     * Lines per `DBMS_OUTPUT.GET_LINES` Round trip.
+     */
+    private const int OUTPUT_BATCH = 1000;
 
     /**
      * @internal use Oracle::connect()
@@ -216,6 +229,67 @@ final class Connection
     }
 
     /**
+     * Turns DBMS_OUTPUT on for this Session, with an unlimited buffer, and
+     * empties it first: `output()` then gives only what PL/SQL writes from
+     * now on. One Round trip; it never commits.
+     *
+     * Output enabled here is turned off again (and its unread lines
+     * dropped) before the Session goes back to the Pool, so its next user
+     * never sees it: on `close()`, or as the Connection is dropped. A PHP
+     * fatal error (memory or time limit) runs no destructor and skips it;
+     * the next user's own `enableOutput()` still starts empty.
+     *
+     * @throws UsageException after `close()`
+     * @throws OracleException from the server, or for a Broken Connection
+     */
+    public function enableOutput(): void
+    {
+        $this->dbmsOutput('BEGIN DBMS_OUTPUT.DISABLE; DBMS_OUTPUT.ENABLE(NULL); END;');
+        $this->outputEnabled = true;
+    }
+
+    /**
+     * Drains every line DBMS_OUTPUT holds for this Session, in order: one
+     * Round trip per 1000 lines, and `[]` when there is none. It reads
+     * output enabled through raw SQL too. An empty line is `''`. It never
+     * commits.
+     *
+     * @return list<string>
+     *
+     * @throws UsageException after `close()`
+     * @throws OracleException from the server, or for a Broken Connection
+     */
+    public function output(): array
+    {
+        $lines = [];
+        do {
+            $execution = $this->dbmsOutput('BEGIN DBMS_OUTPUT.GET_LINES(:lines, :count); END;', [
+                'lines' => Collection::out('SYS.DBMSOUTPUT_LINESARRAY'),
+                'count' => PlsInteger::inOut(self::OUTPUT_BATCH),
+            ]);
+            $count = $execution->out('count')->int() ?? 0;
+            foreach (\array_slice($execution->out('lines')->array() ?? [], 0, $count) as $line) {
+                $lines[] = \is_string($line) ? $line : '';
+            }
+        } while ($count === self::OUTPUT_BATCH);
+
+        return $lines;
+    }
+
+    /**
+     * Turns DBMS_OUTPUT off for this Session, however it was turned on, and
+     * drops its unread lines. One Round trip; it never commits.
+     *
+     * @throws UsageException after `close()`
+     * @throws OracleException from the server, or for a Broken Connection
+     */
+    public function disableOutput(): void
+    {
+        $this->dbmsOutput('BEGIN DBMS_OUTPUT.DISABLE; END;');
+        $this->outputEnabled = false;
+    }
+
+    /**
      * Releases the Session now: an open transaction rolls back (never
      * commits), the Session goes back to the Pool, and every later call on
      * this Connection or its Cursors fails. Idempotent.
@@ -223,15 +297,48 @@ final class Connection
      * Without it, the Release happens when the Connection and all its
      * Cursors are gone.
      *
-     * The Release resets nothing else: a pooled Session keeps its package
-     * state and `ALTER SESSION` settings for its next user. A Standalone
-     * Connection (`standalone: true`) logs off instead, so every one starts
-     * clean.
+     * Output turned on with `enableOutput()` is turned off first, in one
+     * Round trip whose failure is ignored. The Release resets nothing
+     * else: a pooled Session keeps its package state, `ALTER SESSION`
+     * settings and DBMS_OUTPUT enabled through raw SQL for its next user. A
+     * Standalone Connection (`standalone: true`) logs off instead, so every
+     * one starts clean.
      */
     public function close(): void
     {
+        $this->disableOutputBeforeRelease();
         $this->state->released = true;
         $this->driver->close();
+    }
+
+    /**
+     * Turns output enabled through `enableOutput()` off when the Connection
+     * is dropped without `close()`, before the Release that follows once its
+     * Cursors are gone too. Nothing else happens here: the Release itself
+     * runs in the Backend.
+     */
+    public function __destruct()
+    {
+        $this->disableOutputBeforeRelease();
+    }
+
+    /**
+     * Runs `DBMS_OUTPUT.DISABLE` if output was enabled through
+     * `enableOutput()`, so its unread lines never reach the Session's next
+     * user. Its failure (a Broken Connection, say) is ignored: the Release
+     * goes on.
+     */
+    private function disableOutputBeforeRelease(): void
+    {
+        if (!$this->outputEnabled || $this->state->released) {
+            return;
+        }
+        $this->outputEnabled = false;
+        try {
+            $this->dbmsOutput('BEGIN DBMS_OUTPUT.DISABLE; END;');
+        } catch (\Throwable) {
+            // Swallowed by design (spec #32 §10): the Release must happen.
+        }
     }
 
     /**
@@ -260,6 +367,32 @@ final class Connection
         }
 
         throw $e;
+    }
+
+    /**
+     * Runs a DBMS_OUTPUT block without Autocommit: it has no work of its
+     * own to commit, and must never commit an open transaction's.
+     *
+     * @param array<string, mixed> $binds
+     */
+    private function dbmsOutput(string $sql, array $binds = []): Execution
+    {
+        $this->ensureOpen();
+        $options = $this->resolve(null);
+
+        return new Execution(
+            $this->driver->execute($sql, $binds, new DriverOptions(
+                autocommit: false,
+                timeout: $options->timeout,
+                fetchSize: $options->fetchSize,
+                values: $options->values,
+                rowShape: $options->rowShape,
+                keyCase: $options->keyCase,
+            )),
+            $sql,
+            $this->state,
+            array_keys($binds),
+        );
     }
 
     private function ensureOpen(): void
