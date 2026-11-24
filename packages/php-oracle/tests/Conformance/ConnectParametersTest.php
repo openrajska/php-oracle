@@ -155,7 +155,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             putenv('TNS_ADMIN=' . $this->tnsnames(['other, RAJSKA_TEST' => $easy]));
         }
 
-        $connection = $this->connect(...[...$fields, ...self::ownPool()]);
+        $connection = $this->connect(...[...$fields, 'standalone' => true]);
 
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
