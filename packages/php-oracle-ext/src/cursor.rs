@@ -549,6 +549,7 @@ impl NativeCursor {
                         }
                     }
                 }
+                let _zone = temporal::Batch::start();
                 for row in &mut fetched {
                     rows.push(self.row(row)?).map_err(put)?;
                 }
