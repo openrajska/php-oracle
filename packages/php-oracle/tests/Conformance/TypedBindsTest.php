@@ -33,10 +33,6 @@ use Rajska\Oracle\ValueMapping;
  * Conformance catalog, Binds (#22) and Scope (#17): typed scalar binds IN,
  * OUT and IN OUT. Every entry of `outValues()` is the list of values the
  * bind produced: one for a PL/SQL OUT, one per returned row for RETURNING.
- *
- * The Connections run without a Statement cache: these tests bind one SQL
- * text with values of different types and sizes, and the crate's cache
- * serves a statement described for other binds (see BindsTest).
  */
 final class TypedBindsTest extends ConformanceTestCase
 {
@@ -101,7 +97,7 @@ final class TypedBindsTest extends ConformanceTestCase
         string $change,
         mixed $changed,
     ): void {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "declare
@@ -132,7 +128,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[DataProvider('nulls')]
     public function each_class_binds_null(string $plsql, Bind $in, Bind $out, Bind $inOut): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "declare
@@ -156,7 +152,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function a_rowid_binds_in_out_and_in_out(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
         $rowid = self::value($connection, 'select rowidtochar(rowid) from fx_items where id = 1');
         self::assertIsString($rowid);
 
@@ -198,7 +194,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function insert_returning_into_gives_the_one_row(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             'insert into fx_bind_rows (id, name) values (:id, :name) returning id, name into :rid, :rname',
@@ -216,7 +212,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function update_returning_into_gives_every_row(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $two = $connection->execute(
             'update fx_items set price = price where id in (1, 2) returning id, name into :id, :name',
@@ -241,7 +237,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function returning_reads_the_longest_sql_varchar2(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "update fx_items set price = price where id = 1 returning rpad('x', 4000, 'x') into :name",
@@ -261,7 +257,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function varchar2_binds_over_4000_bytes_work_in_sql_on_a_standard_database(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
         try {
             $connection->execute("select cast('x' as varchar2(4001)) from dual", [], self::options());
             self::fail('The database has max_string_size = EXTENDED; this case needs STANDARD.');
@@ -272,11 +268,8 @@ final class TypedBindsTest extends ConformanceTestCase
         foreach ([4000, 4001, 32767] as $bytes) {
             $text = str_repeat('y', $bytes);
             foreach (['inferred' => $text, 'typed' => Varchar::in($text)] as $kind => $bind) {
-                // One statement text per size: a cached query re-run with a
-                // much longer bind comes back truncated (a crate bug, to be
-                // patched in the fork; see the hand-off of #45).
-                self::assertSame($bytes, self::value($connection, "select length(:v) from dual -- $kind $bytes", ['v' => $bind]), "$kind $bytes");
-                self::assertSame($text, self::value($connection, "select :v from dual -- $kind $bytes", ['v' => $bind]), "$kind $bytes");
+                self::assertSame($bytes, self::value($connection, 'select length(:v) from dual', ['v' => $bind]), "$kind $bytes");
+                self::assertSame($text, self::value($connection, 'select :v from dual', ['v' => $bind]), "$kind $bytes");
             }
         }
 
@@ -301,7 +294,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function a_varchar_out_holds_32767_bytes(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "begin
@@ -324,7 +317,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function a_varchar_in_out_grows_to_32767_bytes(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "begin
@@ -347,7 +340,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function a_char_matches_a_blank_padded_char(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
         $sql = "select count(*) from (select cast('AB' as char(5)) code from dual) where code = :code";
 
         self::assertSame(1, self::value($connection, $sql, ['code' => Char::in('AB')]));
@@ -363,7 +356,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function a_char_out_keeps_the_padding_it_has(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             "declare c char(5) := 'AB'; n nchar(4) := n'\u{e7}'; begin :c := c; :n := n; end;",
@@ -381,7 +374,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function nvarchar_and_nchar_round_trip_multibyte_text(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         foreach (['ç', '日本', '😀', 'ç日😀'] as $text) {
             foreach ([NVarchar::in($text), NChar::in($text)] as $bind) {
@@ -408,7 +401,7 @@ final class TypedBindsTest extends ConformanceTestCase
     public function a_number_string_is_exact_under_any_nls(): void
     {
         // Standalone: a pooled Session would keep the ALTER SESSION.
-        $connection = $this->connect(statementCacheSize: 0, standalone: true);
+        $connection = $this->connect(standalone: true);
         $connection->execute("alter session set nls_numeric_characters = ',.'", [], self::options());
 
         self::assertSame('Typ=2 Len=3: 193,13,31', self::value($connection, 'select dump(:v) from dual', ['v' => Number::in('12.30')]));
@@ -424,7 +417,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function out_value_keys_keep_the_users_case(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         $execution = $connection->execute(
             'begin :TOTAL := 1; :name := 2; :Mixed := 3; end;',
@@ -442,7 +435,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[Test]
     public function out_values_follow_the_column_mapping_under_every_value_mapping(): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
 
         foreach (NumberMode::cases() as $numbers) {
             foreach (TemporalMode::cases() as $temporals) {
@@ -498,7 +491,7 @@ final class TypedBindsTest extends ConformanceTestCase
     #[DataProvider('typedMistakes')]
     public function a_typed_bind_mistake_fails_before_any_round_trip(Bind $bind, string $fix): void
     {
-        $connection = $this->connect(statementCacheSize: 0);
+        $connection = $this->connect();
         $sid = self::sid($connection);
         $counter = RoundTripCounter::open();
 
