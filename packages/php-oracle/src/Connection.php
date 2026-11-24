@@ -56,6 +56,11 @@ final class Connection
      *
      * Without it, the Release happens when the Connection and all its
      * Cursors are gone.
+     *
+     * The Release resets nothing else: a pooled Session keeps its package
+     * state and `ALTER SESSION` settings for its next user. A Standalone
+     * Connection (`standalone: true`) logs off instead, so every one starts
+     * clean.
      */
     public function close(): void
     {
