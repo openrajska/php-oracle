@@ -184,14 +184,17 @@ impl NativeConnection {
                     .fetch_array_size(options.fetch_size)
                     .prefetch_rows(options.fetch_size)
                     .build()?;
+                // Building parses the SQL on the client: no Round trip yet.
+                let matched = binds.matched(statement.bind_names())?;
+                let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
                 if statement.is_query() {
-                    let cursor = statement.query_named(&binds.params())?;
+                    let cursor = statement.query_named(&params)?;
                     Ok((
                         0,
                         Some(NativeCursor::new(Arc::clone(&self.state), cursor, &options)),
                     ))
                 } else {
-                    let result = statement.execute_named(&binds.params())?;
+                    let result = statement.execute_named(&params)?;
                     Ok((result.rows_affected(), None))
                 }
             })?;
