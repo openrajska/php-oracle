@@ -37,6 +37,7 @@ use crate::error::{Error, run};
 use crate::options::{LobMode, Options};
 use crate::pool::lock;
 use crate::temp_lob::Written;
+use crate::type_name;
 
 /// Where a native LOB lives: held by its `Lob` object and, weakly, by its
 /// Connection, which empties it on Release.
@@ -59,15 +60,12 @@ const CHUNK: usize = 1 << 20;
 /// `LobType`'s backing value for a LOB type, or `None` for any other type
 /// (BFILE included).
 pub fn lob_type(db_type: &DbType) -> Option<&'static str> {
-    if db_type == DB_TYPE_CLOB {
-        Some("clob")
-    } else if db_type == DB_TYPE_NCLOB {
-        Some("nClob")
-    } else if db_type == DB_TYPE_BLOB {
-        Some("blob")
-    } else {
-        None
-    }
+    is_lob(db_type).then(|| type_name::of(db_type)).flatten()
+}
+
+/// CLOB, NCLOB or BLOB.
+pub fn is_lob(db_type: &DbType) -> bool {
+    db_type == DB_TYPE_CLOB || db_type == DB_TYPE_NCLOB || db_type == DB_TYPE_BLOB
 }
 
 /// The LOB at `index` of a row, taken out of it: NULL gives `null`; under

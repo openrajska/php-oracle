@@ -39,6 +39,7 @@ use oracledb::{
 
 use crate::error::Error;
 use crate::options::TemporalMode;
+use crate::type_name;
 
 /// The four timestamp types, each with its own mapping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,14 +65,8 @@ impl Temporal {
     }
 
     /// The timestamp type a typed bind declares (`Type`'s backing value).
-    pub fn of_bind(type_name: &str) -> Option<Self> {
-        match type_name {
-            "date" => Some(Self::Date),
-            "timestamp" => Some(Self::Timestamp),
-            "timestampTz" => Some(Self::TimestampTz),
-            "timestampLtz" => Some(Self::TimestampLtz),
-            _ => None,
-        }
+    pub fn of_bind(name: &str) -> Option<Self> {
+        type_name::db_type(name).and_then(Self::of)
     }
 
     /// The SQL name, for messages.

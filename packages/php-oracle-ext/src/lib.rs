@@ -28,6 +28,7 @@ mod pool;
 mod session;
 mod temp_lob;
 mod temporal;
+mod type_name;
 mod typed;
 mod value;
 mod vector;
