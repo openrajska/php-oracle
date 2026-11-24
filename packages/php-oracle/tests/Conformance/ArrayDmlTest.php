@@ -50,6 +50,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         self::$counter->close();
         self::$observer->close();
+        parent::tearDownAfterClass();
     }
 
     protected function setUp(): void

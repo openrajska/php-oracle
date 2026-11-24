@@ -165,6 +165,19 @@ sets. One Core test waits 61 s for the Pool's idle ping; `--exclude-group slow`
 skips it. CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and
 ZTS.
 
+The database image allows 200 processes, about 90 of them its own. CI raises
+the limit to 400 before the fixtures (`fixtures/sql/processes.sql`), because
+Core's suite holds about 60 Sessions by its end (one for every Pool it
+created) and a burst of logons on top made the listener refuse new ones with
+ORA-12516. `ddev fixtures` does not do this: the new limit needs an instance
+restart, which ends every Session on the shared database. If you hit
+ORA-12516 locally (several suites at once), raise it yourself while nothing
+else uses the database; it lasts until the next `ddev restart`:
+
+```bash
+ddev exec -s oracle sqlplus -s -l / as sysdba @/fixtures/sql/processes.sql 400
+```
+
 Core `require`s `ext-rajska_oracle`, but Composer runs without the Extension
 loaded, hence `--ignore-platform-req=ext-rajska_oracle`. The constraint
 (`^0.1`) declares the oldest Extension Core works with; the adapter

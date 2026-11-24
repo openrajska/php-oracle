@@ -126,6 +126,25 @@ jobs:
           cargo build --locked
           php -d extension="$EXTENSION" --ri rajska_oracle
 
+      # Before anything logs on: it restarts the instance. 200 processes,
+      # ~90 of them background ones, left too little room for the suites
+      # (ORA-12516); fixtures/sql/processes.sql says why.
+      - name: Raise the database's process limit
+        run: |
+          oracle="${{ job.services.oracle.id }}"
+          docker cp fixtures/sql/processes.sql "$oracle:/tmp/processes.sql"
+          docker exec "$oracle" sqlplus -s -l / as sysdba @/tmp/processes.sql 400
+          for attempt in $(seq 1 60); do
+            if echo "select 'pdb' || '_open' from dual;" \
+              | docker exec -i "$oracle" sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba \
+              | grep -q pdb_open; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FREEPDB1 did not come back after the restart." >&2
+          exit 1
+
       - name: Install the fixtures
         run: |
           oracle="${{ job.services.oracle.id }}"

@@ -22,21 +22,26 @@ final class SessionFeaturesTest extends ConformanceTestCase
 {
     private const string ROWS = 'select level n from dual connect by level <= :n';
 
-    private RoundTripCounter $counter;
+    /**
+     * One Round trip counter and one observer serve the whole file (both only
+     * read V$ views): a logon per test adds to the listener's load, which
+     * refuses logons with ORA-12516 when it runs high.
+     */
+    private static RoundTripCounter $counter;
 
-    private IndependentSession $observer;
+    private static IndependentSession $observer;
 
-    protected function setUp(): void
+    public static function setUpBeforeClass(): void
     {
-        $this->counter = RoundTripCounter::open();
-        $this->observer = IndependentSession::open();
+        self::$counter = RoundTripCounter::open();
+        self::$observer = IndependentSession::open();
     }
 
-    protected function tearDown(): void
+    public static function tearDownAfterClass(): void
     {
-        $this->counter->close();
-        $this->observer->close();
-        parent::tearDown();
+        self::$counter->close();
+        self::$observer->close();
+        parent::tearDownAfterClass();
     }
 
     /**
@@ -74,7 +79,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
 
         foreach ([1, 99, 100] as $count) {
             $rows = [];
-            self::assertSame(1, $this->counter->during($sid, function () use ($connection, $count, &$rows): void {
+            self::assertSame(1, self::$counter->during($sid, function () use ($connection, $count, &$rows): void {
                 $rows = $this->readAll($connection, $count, self::options());
             }), "$count rows");
             self::assertSame([$count], array_map('count', $rows), "$count rows");
@@ -94,13 +99,13 @@ final class SessionFeaturesTest extends ConformanceTestCase
         $cursor = null;
         $trips = [];
 
-        $trips[] = $this->counter->during($sid, function () use ($connection, &$cursor): void {
+        $trips[] = self::$counter->during($sid, function () use ($connection, &$cursor): void {
             $cursor = $connection->execute(self::ROWS, ['n' => 25], self::options(fetchSize: 10))->cursor();
         });
         self::assertNotNull($cursor);
         $sizes = [];
         for ($i = 0; $i < 5; ++$i) {
-            $trips[] = $this->counter->during($sid, function () use ($cursor, &$sizes): void {
+            $trips[] = self::$counter->during($sid, function () use ($cursor, &$sizes): void {
                 $sizes[] = \count($cursor->fetchBatch());
             });
         }
@@ -144,7 +149,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
         ));
         $sid = self::sid($connection);
 
-        self::assertSame(0, $this->counter->during($sid, static function () use ($connection): void {
+        self::assertSame(0, self::$counter->during($sid, static function () use ($connection): void {
             $connection->trace(new Tracing(module: 'reports', clientInfo: 'worker 8'));
         }));
         self::assertSame('billing', $this->tracing($sid)['MODULE'], 'still pending');
@@ -301,7 +306,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
      */
     private function statistic(int $sid, string $name, callable $action): int
     {
-        $read = fn (): int => (int) $this->observer->select(
+        $read = fn (): int => (int) self::$observer->select(
             'select s.value from v$sesstat s join v$statname n on n.statistic# = s.statistic# where n.name = :name and s.sid = :sid',
             ['name' => $name, 'sid' => $sid],
         )[0]['VALUE'];
@@ -318,7 +323,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
      */
     private function tracing(int $sid): array
     {
-        return $this->observer->select(
+        return self::$observer->select(
             'select module, action, client_identifier, client_info from v$session where sid = :sid',
             ['sid' => $sid],
         )[0];

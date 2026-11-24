@@ -19,17 +19,22 @@ use Rajska\Oracle\Tests\Support\TransactionObserver;
  */
 final class TransactionsTest extends ConformanceTestCase
 {
-    private TransactionObserver $observer;
+    private static TransactionObserver $observer;
+
+    public static function setUpBeforeClass(): void
+    {
+        self::$observer = TransactionObserver::open();
+    }
+
+    public static function tearDownAfterClass(): void
+    {
+        self::$observer->close();
+        parent::tearDownAfterClass();
+    }
 
     protected function setUp(): void
     {
-        $this->observer = TransactionObserver::open();
-    }
-
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-        $this->observer->close();
+        self::$observer->clear();
     }
 
     /**
@@ -58,7 +63,7 @@ final class TransactionsTest extends ConformanceTestCase
     {
         $this->connect()->execute($sql, $binds, self::options());
 
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
     }
 
     /**
@@ -82,8 +87,8 @@ final class TransactionsTest extends ConformanceTestCase
             self::assertSame(20043, $e->getCode());
         }
 
-        self::assertSame([['ID' => '1', 'NOTE' => null]], $this->observer->select('select id, note from fx_tx_rows'));
-        self::assertFalse($this->observer->locked(1));
+        self::assertSame([['ID' => '1', 'NOTE' => null]], self::$observer->select('select id, note from fx_tx_rows'));
+        self::assertFalse(self::$observer->locked(1));
     }
 
     /**
@@ -96,13 +101,13 @@ final class TransactionsTest extends ConformanceTestCase
         $connection = $this->connect();
 
         $connection->execute('insert into fx_tx_rows (id) values (1)', [], self::options(autocommit: false));
-        self::assertSame([], $this->observer->committed());
+        self::assertSame([], self::$observer->committed());
         $connection->commit();
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
 
         $connection->execute('insert into fx_tx_rows (id) values (2)', [], self::options(autocommit: false));
         $connection->rollback();
-        self::assertSame([1], $this->observer->committed());
+        self::assertSame([1], self::$observer->committed());
         self::assertSame(1, self::value($connection, 'select count(*) from fx_tx_rows'));
     }
 
@@ -118,7 +123,7 @@ final class TransactionsTest extends ConformanceTestCase
 
         self::rows($connection, 'select id from fx_tx_rows where id = 1 for update');
 
-        self::assertFalse($this->observer->locked(1));
+        self::assertFalse(self::$observer->locked(1));
     }
 
     /**
@@ -170,7 +175,7 @@ final class TransactionsTest extends ConformanceTestCase
         } finally {
             $counter->close();
         }
-        self::assertSame([1, 2, 3], $this->observer->committed());
+        self::assertSame([1, 2, 3], self::$observer->committed());
     }
 
     /**
