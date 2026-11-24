@@ -9,8 +9,7 @@
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use oracledb::{
     BindValue, DB_TYPE_BLOB, DB_TYPE_CHAR, DB_TYPE_CLOB, DB_TYPE_CURSOR, DB_TYPE_NCHAR,
-    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType,
-    OracleNumber, ToDbValue,
+    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
 };
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
@@ -33,8 +32,6 @@ pub struct Typed {
     direction: Direction,
     /// The timestamp type declared, which may travel as another type.
     reads_as: Option<Temporal>,
-    /// A CLOB, NCLOB or BLOB.
-    lob: bool,
     /// The value of a CLOB, NCLOB or BLOB IN or IN OUT bind, which binds
     /// once written into a temporary LOB.
     temp: Option<TempLob>,
@@ -72,17 +69,6 @@ impl Typed {
     /// whatever type the server sent it back as.
     pub fn reads_as(&self) -> Option<Temporal> {
         self.reads_as
-    }
-
-    /// Whether it is a CLOB, NCLOB or BLOB bind.
-    pub fn is_lob(&self) -> bool {
-        self.lob
-    }
-
-    /// Whether it is an Object or a Collection (`Struct`, `Collection`,
-    /// `Indexed`).
-    pub fn is_object(&self) -> bool {
-        self.value.db_type() == DB_TYPE_OBJECT
     }
 
     /// Whether it is a REF CURSOR (`Cursor::out()`, `Cursor::inOut()`).
@@ -205,7 +191,6 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         value,
         direction,
         reads_as: Temporal::of_bind(&type_name),
-        lob,
         temp,
         signature,
     })

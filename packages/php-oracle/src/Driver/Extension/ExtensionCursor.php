@@ -55,6 +55,22 @@ final class ExtensionCursor implements DriverCursor
         return $outValues;
     }
 
+    /**
+     * `executeMany()` OUT values with each native handle (a LOB) wrapped.
+     *
+     * @param array<string, list<list<mixed>>> $outValues each bind's list of values per row
+     *
+     * @return array<string, list<list<mixed>>>
+     */
+    public static function handlesPerRow(array $outValues, string $sql): array
+    {
+        foreach ($outValues as $name => $rows) {
+            $outValues[$name] = array_map(static fn (array $values): array => self::handles(['row' => $values], $sql)['row'], $rows);
+        }
+
+        return $outValues;
+    }
+
     public function columns(): array
     {
         try {

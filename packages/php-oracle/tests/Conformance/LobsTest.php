@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\NClob;
+use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UnsupportedException;
@@ -179,8 +180,8 @@ final class LobsTest extends ConformanceTestCase
     /**
      * Binds: `Clob::out()`, `NClob::out()` and `Blob::out()` bring back a
      * DriverLob from PL/SQL, `RETURNING … INTO` inside a block included;
-     * NULL is `null`. SQL `RETURNING … INTO` of a LOB fails loudly before
-     * any Round trip (the crate cannot read it back yet).
+     * NULL is `null`. SQL `RETURNING … INTO` brings back one per returned
+     * row (#73): EMPTY_CLOB() reads as '', NULL is `null`.
      */
     #[Test]
     public function lob_out_binds_bring_back_driver_lobs(): void
@@ -215,20 +216,22 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame(self::SMALL, self::read(self::lob($returned['t'][0])));
         $connection->rollback();
 
-        $sid = self::sid($connection);
-        $trips = $this->roundTrips($connection, static function () use ($connection): void {
-            try {
-                $connection->execute(
-                    'update fx_lobs set label = label where id in (1, 2) returning text_value into :t',
-                    ['t' => Clob::out()],
-                    self::options(autocommit: false),
-                );
-                self::fail('A LOB came back from SQL RETURNING.');
-            } catch (UnsupportedException $e) {
-                self::assertStringStartsWith("OUT bind 't': a LOB cannot be read back from RETURNING … INTO yet", $e->getMessage());
-            }
-        }, $sid);
-        self::assertSame(0, $trips, 'Fails before any Round trip');
+        $returned = $connection->execute(
+            'update fx_lobs set label = label where id in (1, 2, 3) returning id, text_value, binary_value into :id, :t, :b',
+            ['id' => Number::out(), 't' => Clob::out(), 'b' => Blob::out()],
+            self::options(autocommit: false),
+        )->outValues();
+        $rows = array_map(null, $returned['id'], $returned['t'], $returned['b']);
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        self::assertSame(
+            [[1, self::SMALL, "\xDE\xAD\xBE\xEF"], [2, '', ''], [3, null, null]],
+            array_map(static fn (array $row): array => [
+                $row[0],
+                $row[1] === null ? null : self::read(self::lob($row[1])),
+                $row[2] === null ? null : self::read(self::lob($row[2])),
+            ], $rows),
+        );
+        $connection->rollback();
     }
 
     /**

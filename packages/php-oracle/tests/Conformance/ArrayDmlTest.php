@@ -6,6 +6,8 @@ namespace Rajska\Oracle\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Bind\Blob;
+use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\Cursor;
 use Rajska\Oracle\Bind\Indexed;
@@ -14,6 +16,7 @@ use Rajska\Oracle\Bind\Struct;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Driver\DriverBatch;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\BatchException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\RowFailure;
@@ -179,6 +182,41 @@ final class ArrayDmlTest extends ConformanceTestCase
 
             return $ids;
         }, $ids));
+    }
+
+    /**
+     * Transactions 11 (#73): `RETURNING` a LOB, an Object or a Collection
+     * gives each row the list of what its execution returned, NULL as
+     * `null`, like any other type.
+     */
+    #[Test]
+    public function returning_lobs_objects_and_collections_gives_one_list_per_row(): void
+    {
+        $connection = $this->connect();
+
+        $lobs = self::many($connection, 'update fx_lobs set label = label where id = :id returning text_value, binary_value into :t, :b', [
+            ['id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
+            ['id' => 3, 't' => Clob::out(), 'b' => Blob::out()],
+            ['id' => 0, 't' => Clob::out(), 'b' => Blob::out()],
+            ['id' => 2, 't' => Clob::out(), 'b' => Blob::out()],
+        ], autocommit: false);
+        self::assertSame(3, $lobs->rowCount());
+        self::assertSame([["Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}"], [null], [], ['']], self::contents($lobs->outValues()['t']));
+        self::assertSame([["\xDE\xAD\xBE\xEF"], [null], [], ['']], self::contents($lobs->outValues()['b']));
+        $connection->rollback();
+
+        $shapes = self::many($connection, 'update fx_shapes set id = id where id = :id returning center, tags into :center, :tags', [
+            ['id' => 1, 'center' => Struct::out('fx_point'), 'tags' => Collection::out('fx_string_varray')],
+            ['id' => 2, 'center' => Struct::out('fx_point'), 'tags' => Collection::out('fx_string_varray')],
+            ['id' => 0, 'center' => Struct::out('fx_point'), 'tags' => Collection::out('fx_string_varray')],
+            ['id' => 3, 'center' => Struct::out('fx_point'), 'tags' => Collection::out('fx_string_varray')],
+        ], autocommit: false);
+        self::assertSame(3, $shapes->rowCount());
+        self::assertSame([
+            'center' => [[['X' => '1.5', 'Y' => -2, 'LABEL' => 'center']], [null], [], [['X' => null, 'Y' => null, 'LABEL' => null]]],
+            'tags' => [[['red', "caf\u{e9}"]], [null], [], [[]]],
+        ], $shapes->outValues());
+        $connection->rollback();
     }
 
     /**
@@ -549,6 +587,29 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::$observer->execute('delete from fx_batch_rows');
         self::$observer->execute('delete from fx_tx_rows');
         self::$observer->commit();
+    }
+
+    /**
+     * Each returned LOB's contents, per row; NULL stays `null`.
+     *
+     * @param list<list<mixed>> $lists
+     *
+     * @return list<list<string|null>>
+     */
+    private static function contents(array $lists): array
+    {
+        return array_map(static fn (array $list): array => array_map(static function (mixed $lob): ?string {
+            if ($lob === null) {
+                return null;
+            }
+            self::assertInstanceOf(DriverLob::class, $lob);
+            $contents = '';
+            while (($chunk = $lob->readChunk()) !== '') {
+                $contents .= $chunk;
+            }
+
+            return $contents;
+        }, $list), $lists);
     }
 
     /**

@@ -283,13 +283,13 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 4: Struct and Collection bind into SQL too. SQL `RETURNING …
-     * INTO` an Object fails before the statement runs, leaving the
-     * Connection usable (the crate cannot read one back yet, #73); inside
-     * a PL/SQL block it works.
+     * Objects 4: Struct and Collection bind into SQL too, and come back
+     * from SQL `RETURNING … INTO`, one value per returned row (#73), as
+     * from `RETURNING … INTO` inside a PL/SQL block. An atomic NULL is
+     * `null`.
      */
     #[Test]
-    public function struct_and_collection_bind_into_sql_and_returning_into_needs_a_block(): void
+    public function struct_and_collection_bind_into_sql_and_come_back_from_returning_into(): void
     {
         $connection = $this->connect();
         $options = self::options(autocommit: false);
@@ -301,11 +301,39 @@ final class ObjectsTest extends ConformanceTestCase
         ];
         $insert = 'insert into fx_shapes (id, center, tags, outline) values (:id, :center, :tags, :outline)';
 
-        try {
-            $connection->execute("$insert returning center into :returned", $binds + ['returned' => Struct::out('fx_point')], $options);
-            self::fail('RETURNING INTO an Object ran.');
-        } catch (UnsupportedException $e) {
-            self::assertSame("OUT bind 'returned': an Object or Collection cannot be read back from RETURNING … INTO yet; wrap the statement in a PL/SQL block (begin … returning … into :returned; end;), or select it afterwards.", $e->getMessage());
+        $returned = $connection->execute(
+            "$insert returning center, tags into :center_o, :tags_o",
+            $binds + ['center_o' => Struct::out('fx_point'), 'tags_o' => Collection::out('fx_string_varray')],
+            $options,
+        );
+        self::assertSame(1, $returned->rowCount());
+        self::assertSame([['X' => 5, 'Y' => 6, 'LABEL' => 'new']], $returned->outValues()['center_o']);
+        self::assertSame([['t']], $returned->outValues()['tags_o']);
+        $connection->execute('delete from fx_shapes where id = 99', [], $options);
+
+        $updated = $connection->execute(
+            'update fx_shapes set id = id where id in (1, 2, 3) returning id, center, tags into :id_o, :center_o, :tags_o',
+            ['id_o' => Number::out(), 'center_o' => Struct::out('fx_point'), 'tags_o' => Collection::out('fx_string_varray')],
+            $options,
+        );
+        $rows = array_map(null, $updated->outValues()['id_o'], $updated->outValues()['center_o'], $updated->outValues()['tags_o']);
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        self::assertSame([
+            [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
+            [2, null, null],
+            [3, ['X' => null, 'Y' => null, 'LABEL' => null], []],
+        ], $rows);
+
+        // A nested table column comes back as a reference to its storage
+        // table, which is not decoded: loud, and the Connection stays usable.
+        $returnOutline = 'update fx_shapes set id = id where id = 1 returning outline into :outline_o';
+        foreach ([$returnOutline, "begin $returnOutline; end;"] as $sql) {
+            try {
+                $connection->execute($sql, ['outline_o' => Collection::out('fx_point_list')], $options);
+                self::fail('RETURNING INTO a nested table column ran.');
+            } catch (UnsupportedException $e) {
+                self::assertStringContainsString('database object stored in a LOB', $e->getMessage());
+            }
         }
 
         $block = $connection->execute(

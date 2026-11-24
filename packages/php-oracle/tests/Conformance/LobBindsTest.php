@@ -14,7 +14,6 @@ use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverLob;
-use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
@@ -362,32 +361,31 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * A LOB IN OUT bind of SQL `RETURNING … INTO` still fails before any
-     * Round trip, before its temporary LOB is written.
+     * #73: a LOB written through an IN bind comes back from SQL `RETURNING
+     * … INTO` as the stored LOB, in `execute()` and in `executeMany()`.
      */
     #[Test]
-    public function a_lob_in_out_bind_of_sql_returning_fails_before_any_round_trip(): void
+    public function a_lob_written_by_sql_comes_back_from_returning(): void
     {
         $connection = $this->connect();
-        $sid = self::sid($connection);
-        $counter = RoundTripCounter::open();
-        try {
-            $trips = $counter->during($sid, static function () use ($connection): void {
-                try {
-                    $connection->execute(
-                        'update fx_lobs set label = label where id = 1 returning text_value into :t',
-                        ['t' => Clob::inOut(str_repeat('x', 100))],
-                        self::options(autocommit: false),
-                    );
-                    self::fail('A LOB came back from SQL RETURNING.');
-                } catch (UnsupportedException $e) {
-                    self::assertStringStartsWith("OUT bind 't': a LOB cannot be read back from RETURNING … INTO yet", $e->getMessage());
-                }
-            });
-            self::assertSame(0, $trips);
-        } finally {
-            $counter->close();
-        }
+        $options = self::options(autocommit: false);
+        $sql = 'update fx_lobs set text_value = :v, binary_value = :w where id = :id returning text_value, binary_value into :t, :b';
+
+        $one = $connection->execute(
+            $sql,
+            ['v' => Clob::in(str_repeat('x', 100)), 'w' => Blob::in("\x00\xFF"), 'id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
+            $options,
+        )->outValues();
+        self::assertSame([str_repeat('x', 100)], array_map(self::read(...), $one['t']));
+        self::assertSame(["\x00\xFF"], array_map(self::read(...), $one['b']));
+
+        $many = $connection->executeMany($sql, [
+            ['v' => Clob::in('one'), 'w' => Blob::in("\x01"), 'id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
+            ['v' => Clob::in('two'), 'w' => Blob::in("\x02"), 'id' => 2, 't' => Clob::out(), 'b' => Blob::out()],
+        ], $options)->outValues();
+        self::assertSame([['one'], ['two']], array_map(static fn (array $list): array => array_map(self::read(...), $list), $many['t']));
+        self::assertSame([["\x01"], ["\x02"]], array_map(static fn (array $list): array => array_map(self::read(...), $list), $many['b']));
+        $connection->rollback();
     }
 
     /**
