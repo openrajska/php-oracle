@@ -3,12 +3,13 @@
 //! locator at fetch (spec #32 §8, §14).
 //!
 //! The locator arrives with the value's size, so `size()` and an empty LOB
-//! cost no Round trip. A query's fetch also brings the first [`PREFETCH`]
-//! characters or bytes of each LOB with its locator (fork patch #74), so a
-//! LOB no larger than that reads with no Round trip of its own, under
-//! `LobMode::Inline` and through `readChunk()` alike. A larger one costs one
-//! Round trip per `readChunk()`, and one under `LobMode::Inline`; so does
-//! every non-empty LOB of an OUT bind, which comes without prefetched data.
+//! cost no Round trip. The fetch of a query, a REF CURSOR, a nested Cursor or
+//! an Implicit result also brings the first [`PREFETCH`] characters or bytes
+//! of each LOB with its locator (fork patches #74, #75), so a LOB no larger
+//! than that reads with no Round trip of its own, under `LobMode::Inline` and
+//! through `readChunk()` alike. A larger one costs one Round trip per
+//! `readChunk()`, and one under `LobMode::Inline`; so does every non-empty LOB
+//! of an OUT bind, which comes without prefetched data.
 
 use std::io::{self, Read};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -34,12 +35,14 @@ use crate::temp_lob::Written;
 /// Connection, which empties it on Release.
 pub type LobSlot = Mutex<Option<oracledb::Lob>>;
 
-/// The LOB prefetch size of every query: how many characters (UCS-2 code
-/// units) of a CLOB / NCLOB, or bytes of a BLOB, the fetch brings with each
-/// locator. It is the largest VARCHAR2 / RAW, so any LOB a VARCHAR2 or RAW
-/// could have held reads with no Round trip of its own. It costs up to that
-/// much more data per LOB cell of every fetched row, read or not (twice that
-/// in bytes for a CLOB / NCLOB, sent as UTF-16), never a Round trip.
+/// The LOB prefetch size of every statement: how many characters (UCS-2
+/// code units) of a CLOB / NCLOB, or bytes of a BLOB, the fetch of its rows,
+/// or of the REF CURSORs, nested Cursors and Implicit results it returns,
+/// brings with each locator. It is the largest VARCHAR2 / RAW, so any LOB a
+/// VARCHAR2 or RAW could have held reads with no Round trip of its own. It
+/// costs up to that much more data per LOB cell of every fetched row, read or
+/// not (twice that in bytes for a CLOB / NCLOB, sent as UTF-16), never a Round
+/// trip.
 pub const PREFETCH: u32 = MAX_VARCHAR2 as u32;
 
 /// What one `readChunk()` asks for: this many bytes of a BLOB, or UCS-2
