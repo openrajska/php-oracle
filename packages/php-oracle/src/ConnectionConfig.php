@@ -17,12 +17,13 @@ final readonly class ConnectionConfig
      * @param ?string $walletLocation the directory holding ewallet.pem
      * @param ?string $configDir where tnsnames.ora lives; else $TNS_ADMIN
      * @param int|float $connectTimeout seconds
+     * @param int $maxConnections the Pool's ceiling, >= 1
      * @param int|float $acquireTimeout seconds
      * @param int $statementCacheSize 0 disables the Statement cache
      * @param int|float|null $callTimeout seconds per Round trip; null = no limit
      * @param int $fetchSize rows per Round trip, >= 1
      *
-     * @throws ConfigurationException for a fetchSize below 1 or a timeout that is not a positive number of seconds
+     * @throws ConfigurationException for a fetchSize or maxConnections below 1, a negative statementCacheSize or a timeout that is not a positive number of seconds
      */
     public function __construct(
         public string $dsn,
@@ -47,6 +48,12 @@ final readonly class ConnectionConfig
     ) {
         if ($fetchSize < 1) {
             throw new ConfigurationException("ConnectionConfig: fetchSize must be at least 1, got $fetchSize.");
+        }
+        if ($maxConnections < 1) {
+            throw new ConfigurationException("ConnectionConfig: maxConnections must be at least 1, got $maxConnections.");
+        }
+        if ($statementCacheSize < 0) {
+            throw new ConfigurationException("ConnectionConfig: statementCacheSize must be 0 (no Statement cache) or more, got $statementCacheSize.");
         }
         foreach (['connectTimeout' => $connectTimeout, 'acquireTimeout' => $acquireTimeout, 'callTimeout' => $callTimeout] as $field => $seconds) {
             if ($seconds !== null && !($seconds > 0 && is_finite($seconds))) {
