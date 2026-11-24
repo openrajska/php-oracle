@@ -6,7 +6,11 @@ declare(strict_types=1);
 // output/summary-<tag>.md.
 //   php run.php extension=/abs/librajska_oracle.so [rounds=10] [tag=nts]
 //               [only=call,fetch] [php=php] [scale=1]
+//   php run.php from=nts-a,nts-b [tag=nts] [only=...]
 //
+// - from= runs nothing: it pools the rounds of earlier runs' raw files
+//   (output/raw-<run>.jsonl) into one summary, so two runs read as one of
+//   twice the rounds.
 // - Every (case, round) is a fresh PHP process started with bench/php.ini
 //   alone and only its own driver, so neither driver's libraries count in
 //   the other's memory and both run under the same settings.
@@ -24,7 +28,8 @@ use Rajska\Oracle\Bench\Stats;
 parse_str(implode('&', array_slice($argv, 1)), $options);
 $tag = (string) ($options['tag'] ?? 'nts');
 $php = (string) ($options['php'] ?? PHP_BINARY);
-$extension = (string) ($options['extension'] ?? throw new InvalidArgumentException('Pass extension=/abs/path/to/librajska_oracle.so'));
+$from = isset($options['from']) ? explode(',', (string) $options['from']) : null;
+$extension = (string) ($options['extension'] ?? ($from === null ? throw new InvalidArgumentException('Pass extension=/abs/path/to/librajska_oracle.so') : ''));
 $rounds = (int) ($options['rounds'] ?? 10);
 $scale = (float) ($options['scale'] ?? 1);
 $only = isset($options['only']) ? explode(',', (string) $options['only']) : null;
@@ -35,15 +40,42 @@ foreach ($cases as $id => $case) {
     $scenarios[$case['scenario']][] = $id;
 }
 
-@mkdir(__DIR__ . '/output');
-$rawFile = __DIR__ . "/output/raw-$tag.jsonl";
-file_put_contents($rawFile, '');
 /** @var array<string, list<array>> $results case => one result per round */
 $results = [];
+/** @var list<array{rounds: int, minutes: int, load_start: string, load_end: string}> $runs */
+$runs = [];
+if ($from !== null) {
+    $rounds = 0;
+    foreach ($from as $run) {
+        $lines = file(__DIR__ . "/output/raw-$run.jsonl", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES)
+            ?: throw new RuntimeException("No samples in output/raw-$run.jsonl");
+        $last = 0;
+        foreach ($lines as $line) {
+            $result = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+            if (isset($result['meta'])) {
+                $runs[] = $result['meta'];
+            } elseif (isset($cases[$result['case']])) {
+                $last = max($last, $result['round']);
+                $result['round'] += $rounds;
+                $results[$result['case']][] = $result;
+            }
+        }
+        $rounds += $last;
+    }
+}
+
+@mkdir(__DIR__ . '/output');
+$rawFile = __DIR__ . "/output/raw-$tag.jsonl";
+if ($from === null) {
+    file_put_contents($rawFile, '');
+}
 $started = time();
 $load = static fn (): string => implode(' ', array_slice(explode(' ', (string) @file_get_contents('/proc/loadavg')), 0, 3));
 $loadStart = $load();
-for ($round = 1; $round <= $rounds; $round++) {
+for ($round = 1; $from === null && $round <= $rounds; $round++) {
+    // Written once per round: a file appended after every case keeps a
+    // file sync (ddev's Mutagen) busy for the whole run.
+    $buffer = '';
     foreach ($scenarios as $ids) {
         foreach ($round % 2 === 1 ? $ids : array_reverse($ids) as $id) {
             $case = $cases[$id];
@@ -71,11 +103,12 @@ for ($round = 1; $round <= $rounds; $round++) {
                 exit(1);
             }
             $result['round'] = $round;
-            file_put_contents($rawFile, json_encode($result) . "\n", FILE_APPEND);
+            $buffer .= json_encode($result) . "\n";
             $results[$id][] = $result;
             fwrite(STDERR, sprintf("round %d/%d %-34s median %s\n", $round, $rounds, $id, duration(Stats::median($result['samples_ns']))));
         }
     }
+    file_put_contents($rawFile, $buffer, FILE_APPEND);
 }
 
 function duration(float $ns): string
@@ -102,11 +135,21 @@ function pooled(array $runs): array
     return array_merge(...array_map(static fn (array $run): array => $run['samples_ns'], $runs));
 }
 
+if ($from === null) {
+    $runs[] = ['rounds' => $rounds, 'minutes' => intdiv(time() - $started, 60), 'load_start' => $loadStart, 'load_end' => $load()];
+    file_put_contents($rawFile, json_encode(['meta' => end($runs)]) . "\n", FILE_APPEND);
+}
+
 $first = reset($results)[0];
 $md = "# Benchmark summary: $tag\n\n";
 $md .= sprintf(
-    "PHP %s; %d rounds (%s); each (case, round) is a fresh process with `bench/php.ini` and one driver. A sample is one iteration: the Call or query, every row read into PHP, and freeing it. Speedup = oci8 median / Core median (> 1: Core is faster). Run took %d min; load average %s at the start, %s at the end.\n\n",
-    $first['php'], $rounds, $scale == 1 ? 'full iterations' : "iterations × $scale", intdiv(time() - $started, 60), $loadStart, $load(),
+    "PHP %s; %d rounds (%s)%s; each (case, round) is a fresh process with `bench/php.ini` and one driver. A sample is one iteration: the Call or query, every row read into PHP, and freeing it. Speedup = oci8 median / Core median (> 1: Core is faster). %s\n\n",
+    $first['php'], $rounds, $scale == 1 ? 'full iterations' : "iterations × $scale",
+    $from === null ? '' : sprintf(', pooled from %d runs (%s)', count($from), implode(', ', array_map(static fn (string $run): string => "`raw-$run.jsonl`", $from))),
+    implode(' ', array_map(
+        static fn (array $run): string => sprintf('A run of %d rounds took %d min; load average %s at the start, %s at the end.', $run['rounds'], $run['minutes'], $run['load_start'], $run['load_end']),
+        $runs,
+    )),
 );
 $md .= "## Core against oci8\n\n`same values`: both sides return identical PHP values (`crosscheck.php`). Otherwise oci8 returns its strings, the work it does by default.\n\n";
 $md .= "| Comparison | Core | oci8 | Core median (per-round spread) | oci8 median (per-round spread) | Speedup | Spike | Verdict |\n|---|---|---|---|---|---|---|---|\n";
