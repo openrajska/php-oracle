@@ -4,12 +4,19 @@ What v1 does differently from what you might expect, and what it does not do
 yet. Anything not supported fails loudly, with `UnsupportedException` or a
 server error, unless this page says otherwise.
 
-## Wrong data to watch for
+## Being fixed
 
-- **BOOLEAN attributes of Objects built in SQL read as `false`.** A TRUE
-  BOOLEAN attribute (or Collection element) of an Object built by SQL, or
-  stored in a table, comes back `false`. Objects built in PL/SQL read
+These are being fixed in the oracledb fork for v1; until then:
+
+- **BOOLEAN attributes of Objects built in SQL read as `false`: wrong data.**
+  A TRUE BOOLEAN attribute (or Collection element) of an Object built by
+  SQL, or stored in a table, comes back `false`. Objects built in PL/SQL read
   correctly, and writing is correct.
+- After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
+  read in any Session (`UnsupportedException`).
+- `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
+  `UnsupportedException`; write the statement inside a PL/SQL block instead.
+- `LobMode::Inline` costs one extra Round trip per non-empty LOB.
 
 ## Sessions and the Pool
 
@@ -68,8 +75,16 @@ server error, unless this page says otherwise.
   `CHAR` or `NCHAR` parameter declared without a length takes its length from
   the bind, so its OUT value comes back blank-padded to 32767 bytes (16383
   characters for NCHAR).
-- `Date::in()` travels as a TIMESTAMP: compared with an indexed DATE column,
-  it can keep the index from being used. Write `cast(:value as date)`.
+- `Date::in()` with a value travels as a TIMESTAMP: compared with an indexed
+  DATE column, it can keep the index from being used. Write
+  `cast(:value as date)`. Likewise `TimestampLtz::in()` travels as a
+  TIMESTAMP WITH TIME ZONE in UTC. Sending their own types is planned for
+  later.
+- `Varchar`, `Char`, `NVarchar`, `NChar` and `Raw` binds over 32767 bytes
+  throw `UnsupportedException`: use `Clob::in()` or `Blob::in()`. Writing
+  more than 32767 bytes into a LONG or LONG RAW column is not supported yet,
+  and a plain string over 32767 bytes into a LONG column fails with the
+  server's ORA-22835.
 - `TimestampTz::in()` refuses a `DateTimeInterface` whose offset has seconds
   (a historical LMT zone) or exceeds ±15:59.
 - A stream bound with `Clob::in()`, `NClob::in()` or `Blob::in()` is read to
@@ -77,8 +92,6 @@ server error, unless this page says otherwise.
 - A LOB bind, or a string over 32767 bytes, costs one Round trip plus one per
   MiB before the statement's own. Its temporary LOB lives while any Cursor or
   `Lob` born of that Execution does.
-- `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
-  `UnsupportedException`; write the statement inside a PL/SQL block instead.
 
 ## Array DML
 
@@ -102,8 +115,12 @@ server error, unless this page says otherwise.
   included, comes back as the right Instant in UTC, not in its region.
 - A database whose `DBTIMEZONE` is a region name cannot fetch TIMESTAMP WITH
   LOCAL TIME ZONE values.
-- `LobMode::Inline` costs one extra Round trip per non-empty LOB, and a LOB
-  too large for `memory_limit` throws `UnsupportedException`.
+- With `LobMode::Inline`, a LOB too large for `memory_limit` throws
+  `UnsupportedException`.
+- BFILE and XMLTYPE columns are described, but fetching any of their values,
+  NULL included, throws `UnsupportedException`. A query with an XMLTYPE
+  column is executed twice (one extra Round trip): mind functions with side
+  effects in such a query.
 - A `Lob` reads in one pass: once read, `contents()` gives `''`.
 
 ## JSON and VECTOR
@@ -118,9 +135,8 @@ server error, unless this page says otherwise.
 
 ## Objects, Collections and Associative arrays
 
-- An Object type's description is cached per Session and never refreshed.
-  After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
-  read in any Session (`UnsupportedException`).
+- An Object type's description is cached per Session and never refreshed:
+  a Session keeps the shape it first saw until it ends.
 - Nested tables and VARRAYs are both `Collection`, and the client never
   checks a VARRAY's limit.
 - Types reached through a public synonym do not resolve: write the owner,
@@ -150,5 +166,6 @@ scrollable cursors, sharding, Application Continuity, async, and Oracle
 Database 19c / 21c.
 
 **Never on this Backend:** `INDEX BY VARCHAR2` Associative arrays,
-`SYS.ANYDATA`, and Native Network Encryption, Kerberos, RADIUS, LDAP,
+the opaque types `SYS.ANYDATA`, `SYS.ANYTYPE` and `SYS.ANYDATASET`, and
+Native Network Encryption, Kerberos, RADIUS, LDAP,
 external authentication, SEPS, TAF and FAN.

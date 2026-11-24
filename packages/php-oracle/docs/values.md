@@ -56,7 +56,7 @@ $totals = $connection->select(
 ```
 
 `LobMode::Inline` still reads each non-empty LOB through its Locator: one
-extra Round trip per LOB. A LOB too large for `memory_limit` throws
+extra Round trip per LOB, until LOB prefetch lands. A LOB too large for `memory_limit` throws
 `UnsupportedException`; read it as a `Lob` instead.
 
 ## Dates and time zones

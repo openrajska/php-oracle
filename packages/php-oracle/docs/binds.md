@@ -95,7 +95,7 @@ Each Oracle type has a class in `Rajska\Oracle\Bind\` with `in()`, `out()` and
 
 | Class | `in()` takes |
 |---|---|
-| `Varchar`, `Char`, `NVarchar`, `NChar` | `?string`, `Stringable` |
+| `Varchar`, `Char`, `NVarchar`, `NChar` | `?string`, `Stringable`, up to 32767 bytes |
 | `Number` | `int`, `float`, a decimal string, `null` |
 | `BinaryFloat`, `BinaryDouble` | `int`, `float`, `null` |
 | `PlsInteger` | `?int` |
