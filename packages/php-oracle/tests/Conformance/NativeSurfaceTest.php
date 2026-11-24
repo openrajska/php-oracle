@@ -403,6 +403,54 @@ final class NativeSurfaceTest extends ConformanceTestCase
         self::assertSame([], $reading->fetchBatch());
     }
 
+    /**
+     * Native surface 11: Core's copy of the Extension's stub is for static
+     * analysis only and never reaches users' vendor/. Core's dist archive
+     * is `git archive` of its directory at HEAD, as GitHub serves it from
+     * a split repository.
+     */
+    #[Test]
+    public function cores_dist_archive_has_no_stubs(): void
+    {
+        $package = \dirname(__DIR__, 2);
+        [$status, $paths] = self::command(['git', '-C', $package, 'rev-parse', '--show-toplevel', '--show-prefix']);
+        if ($status !== 0) {
+            self::markTestSkipped("No git repository here: $paths");
+        }
+        [$root, $prefix] = explode("\n", trim($paths)) + ['', ''];
+        $archive = tempnam(sys_get_temp_dir(), 'core-dist');
+        self::assertIsString($archive);
+
+        try {
+            [$status, $output] = self::command(['git', '-C', $root, 'archive', '--format=tar', '-o', $archive, 'HEAD:' . rtrim($prefix, '/')]);
+            self::assertSame(0, $status, $output);
+            [$status, $listing] = self::command(['tar', '-tf', $archive]);
+            self::assertSame(0, $status, $listing);
+        } finally {
+            unlink($archive);
+        }
+        $entries = explode("\n", trim($listing));
+
+        self::assertContains('src/Oracle.php', $entries, $listing);
+        self::assertSame([], array_values(array_filter($entries, static fn (string $entry): bool => str_starts_with($entry, 'stubs'))));
+    }
+
+    /**
+     * @param list<string> $command
+     *
+     * @return array{int, string} the exit status and the output (stdout, then stderr)
+     */
+    private static function command(array $command): array
+    {
+        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        $output = (string) stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return [proc_close($process), $output];
+    }
+
     private function native(): NativeConnection
     {
         $native = NativeConnection::connect(self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession());

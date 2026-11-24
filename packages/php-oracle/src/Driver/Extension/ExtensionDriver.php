@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
+use Composer\InstalledVersions;
 use Rajska\Oracle\ConnectionConfig;
 use Rajska\Oracle\Driver\Driver;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Extension\Connection as NativeConnection;
 use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Tracing;
@@ -19,12 +21,45 @@ use Rajska\Oracle\Tracing;
  * each call to the native surface and translates its exceptions. Values
  * cross as arrays of scalars: enums as backing values, durations in ms.
  *
+ * The first `connect()` of the process checks that the Extension is loaded
+ * and that its version is in `>= MINIMUM, < BREAKING`, and remembers the
+ * answer. Nothing runs at autoload or class load.
+ *
  * @internal
  */
 final class ExtensionDriver implements Driver
 {
+    /**
+     * The oldest Extension this Core works with, and CI runs the suite
+     * against it. Raise the three constants and Core's composer.json
+     * together, only after releasing that Extension.
+     */
+    private const string MINIMUM = '0.1.0';
+
+    /**
+     * The first Extension version that may break this Core: the next major,
+     * or the next minor below 1.0, as Composer's caret reads `CONSTRAINT`.
+     */
+    private const string BREAKING = '0.2.0';
+
+    /**
+     * Core's composer.json `require` of `ext-rajska_oracle`.
+     */
+    private const string CONSTRAINT = '^0.1';
+
+    /**
+     * Why the Extension cannot be used, '' once it can, null before the
+     * first check.
+     */
+    private static ?string $refusal = null;
+
     public function connect(ConnectionConfig $config): DriverConnection
     {
+        self::$refusal ??= self::refusal();
+        if (self::$refusal !== '') {
+            throw new ConfigurationException(self::$refusal);
+        }
+
         $pool = [
             'dsn' => $config->dsn,
             'user' => $config->user,
@@ -50,6 +85,37 @@ final class ExtensionDriver implements Driver
         } catch (NativeException $e) {
             throw ExceptionTranslator::translate($e);
         }
+    }
+
+    /**
+     * Why the loaded Extension cannot be used, or '' when it can.
+     */
+    private static function refusal(): string
+    {
+        // Unqualified on purpose: the detection tests shadow it in this namespace.
+        $version = phpversion('rajska_oracle');
+        if ($version === false) {
+            return 'The rajska_oracle extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
+                . 'then check it is enabled for this SAPI (`php --ri rajska_oracle`; CLI and FPM read different php.ini files).';
+        }
+
+        // '-dev' sorts below any pre-release: a beta of BREAKING is outside too.
+        if (version_compare($version, self::MINIMUM, '>=') && version_compare($version, self::BREAKING . '-dev', '<')) {
+            return '';
+        }
+
+        $core = class_exists(InstalledVersions::class) && InstalledVersions::isInstalled('openrajska/php-oracle')
+            ? 'openrajska/php-oracle ' . InstalledVersions::getPrettyVersion('openrajska/php-oracle')
+            : 'openrajska/php-oracle';
+
+        return \sprintf(
+            'rajska_oracle %s is loaded, but %s needs >= %s, < %s. Upgrade it with `pie install openrajska/php-oracle-ext:%s`.',
+            $version,
+            $core,
+            self::MINIMUM,
+            self::BREAKING,
+            self::CONSTRAINT,
+        );
     }
 
     /**

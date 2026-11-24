@@ -249,6 +249,21 @@ final class Connection
     }
 
     /**
+     * The Server version, five-part as Oracle writes it (`23.26.3.0.0` on
+     * 26ai), for `version_compare()`. It comes from the connect handshake,
+     * with no Round trip.
+     *
+     * @throws UsageException after `close()`
+     * @throws OracleException for a Broken Connection
+     */
+    public function serverVersion(): string
+    {
+        $this->ensureOpen();
+
+        return $this->driver->serverVersion();
+    }
+
+    /**
      * Releases the Session now: an open transaction rolls back (never
      * commits), the Session goes back to the Pool, and every later call on
      * this Connection or its Cursors fails. Idempotent.
