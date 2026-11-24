@@ -38,6 +38,8 @@ pub enum Kind {
     Unsupported,
     /// A programmer mistake, detected before any Round trip.
     Usage,
+    /// Rows of an Array DML call failed; none was applied.
+    Batch,
 }
 
 impl Kind {
@@ -51,6 +53,7 @@ impl Kind {
             Kind::Configuration => "configuration",
             Kind::Unsupported => "unsupported",
             Kind::Usage => "usage",
+            Kind::Batch => "batch",
         }
     }
 }
@@ -68,6 +71,19 @@ pub struct Error {
     /// A PHP exception is already pending (thrown by user code the
     /// Extension called): it goes to the caller as is.
     pending: bool,
+    /// Every failing row of a `batch` error, in row order.
+    rows: Vec<RowFailure>,
+}
+
+/// One failing row of an Array DML call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowFailure {
+    /// The row's 0-based position in the rows passed.
+    pub index: usize,
+    /// The ORA number.
+    pub code: i32,
+    /// The server's text, verbatim.
+    pub message: String,
 }
 
 impl Error {
@@ -79,6 +95,7 @@ impl Error {
             offset: None,
             lost: false,
             pending: false,
+            rows: Vec::new(),
         }
     }
 
@@ -88,6 +105,29 @@ impl Error {
 
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self::new(Kind::Unsupported, message)
+    }
+
+    /// Rows of an Array DML call of `total` rows failed (`rows`, in row
+    /// order, not empty): `"3 of 1000 rows failed; first: row 3: ORA-…"`,
+    /// with the first failing row's code.
+    pub fn batch(rows: Vec<RowFailure>, total: usize) -> Self {
+        let (code, message) = match rows.first() {
+            Some(first) => (
+                first.code,
+                format!(
+                    "{} of {total} rows failed; first: row {}: {}",
+                    rows.len(),
+                    first.index,
+                    first.message
+                ),
+            ),
+            None => (0, format!("0 of {total} rows failed.")),
+        };
+        Self {
+            code,
+            rows,
+            ..Self::new(Kind::Batch, message)
+        }
     }
 
     /// User code the Extension called threw: its exception is pending, and
@@ -225,6 +265,7 @@ impl Error {
                 native.initialize(NativeException {
                     kind: self.kind,
                     offset: self.offset,
+                    rows: self.rows,
                 });
             }
             // Neither step fails for an object.
@@ -246,6 +287,7 @@ impl From<oracledb::Error> for Error {
                 offset: i64::try_from(db.offset()).ok(),
                 lost: false,
                 pending: false,
+                rows: Vec::new(),
             },
             other => Self::new(kind_of(other), described(&e)),
         }
@@ -363,6 +405,7 @@ fn runtime_exception() -> &'static ClassEntry {
 pub struct NativeException {
     kind: Kind,
     offset: Option<i64>,
+    rows: Vec<RowFailure>,
 }
 
 #[php_impl]
@@ -383,8 +426,16 @@ impl NativeException {
     /// One entry per failing row of a `batch` error:
     /// `list<array{index: int, code: int, message: string}>`.
     #[php(getter)]
-    pub fn rows(&self) -> ZBox<ZendHashTable> {
-        ZendHashTable::new()
+    pub fn rows(&self) -> PhpResult<ZBox<ZendHashTable>> {
+        let mut rows = ZendHashTable::with_capacity(u32::try_from(self.rows.len()).unwrap_or(0));
+        for failure in &self.rows {
+            let mut row = ZendHashTable::with_capacity(3);
+            row.insert("index", i64::try_from(failure.index).unwrap_or(i64::MAX))?;
+            row.insert("code", i64::from(failure.code))?;
+            row.insert("message", failure.message.as_str())?;
+            rows.push(row)?;
+        }
+        Ok(rows)
     }
 }
 

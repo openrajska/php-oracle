@@ -36,6 +36,9 @@ pub struct Typed {
     /// The value of a CLOB, NCLOB or BLOB IN or IN OUT bind, which binds
     /// once written into a temporary LOB.
     temp: Option<TempLob>,
+    /// The bind as the user wrote it, without its value:
+    /// `Varchar::in()`, `Struct::out('HR.POINT')`.
+    signature: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -79,6 +82,18 @@ impl Typed {
     pub fn is_object(&self) -> bool {
         self.value.db_type() == DB_TYPE_OBJECT
     }
+
+    /// Whether it is a REF CURSOR (`Cursor::out()`, `Cursor::inOut()`).
+    pub fn is_cursor(&self) -> bool {
+        self.value.db_type() == DB_TYPE_CURSOR
+    }
+
+    /// The bind as the user wrote it, without its value:
+    /// `Varchar::in()`, `Struct::out('HR.POINT')`. Two binds of the same
+    /// signature bind as the same type.
+    pub fn signature(&self) -> &str {
+        &self.signature
+    }
 }
 
 /// Reads a typed bind. `describe` describes the type a `Struct`,
@@ -108,6 +123,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     };
     // The PHP value itself, for a LOB: `value` becomes what the crate binds.
     let given = value;
+    let mut object_type = None;
     let value: Box<dyn ToDbValue> = match type_name.as_str() {
         "varchar" | "rowid" => text(name, DB_TYPE_VARCHAR, value, direction)?,
         // Fixed-length only on the way in: a CHAR OUT bind is a CHAR(32767)
@@ -154,6 +170,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
                 .get("typeName")
                 .and_then(Zval::str)
                 .ok_or_else(|| Error::usage(format!("Bind '{name}': its typeName is not set.")))?;
+            object_type = Some(type_name.to_string());
             object::bind(name, kind, type_name, value, describe)?
         }
         other => {
@@ -170,12 +187,22 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     } else {
         None
     };
+    let method = match direction {
+        Direction::In => "in",
+        Direction::Out => "out",
+        Direction::InOut => "inOut",
+    };
+    let signature = match object_type {
+        Some(object_type) => format!("{}::{method}('{object_type}')", class_name(&type_name)),
+        None => format!("{}::{method}()", class_name(&type_name)),
+    };
     Ok(Typed {
         value,
         direction,
         reads_as: Temporal::of_bind(&type_name),
         lob,
         temp,
+        signature,
     })
 }
 

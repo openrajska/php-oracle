@@ -12,7 +12,7 @@ use Rajska\Oracle\Driver\DriverBatch;
 final readonly class ExtensionBatch implements DriverBatch
 {
     /**
-     * @param array<string, list<mixed>> $outValues
+     * @param array<string, list<list<mixed>>> $outValues
      */
     public function __construct(private int $rowCount, private array $outValues)
     {
