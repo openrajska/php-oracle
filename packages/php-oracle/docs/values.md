@@ -55,8 +55,9 @@ $totals = $connection->select(
 // [['ID' => 1, 'TOTAL' => 120.5], ...]
 ```
 
-`LobMode::Inline` still reads each non-empty LOB through its Locator: one
-extra Round trip per LOB, until LOB prefetch lands. A LOB too large for `memory_limit` throws
+`LobMode::Inline` costs no extra Round trip for a LOB of up to 32767
+characters or bytes: it arrives with its row (see [LOBs](#lobs)). A larger one
+costs one extra Round trip. A LOB too large for `memory_limit` throws
 `UnsupportedException`; read it as a `Lob` instead.
 
 ## Dates and time zones
@@ -83,8 +84,10 @@ follows daylight saving.
 
 ## LOBs
 
-A CLOB, NCLOB or BLOB arrives as a read-only `Lob`. Reading it costs Round
-trips only when you read:
+A CLOB, NCLOB or BLOB arrives as a read-only `Lob`. A query brings up to
+32767 characters (CLOB, NCLOB) or bytes (BLOB) of each LOB with its row, so
+reading a LOB that small costs no Round trip; a larger one costs Round trips
+only when you read it:
 
 ```php
 $connection->run(

@@ -18,7 +18,7 @@ use crate::bind::{Binds, put};
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
-use crate::lob::LobSlot;
+use crate::lob::{self, LobSlot};
 use crate::object::{self, Path};
 use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey, lock};
@@ -337,7 +337,9 @@ impl NativeConnection {
                     })
                     // LOB columns as locators: otherwise the crate redefines
                     // them as LONG / LONG RAW and the describe loses the type.
-                    .fetch_lobs();
+                    .fetch_lobs()
+                    // With their first characters or bytes (fork patch #74).
+                    .lob_prefetch_size(lob::PREFETCH);
                 let builder = if prefetch {
                     builder
                 } else {

@@ -4,14 +4,6 @@ What v1 does differently from what you might expect, and what it does not do
 yet. Anything not supported fails loudly, with `UnsupportedException` or a
 server error, unless this page says otherwise.
 
-## Being fixed
-
-These are being fixed in the oracledb fork for v1; until then:
-
-- After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
-  read in any Session (`UnsupportedException`).
-- `LobMode::Inline` costs one extra Round trip per non-empty LOB.
-
 ## Sessions and the Pool
 
 - A pooled Session keeps its package state, `ALTER SESSION` settings (NLS
@@ -111,6 +103,11 @@ These are being fixed in the oracledb fork for v1; until then:
   LOCAL TIME ZONE values.
 - With `LobMode::Inline`, a LOB too large for `memory_limit` throws
   `UnsupportedException`.
+- A query brings up to 32767 characters (CLOB, NCLOB) or bytes (BLOB) of each
+  LOB with its row, read or not. A larger LOB, and every non-empty LOB of an
+  OUT bind, costs Round trips when read: one more under `LobMode::Inline`.
+- A CLOB, NCLOB or BLOB column of a REF CURSOR, a nested `CURSOR()` or an
+  Implicit result cannot be fetched yet: the fetch throws `QueryException`.
 - BFILE and XMLTYPE columns are described, but fetching any of their values,
   NULL included, throws `UnsupportedException`. A query with an XMLTYPE
   column is executed twice (one extra Round trip): mind functions with side
@@ -129,8 +126,12 @@ These are being fixed in the oracledb fork for v1; until then:
 
 ## Objects, Collections and Associative arrays
 
-- An Object type's description is cached per Session and never refreshed:
-  a Session keeps the shape it first saw until it ends.
+- An Object type's description is cached per Session and never refreshed.
+  After `ALTER TYPE`, a Session that described the type before the change
+  fails to read or bind its values until the Session ends, also for the
+  next users of a pooled Session: `QueryException`, or `UsageException` for
+  an attribute it does not know. Sessions opened after the change read and
+  bind the new shape.
 - Nested tables and VARRAYs are both `Collection`, and the client never
   checks a VARRAY's limit.
 - `RETURNING … INTO` a nested table column fails with

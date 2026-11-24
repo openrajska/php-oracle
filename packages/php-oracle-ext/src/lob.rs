@@ -3,9 +3,12 @@
 //! locator at fetch (spec #32 §8, §14).
 //!
 //! The locator arrives with the value's size, so `size()` and an empty LOB
-//! cost no Round trip. Each `readChunk()` is one Round trip; under
-//! `LobMode::Inline`, a non-empty LOB costs one Round trip of its own (the
-//! crate does not prefetch LOB data with the locator).
+//! cost no Round trip. A query's fetch also brings the first [`PREFETCH`]
+//! characters or bytes of each LOB with its locator (fork patch #74), so a
+//! LOB no larger than that reads with no Round trip of its own, under
+//! `LobMode::Inline` and through `readChunk()` alike. A larger one costs one
+//! Round trip per `readChunk()`, and one under `LobMode::Inline`; so does
+//! every non-empty LOB of an OUT bind, which comes without prefetched data.
 
 use std::io::{self, Read};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -20,6 +23,7 @@ use ext_php_rs::types::{ZendClassObject, Zval};
 use ext_php_rs::zend::Function;
 use oracledb::{DB_TYPE_BLOB, DB_TYPE_CLOB, DB_TYPE_NCLOB, DbType, Row};
 
+use crate::bind::MAX_VARCHAR2;
 use crate::connection::ConnState;
 use crate::error::{Error, run};
 use crate::options::{LobMode, Options};
@@ -29,6 +33,14 @@ use crate::temp_lob::Written;
 /// Where a native LOB lives: held by its `Lob` object and, weakly, by its
 /// Connection, which empties it on Release.
 pub type LobSlot = Mutex<Option<oracledb::Lob>>;
+
+/// The LOB prefetch size of every query: how many characters (UCS-2 code
+/// units) of a CLOB / NCLOB, or bytes of a BLOB, the fetch brings with each
+/// locator. It is the largest VARCHAR2 / RAW, so any LOB a VARCHAR2 or RAW
+/// could have held reads with no Round trip of its own. It costs up to that
+/// much more data per LOB cell of every fetched row, read or not (twice that
+/// in bytes for a CLOB / NCLOB, sent as UTF-16), never a Round trip.
+pub const PREFETCH: u32 = MAX_VARCHAR2 as u32;
 
 /// What one `readChunk()` asks for: this many bytes of a BLOB, or UCS-2
 /// code units of a CLOB / NCLOB (up to 3 UTF-8 bytes each).
@@ -70,7 +82,8 @@ pub fn cell(
     }
 }
 
-/// The whole value of a LOB, in one Round trip (none when it is empty). A
+/// The whole value of a LOB, in one Round trip (none when it is empty or
+/// came whole with its locator, see [`PREFETCH`]). A
 /// value PHP's `memory_limit` cannot hold fails with `unsupported` instead
 /// of PHP's fatal error.
 fn inline(mut lob: oracledb::Lob, what: &str) -> Result<Zval, Error> {
@@ -91,8 +104,8 @@ fn inline(mut lob: oracledb::Lob, what: &str) -> Result<Zval, Error> {
         }
     ];
     let mut filled = 0;
-    // The first read asks for the whole value; the next one finds the end
-    // without a Round trip.
+    // The first read asks for the whole value, from the prefetched data when
+    // it holds it; the next one finds the end without a Round trip.
     loop {
         let read = lob
             .read(&mut buffer[filled..])
