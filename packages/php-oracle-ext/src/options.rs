@@ -1,6 +1,7 @@
 //! `$options`: what Core resolved for one execute (spec #32 §13, §14). Every
 //! Cursor born of that execute keeps them for its whole life.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use ext_php_rs::types::ZendHashTable;
@@ -8,6 +9,7 @@ use oracledb::StatementBuilder;
 
 use crate::error::Error;
 use crate::input::Fields;
+use crate::temp_lob::Written;
 
 const OPTION_KEYS: &[&str] = &[
     "autocommit",
@@ -61,8 +63,9 @@ pub enum KeyCase {
     Lower,
 }
 
-/// The options of one execute, read from `$options`.
-#[derive(Clone, Copy)]
+/// The options of one execute, read from `$options`, and what the Cursors
+/// and Lobs born of it keep alive with them.
+#[derive(Clone)]
 pub struct Options {
     /// Commit with the execute: Core sets it outside an Explicit transaction.
     pub autocommit: bool,
@@ -75,6 +78,9 @@ pub struct Options {
     pub lobs: LobMode,
     pub row_shape: RowShape,
     pub key_case: KeyCase,
+    /// The temporary LOBs the execute's binds were written into: what it
+    /// gave back may point at them.
+    pub written: Option<Arc<Written>>,
 }
 
 impl Options {
@@ -116,7 +122,16 @@ impl Options {
             lobs,
             row_shape,
             key_case,
+            written: None,
         })
+    }
+
+    /// These options, keeping the temporary LOBs an execute wrote.
+    pub fn keeping(&self, written: Option<Arc<Written>>) -> Self {
+        Self {
+            written,
+            ..self.clone()
+        }
     }
 
     /// Under Autocommit, the statement commits in the execute's own Round

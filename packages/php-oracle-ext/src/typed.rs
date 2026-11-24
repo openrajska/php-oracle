@@ -14,6 +14,7 @@ use oracledb::{
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
 use crate::error::Error;
+use crate::temp_lob::TempLob;
 use crate::temporal::{self, Temporal};
 
 /// The base class every typed bind extends.
@@ -30,6 +31,9 @@ pub struct Typed {
     reads_as: Option<Temporal>,
     /// A CLOB, NCLOB or BLOB.
     lob: bool,
+    /// The value of a CLOB, NCLOB or BLOB IN or IN OUT bind, which binds
+    /// once written into a temporary LOB.
+    temp: Option<TempLob>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,7 +45,15 @@ enum Direction {
 
 impl Typed {
     pub fn as_db_value(&self) -> &dyn ToDbValue {
-        self.value.as_ref()
+        match &self.temp {
+            Some(temp) => temp.as_db_value(),
+            None => self.value.as_ref(),
+        }
+    }
+
+    /// The temporary LOB a LOB IN or IN OUT value is written into.
+    pub fn temp_lob(&mut self) -> Option<&mut TempLob> {
+        self.temp.as_mut()
     }
 
     /// Whether the user reads it back (OUT or IN OUT).
@@ -85,6 +97,8 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
     } else {
         value
     };
+    // The PHP value itself, for a LOB: `value` becomes what the crate binds.
+    let given = value;
     let value: Box<dyn ToDbValue> = match type_name.as_str() {
         "varchar" | "rowid" => text(name, DB_TYPE_VARCHAR, value, direction)?,
         // Fixed-length only on the way in: a CHAR OUT bind is a CHAR(32767)
@@ -111,11 +125,12 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
         // A REF CURSOR goes as NULL, and the server opens it.
         "cursor" if value.is_null() => Box::new(DB_TYPE_CURSOR),
         "cursor" => return Err(cursor_in(name)),
-        // The server sends back a locator (a temporary LOB for a PL/SQL
-        // value); IN and IN OUT come with the LOB writes.
-        "clob" if direction == Direction::Out => Box::new(DB_TYPE_CLOB),
-        "nClob" if direction == Direction::Out => Box::new(DB_TYPE_NCLOB),
-        "blob" if direction == Direction::Out => Box::new(DB_TYPE_BLOB),
+        // NULL of the LOB type: the server sends back a locator (a
+        // temporary LOB for a PL/SQL value). An IN or IN OUT value binds as
+        // the temporary LOB it is written into (`temp`).
+        "clob" => Box::new(DB_TYPE_CLOB),
+        "nClob" => Box::new(DB_TYPE_NCLOB),
+        "blob" => Box::new(DB_TYPE_BLOB),
         "date" | "timestamp" | "timestampTz" | "timestampLtz" => temporal::timestamp_bind(
             name,
             value,
@@ -130,11 +145,19 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
             )));
         }
     };
+    let lob = matches!(type_name.as_str(), "clob" | "nClob" | "blob");
+    let temp = if lob {
+        // NULL (and OUT) binds as `value`, NULL of the LOB type.
+        TempLob::read(name, value.db_type(), given)?
+    } else {
+        None
+    };
     Ok(Typed {
         value,
         direction,
         reads_as: Temporal::of_bind(&type_name),
-        lob: matches!(type_name.as_str(), "clob" | "nClob" | "blob"),
+        lob,
+        temp,
     })
 }
 

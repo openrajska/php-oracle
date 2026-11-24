@@ -20,6 +20,7 @@ mod lob;
 mod options;
 mod pool;
 mod session;
+mod temp_lob;
 mod temporal;
 mod typed;
 mod value;

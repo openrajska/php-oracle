@@ -24,6 +24,7 @@ use crate::connection::ConnState;
 use crate::error::{Error, run};
 use crate::options::{LobMode, Options};
 use crate::pool::lock;
+use crate::temp_lob::Written;
 
 /// Where a native LOB lives: held by its `Lob` object and, weakly, by its
 /// Connection, which empties it on Release.
@@ -93,7 +94,9 @@ fn inline(mut lob: oracledb::Lob, what: &str) -> Result<Zval, Error> {
     // The first read asks for the whole value; the next one finds the end
     // without a Round trip.
     loop {
-        let read = lob.read(&mut buffer[filled..]).map_err(io_error)?;
+        let read = lob
+            .read(&mut buffer[filled..])
+            .map_err(|e| io_error(e, "read"))?;
         if read == 0 {
             break;
         }
@@ -137,8 +140,8 @@ fn memory_left() -> Option<usize> {
     Some(usize::try_from(limit.saturating_sub(used)).unwrap_or(0))
 }
 
-/// A read error: the crate's own error inside, when there is one.
-fn io_error(e: io::Error) -> Error {
+/// A read or write error: the crate's own error inside, when there is one.
+pub fn io_error(e: io::Error, operation: &str) -> Error {
     if e.get_ref()
         .is_some_and(|inner| inner.is::<oracledb::Error>())
     {
@@ -148,9 +151,9 @@ fn io_error(e: io::Error) -> Error {
         {
             return Error::from(*inner);
         }
-        return Error::unsupported("The LOB read failed.");
+        return Error::unsupported(format!("The LOB {operation} failed."));
     }
-    Error::unsupported(format!("The LOB read failed: {e}."))
+    Error::unsupported(format!("The LOB {operation} failed: {e}."))
 }
 
 #[php_class]
@@ -166,6 +169,8 @@ pub struct NativeLob {
     timeout: Option<Duration>,
     /// Weak: a LOB does not keep the Session (spec #32 §14, Lifetimes).
     state: Weak<ConnState>,
+    /// The temporary LOBs of the execute it came from, which it may be.
+    _written: Option<Arc<Written>>,
 }
 
 impl NativeLob {
@@ -188,6 +193,7 @@ impl NativeLob {
             size: i64::try_from(size).unwrap_or(i64::MAX),
             timeout: options.timeout,
             state: Arc::downgrade(state),
+            _written: options.written.clone(),
         })
     }
 
@@ -236,7 +242,9 @@ impl NativeLob {
         };
         self.on_lob(|state, lob| {
             let mut buffer = vec![0u8; capacity];
-            let read = state.timed(self.timeout, || lob.read(&mut buffer).map_err(io_error))?;
+            let read = state.timed(self.timeout, || {
+                lob.read(&mut buffer).map_err(|e| io_error(e, "read"))
+            })?;
             buffer.truncate(read);
             let mut zval = Zval::new();
             zval.set_binary(buffer);
