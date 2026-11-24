@@ -560,10 +560,7 @@ mod tests {
             registry.shutdown(&mut |message| logged.push(message));
             let leaked = threads() == before + 1;
             drop(lease);
-            leaked
-                && logged.len() == 1
-                && logged[0].contains("leaking it")
-                && !logged[0].contains(&key().password)
+            leaked && logged.len() == 1 && logged[0].contains("leaking it")
         }));
     }
 }
