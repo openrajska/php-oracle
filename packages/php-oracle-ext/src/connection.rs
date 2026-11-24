@@ -16,6 +16,7 @@ use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, run};
 use crate::input::Fields;
+use crate::value::Numbers;
 
 /// The keys of `$pool`: the Pool-key fields of `ConnectionConfig`.
 const POOL_KEYS: &[&str] = &[
@@ -89,6 +90,7 @@ impl Drop for ConnState {
 /// The options of one execute, read from `$options`.
 pub struct Options {
     pub fetch_size: u32,
+    pub numbers: Numbers,
 }
 
 impl Options {
@@ -96,7 +98,7 @@ impl Options {
         let fields = Fields::new("$options", options, OPTION_KEYS)?;
         fields.bool("autocommit")?;
         fields.optional_int("timeout")?;
-        fields.choice("numbers", &["exact", "float"])?;
+        let numbers = Numbers::from_option(fields.choice("numbers", &["exact", "float"])?);
         fields.choice("temporals", &["object", "string"])?;
         fields.choice("lobs", &["locator", "inline"])?;
         fields.choice("rowShape", &["assoc", "list"])?;
@@ -106,7 +108,10 @@ impl Options {
             .ok()
             .filter(|n| *n >= 1)
             .ok_or_else(|| Error::usage("'fetchSize' in $options must be at least 1."))?;
-        Ok(Self { fetch_size })
+        Ok(Self {
+            fetch_size,
+            numbers,
+        })
     }
 }
 
@@ -195,7 +200,7 @@ impl NativeConnection {
         run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
-            let (row_count, cursor) = self.state.with(|session| {
+            let (row_count, cursor, out_values) = self.state.with(|session| {
                 let mut statement = session
                     .statement(sql)?
                     .fetch_array_size(options.fetch_size)
@@ -209,10 +214,16 @@ impl NativeConnection {
                     Ok((
                         0,
                         Some(NativeCursor::new(Arc::clone(&self.state), cursor, &options)),
+                        binds.out_values(None, false, options.numbers)?,
                     ))
                 } else {
-                    let result = statement.execute_named(&params)?;
-                    Ok((result.rows_affected(), None))
+                    let mut result = statement.execute_named(&params)?;
+                    let out_values = binds.out_values(
+                        Some(&mut result),
+                        statement.is_plsql(),
+                        options.numbers,
+                    )?;
+                    Ok((result.rows_affected(), None, out_values))
                 }
             })?;
 
@@ -227,9 +238,7 @@ impl NativeConnection {
                     .map_err(put)?,
                 None => result.insert("cursor", ()).map_err(put)?,
             }
-            result
-                .insert("outValues", ZendHashTable::new())
-                .map_err(put)?;
+            result.insert("outValues", out_values).map_err(put)?;
             result
                 .insert("implicitResults", ZendHashTable::new())
                 .map_err(put)?;

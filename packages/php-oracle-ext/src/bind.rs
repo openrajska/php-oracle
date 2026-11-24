@@ -16,17 +16,23 @@
 //!
 //! Anything else, and every naming mistake, is a `usage` error raised before
 //! any Round trip, naming the fix. Messages name the bind, never its value.
+//!
+//! A typed bind (`Rajska\Oracle\Bind\Bind`) binds as its declared type (see
+//! [`crate::typed`]).
 
 use std::collections::HashMap;
 
+use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
-use oracledb::{OracleNumber, ToDbValue};
+use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::error::Error;
+use crate::typed::{self, Typed};
+use crate::value::{Numbers, cell};
 
 /// The longest string that binds as VARCHAR2 (PL/SQL's limit).
-const MAX_VARCHAR2: usize = 32767;
+pub const MAX_VARCHAR2: usize = 32767;
 
 enum Value {
     Null(Option<String>),
@@ -34,6 +40,7 @@ enum Value {
     Number(OracleNumber),
     Text(String),
     Bool(bool),
+    Typed(Typed),
 }
 
 impl Value {
@@ -44,7 +51,13 @@ impl Value {
             Value::Number(v) => v,
             Value::Text(v) => v,
             Value::Bool(v) => v,
+            Value::Typed(v) => v.as_db_value(),
         }
+    }
+
+    /// Whether the user reads this bind back through `out()`.
+    fn is_out(&self) -> bool {
+        matches!(self, Value::Typed(typed) if typed.is_out())
     }
 }
 
@@ -99,6 +112,47 @@ impl Binds {
             }
         }
         Ok(params)
+    }
+
+    /// The OUT and IN OUT values, keyed by the name the user wrote. Each is
+    /// the list of values the bind produced: one for a PL/SQL block, one per
+    /// returned row for `RETURNING`, none for anything else. IN binds have no
+    /// entry.
+    pub fn out_values(
+        &self,
+        result: Option<&mut ExecResult>,
+        is_plsql: bool,
+        numbers: Numbers,
+    ) -> Result<ZBox<ZendHashTable>, Error> {
+        let mut out = ZendHashTable::new();
+        if !self.0.iter().any(|(_, value)| value.is_out()) {
+            return Ok(out);
+        }
+        let rows: Vec<Row> = match result {
+            Some(result) if is_plsql => vec![result.out_bind_data()],
+            Some(result) => result.returned_data(),
+            None => Vec::new(),
+        };
+        let put = |e: ext_php_rs::error::Error| Error::unsupported(e.to_string());
+        for (name, _) in self.0.iter().filter(|(_, value)| value.is_out()) {
+            let what = format!("OUT bind '{name}'");
+            let index = rows.first().and_then(|row| {
+                row.columns()
+                    .iter()
+                    .position(|column| column.name().to_uppercase() == name.to_uppercase())
+            });
+            let mut values = ZendHashTable::with_capacity(u32::try_from(rows.len()).unwrap_or(0));
+            for row in &rows {
+                // A bind the block only reads sends nothing back.
+                let value = match index {
+                    Some(index) => cell(row, index, numbers, &what)?,
+                    None => Zval::null(),
+                };
+                values.push(value).map_err(put)?;
+            }
+            out.insert(name.as_str(), values).map_err(put)?;
+        }
+        Ok(out)
     }
 }
 
@@ -177,9 +231,14 @@ fn text(name: &str, zval: &Zval) -> Result<Value, Error> {
 /// A float as an exact NUMBER: the decimal its shortest round-trip text
 /// writes, so `0.1` stores `0.1` (C4: the crate would bind BINARY_DOUBLE).
 fn float(name: &str, value: f64) -> Result<Value, Error> {
+    exact_number(name, value).map(Value::Number)
+}
+
+/// A float as the NUMBER its shortest round-trip text writes (C4).
+pub fn exact_number(name: &str, value: f64) -> Result<OracleNumber, Error> {
     if value == 0.0 {
         // -0.0 too: NUMBER has no negative zero.
-        return Ok(Value::Int(0));
+        return Ok(OracleNumber::from(0));
     }
     // Rust's float formatting writes the shortest text that round-trips.
     let exponent = format!("{value:e}")
@@ -189,7 +248,6 @@ fn float(name: &str, value: f64) -> Result<Value, Error> {
     match exponent {
         Some(e) if value.is_finite() && (-130..=125).contains(&e) => format!("{value}")
             .parse()
-            .map(Value::Number)
             .map_err(|_| out_of_number_range(name)),
         _ => Err(out_of_number_range(name)),
     }
@@ -205,6 +263,9 @@ fn out_of_number_range(name: &str) -> Error {
 /// checked first, as Carbon is `Stringable` too.
 fn object_value(name: &str, object: &ZendObject) -> Result<Value, Error> {
     let is = |class: &str| ClassEntry::try_find(class).is_some_and(|ce| object.instance_of(ce));
+    if is(typed::BIND_CLASS) {
+        return typed::read(name, object).map(Value::Typed);
+    }
     if is("DateTimeInterface") {
         return Err(Error::usage(format!(
             "Bind '{name}': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in()."
