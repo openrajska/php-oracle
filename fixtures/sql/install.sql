@@ -30,6 +30,8 @@ prompt 10_call
 @@10_call.sql
 prompt 11_transaction
 @@11_transaction.sql
+prompt 12_object_kinds
+@@12_object_kinds.sql
 
 commit;
 
