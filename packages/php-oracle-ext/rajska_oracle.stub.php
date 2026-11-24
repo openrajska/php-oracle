@@ -69,7 +69,11 @@ final class Connection
     public function serverVersion(): string {}
 
     /**
-     * Idempotent.
+     * Release, now: this Connection's Cursors stop working (`kind: usage`),
+     * the transaction rolls back, and the Session goes back to its Pool, or
+     * is discarded if the Connection is Broken. Without it, the Release
+     * happens when the Connection and all its Cursors are freed.
+     * Idempotent; a failed rollback never throws.
      *
      * @throws Exception
      */

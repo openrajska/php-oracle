@@ -100,6 +100,31 @@ impl Error {
         }
     }
 
+    /// A later call on a Broken Connection: the error that broke it, with
+    /// its code, after `Connection is broken: `.
+    pub fn broken(code: i32, message: &str) -> Self {
+        Self {
+            code,
+            ..Self::new(
+                Kind::ConnectionLost,
+                format!("Connection is broken: {message}"),
+            )
+        }
+    }
+
+    /// Whether the Session is lost: the Connection is Broken.
+    pub fn is_connection_lost(&self) -> bool {
+        self.kind == Kind::ConnectionLost
+    }
+
+    pub fn code(&self) -> i32 {
+        self.code
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
     /// A panic caught at the PHP boundary.
     fn panic(payload: Box<dyn Any + Send>) -> Self {
         let text = payload
@@ -146,25 +171,76 @@ impl From<oracledb::Error> for Error {
     fn from(e: oracledb::Error) -> Self {
         match e.kind() {
             oracledb::ErrorKind::DbError(db) => Self {
-                kind: Kind::Database,
+                kind: kind_of_code(db.code()),
                 code: i32::try_from(db.code()).unwrap_or(0),
                 message: db.message().to_string(),
                 offset: i64::try_from(db.offset()).ok(),
                 pending: false,
             },
-            _ => Self::new(Kind::Database, e.to_string()),
+            other => Self::new(kind_of(other), e.to_string()),
         }
+    }
+}
+
+/// The server errors that mean the Session is lost: the Broken set of spec
+/// #32 §11.
+const BROKEN_CODES: [usize; 28] = [
+    22, 28, 31, 45, 378, 600, 602, 603, 609, 1012, 1041, 1043, 1089, 1092, 2396, 3113, 3114, 3122,
+    3135, 12153, 12537, 12547, 12570, 12572, 12583, 27146, 28511, 56600,
+];
+
+/// ORA-12170 (connect timeout): a connect error, never Broken.
+const CONNECT_TIMEOUT: usize = 12170;
+
+/// What a server error is, by its ORA code.
+fn kind_of_code(code: usize) -> Kind {
+    if BROKEN_CODES.contains(&code) {
+        Kind::ConnectionLost
+    } else if code == CONNECT_TIMEOUT {
+        Kind::Connection
+    } else {
+        Kind::Database
+    }
+}
+
+/// What a crate error is: the crate's errors for a lost or unreadable
+/// connection are Broken too (spec #32 §11).
+fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
+    use oracledb::ErrorKind as E;
+    match kind {
+        E::DeadConnection
+        | E::UnableToRecover
+        | E::StreamOperation
+        | E::TlsOperation
+        | E::UnexpectedError
+        | E::UnknownTtcMessageType(..)
+        | E::UnknownServerSidePiggyback(_)
+        | E::OutOfData
+        | E::ParseError(..) => Kind::ConnectionLost,
+        E::DbError(db) => kind_of_code(db.code()),
+        _ => Kind::Database,
     }
 }
 
 /// Runs a native method body: an `Err` becomes the native exception, and a
 /// panic becomes one of kind `connection_lost` instead of crossing into PHP.
 pub fn run<T>(body: impl FnOnce() -> Result<T, Error>) -> PhpResult<T> {
-    match catch_unwind(AssertUnwindSafe(body)) {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(e)) => Err(e.throw()),
-        Err(payload) => Err(Error::panic(payload).throw()),
-    }
+    run_seeing(body, |_| {})
+}
+
+/// [`run`], showing `seen` the error (a caught panic included) before it is
+/// thrown.
+pub fn run_seeing<T>(
+    body: impl FnOnce() -> Result<T, Error>,
+    seen: impl FnOnce(&Error),
+) -> PhpResult<T> {
+    let error = match catch_unwind(AssertUnwindSafe(body)) {
+        Ok(Ok(value)) => return Ok(value),
+        Ok(Err(e)) => e,
+        Err(payload) => Error::panic(payload),
+    };
+    seen(&error);
+    Err(error.throw())
 }
 
 unsafe extern "C" {
@@ -212,5 +288,71 @@ impl NativeException {
     #[php(getter)]
     pub fn rows(&self) -> ZBox<ZendHashTable> {
         ZendHashTable::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Errors 7: the Broken set, classified from synthetic errors a real
+    //! database cannot all provoke.
+
+    use oracledb::ErrorKind;
+
+    use super::{Kind, kind_of, kind_of_code};
+
+    /// Spec #32 §11, as written there.
+    const SPEC_BROKEN_CODES: [usize; 28] = [
+        22, 28, 31, 45, 378, 600, 602, 603, 609, 1012, 1041, 1043, 1089, 1092, 2396, 3113, 3114,
+        3122, 3135, 12153, 12537, 12547, 12570, 12572, 12583, 27146, 28511, 56600,
+    ];
+
+    #[test]
+    fn every_broken_ora_code_classifies_as_connection_lost() {
+        for code in SPEC_BROKEN_CODES {
+            assert_eq!(kind_of_code(code), Kind::ConnectionLost, "ORA-{code:05}");
+        }
+    }
+
+    #[test]
+    fn ora_12170_classifies_as_connection() {
+        assert_eq!(kind_of_code(12170), Kind::Connection);
+    }
+
+    #[test]
+    fn other_ora_codes_classify_as_database() {
+        for code in [1, 54, 904, 942, 1001, 1002, 1013, 1017, 2091, 22165] {
+            assert_eq!(kind_of_code(code), Kind::Database, "ORA-{code:05}");
+        }
+    }
+
+    /// `UnknownTtcMessageType` is not here: its payload type is private to
+    /// the crate, so it cannot be built outside it.
+    #[test]
+    fn every_broken_error_kind_classifies_as_connection_lost() {
+        for kind in [
+            ErrorKind::DeadConnection,
+            ErrorKind::UnableToRecover,
+            ErrorKind::StreamOperation,
+            ErrorKind::TlsOperation,
+            ErrorKind::UnexpectedError,
+            ErrorKind::UnknownServerSidePiggyback(0),
+            ErrorKind::OutOfData,
+            ErrorKind::ParseError("x".to_string(), 0),
+        ] {
+            assert_eq!(kind_of(&kind), Kind::ConnectionLost, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn other_error_kinds_classify_as_database() {
+        for kind in [
+            ErrorKind::NotConnected,
+            ErrorKind::CallTimeoutExceeded,
+            ErrorKind::NoDataFound,
+            ErrorKind::LockPoisoned,
+            ErrorKind::InvalidColumnIndex(3),
+        ] {
+            assert_eq!(kind_of(&kind), Kind::Database, "{kind:?}");
+        }
     }
 }

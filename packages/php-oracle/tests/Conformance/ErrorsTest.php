@@ -17,6 +17,7 @@ use Rajska\Oracle\Exceptions\TimeoutException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
+use Rajska\Oracle\Tests\Support\TestDatabase;
 
 /**
  * Conformance catalog, Errors (#27).
@@ -164,6 +165,76 @@ final class ErrorsTest extends ConformanceTestCase
             self::assertSame(0, $e->getCode());
             self::assertStringContainsString('acquireTimeout', $e->getMessage());
             self::assertNull($e->sql());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{bool}>
+     */
+    public static function releases(): iterable
+    {
+        yield 'close()' => [false];
+        yield 'the destructor' => [true];
+    }
+
+    /**
+     * Errors 14: the Release's rollback fails on the dead Session, which is
+     * discarded silently.
+     */
+    #[Test]
+    #[DataProvider('releases')]
+    public function a_session_dead_after_the_last_call_is_released_without_a_throw_and_not_returned(bool $destroy): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1];
+        $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config(...$fields));
+        $session = self::session($connection);
+        $connection->execute("update fx_items set name = 'uncommitted' where id = 43", [], self::options(autocommit: false));
+        self::kill($connection);
+
+        if ($destroy) {
+            unset($connection);
+        } else {
+            $connection->close();
+        }
+
+        self::assertNotSame($session, self::session($this->connect(...$fields)), 'The dead Session came back.');
+    }
+
+    /**
+     * Errors 15: a panic inside the Extension, injected through the
+     * debug-build hook (SQL starting with the comment `rajska_oracle: panic`).
+     * The process survives, the Connection is Broken, and its Session never
+     * comes back.
+     */
+    #[Test]
+    public function an_injected_panic_gives_connection_lost_and_makes_the_connection_broken(): void
+    {
+        // Two, not one: until #68 the Broken Session is held out of the Pool
+        // instead of dropped, so the Pool is one Session smaller afterwards.
+        $fields = self::ownPool() + ['maxConnections' => 2];
+        $this->connect(...$fields)->close();
+        $connection = $this->connect(...$fields);
+        $session = self::session($connection);
+
+        try {
+            $connection->execute('/* rajska_oracle: panic */ select 1 from dual', [], self::options());
+            self::markTestSkipped('The panic hook exists in debug builds of the Extension only.');
+        } catch (ConnectionLostException $e) {
+            self::assertSame(0, $e->getCode());
+            self::assertStringStartsWith('internal error in rajska_oracle: ', $e->getMessage());
+        }
+        try {
+            $connection->execute('select 1 from dual', [], self::options());
+            self::fail('A Broken Connection ran a statement.');
+        } catch (ConnectionLostException $later) {
+            self::assertSame('Connection is broken: ' . $e->getMessage(), $later->getMessage());
+        }
+        $connection->close();
+
+        for ($i = 0; $i < 3; ++$i) {
+            $next = $this->connect(...$fields);
+            self::assertNotSame($session, self::session($next), 'The Broken Session came back.');
+            $next->close();
         }
     }
 
