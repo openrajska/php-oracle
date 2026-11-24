@@ -17,6 +17,7 @@ use Rajska\Oracle\Bind\Date;
 use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\IntervalDs;
 use Rajska\Oracle\Bind\IntervalYm;
+use Rajska\Oracle\Bind\Json;
 use Rajska\Oracle\Bind\NChar;
 use Rajska\Oracle\Bind\NClob;
 use Rajska\Oracle\Bind\Number;
@@ -29,6 +30,7 @@ use Rajska\Oracle\Bind\Timestamp;
 use Rajska\Oracle\Bind\TimestampLtz;
 use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Bind\Vector;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
@@ -219,7 +221,7 @@ final class FunctionCall
      */
     public function json(): mixed
     {
-        throw $this->call->unsupported('json()');
+        return ($this->run)(Json::out())->value();
     }
 
     /**
@@ -227,9 +229,14 @@ final class FunctionCall
      *
      * @return list<int|float>|SparseVector|null
      */
-    public function vector(): array|SparseVector|null // @phpstan-ignore class.notFound, class.notFound (SparseVector comes with the VECTOR reads)
+    public function vector(): array|SparseVector|null
     {
-        throw $this->call->unsupported('vector()');
+        $value = ($this->run)(Vector::out())->value();
+
+        /** @var list<int|float>|SparseVector|null */
+        return $value === null || \is_array($value) || $value instanceof SparseVector
+            ? $value
+            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a VECTOR.', 0, null, $this->call->name);
     }
 
     /**

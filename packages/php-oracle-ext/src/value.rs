@@ -7,19 +7,21 @@ use ext_php_rs::convert::IntoZval;
 use ext_php_rs::types::{ZendClassObject, Zval};
 use oracledb::{
     DB_TYPE_BINARY_DOUBLE, DB_TYPE_BINARY_FLOAT, DB_TYPE_BINARY_INTEGER, DB_TYPE_BOOLEAN,
-    DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_INTERVAL_DS, DB_TYPE_INTERVAL_YM, DB_TYPE_LONG,
-    DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW,
-    DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleIntervalDS, OracleIntervalYM,
-    OracleNumber, OracleTimestamp, Row,
+    DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_INTERVAL_DS, DB_TYPE_INTERVAL_YM, DB_TYPE_JSON,
+    DB_TYPE_LONG, DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR,
+    DB_TYPE_OBJECT, DB_TYPE_RAW, DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, DB_TYPE_VECTOR,
+    JsonValue, OracleIntervalDS, OracleIntervalYM, OracleNumber, OracleTimestamp, Row, Vector,
 };
 
 use crate::connection::{ConnState, CursorSlot};
 use crate::cursor::NativeCursor;
 use crate::error::Error;
+use crate::json;
 use crate::lob;
 use crate::object;
 use crate::options::{NumberMode, Options};
 use crate::temporal::{self, Temporal};
+use crate::vector;
 
 /// The value at `index` of a row, as PHP sees it. `what` names the value in
 /// an error ("OUT bind 'x'"). A REF CURSOR is taken out of the row and
@@ -50,6 +52,18 @@ pub fn cell(
     }
     if db_type == DB_TYPE_OBJECT {
         return object::cell(row, index, options, &object::Path::Root(what));
+    }
+    if db_type == DB_TYPE_JSON {
+        return match row.take::<Option<JsonValue>>(index)? {
+            Some(value) => json::value(value, options, what),
+            None => Ok(Zval::null()),
+        };
+    }
+    if db_type == DB_TYPE_VECTOR {
+        return match row.take::<Option<Vector>>(index)? {
+            Some(value) => vector::value(value),
+            None => Ok(Zval::null()),
+        };
     }
     if let Some(temporal) = Temporal::of(db_type) {
         return match row.get::<Option<OracleTimestamp>>(index)? {

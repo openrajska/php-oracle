@@ -9,6 +9,12 @@
  * serialized. Arrays of scalars cross the seam: enums as backing values,
  * durations in milliseconds, null for no limit; an unknown or missing key
  * fails with `kind: usage` before any Round trip.
+ *
+ * The one Core call the Extension makes: every sparse VECTOR it reads (a
+ * column, an OUT value, inside JSON) becomes
+ * `\Rajska\Oracle\SparseVector::fromDriver(int $dimensions, array $values)`,
+ * values keyed by 0-based position. That name and signature are part of the
+ * Extension's semver contract.
  */
 
 namespace Rajska\Oracle\Extension;
