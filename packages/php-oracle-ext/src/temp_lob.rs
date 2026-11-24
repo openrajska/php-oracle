@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use ext_php_rs::types::Zval;
 use ext_php_rs::zend::{ExecutorGlobals, Function};
-use oracledb::{DB_TYPE_BLOB, DbType, ToDbValue};
+use oracledb::{DB_TYPE_BLOB, DB_TYPE_CLOB, DbType, ToDbValue};
 
 use crate::connection::ConnState;
 use crate::error::Error;
@@ -68,6 +68,19 @@ impl TempLob {
             source: Some(value.shallow_clone()),
             lob: None,
         }
+    }
+
+    /// UTF-8 text as the value of a CLOB bind. No Round trip.
+    pub fn text(text: &str) -> Result<Self, Error> {
+        let mut source = Zval::new();
+        source
+            .set_string(text, false)
+            .map_err(|e| Error::unsupported(e.to_string()))?;
+        Ok(Self {
+            db_type: DB_TYPE_CLOB,
+            source: Some(source),
+            lob: None,
+        })
     }
 
     /// Creates the temporary LOB and writes the value into it: one Round

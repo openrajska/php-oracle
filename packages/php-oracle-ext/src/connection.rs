@@ -13,7 +13,8 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 use oracledb::DbObjectType;
 
-use crate::bind::Binds;
+use crate::batch;
+use crate::bind::{Binds, put};
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
@@ -445,8 +446,11 @@ impl NativeConnection {
         })
     }
 
-    /// Runs one statement once per row of binds:
-    /// `['rowCount' => int, 'outValues' => array]`.
+    /// Runs one DML statement or PL/SQL block once per row of binds, every
+    /// row in one execute (see [`batch`]):
+    /// `['rowCount' => int, 'outValues' => array<string, list<list<mixed>>>]`,
+    /// each OUT bind giving one list per row. When rows fail, none is
+    /// applied, and the error (kind `batch`) lists every one of them.
     #[php(sensitive(rows))]
     pub fn execute_many(
         &self,
@@ -454,12 +458,20 @@ impl NativeConnection {
         rows: &ZendHashTable,
         options: &ZendHashTable,
     ) -> PhpResult<ZBox<ZendHashTable>> {
-        let _ = (sql, rows, options);
         self.state.run(|| {
-            self.state.ensure_usable()?;
-            Err(Error::unsupported(
-                "Connection::executeMany() is not implemented yet.",
-            ))
+            let options = Options::read(options)?;
+            let outcome = batch::execute(&self.state, sql, rows, &options)?;
+            let mut result = ZendHashTable::with_capacity(2);
+            result
+                .insert(
+                    "rowCount",
+                    i64::try_from(outcome.row_count).unwrap_or(i64::MAX),
+                )
+                .map_err(put)?;
+            result
+                .insert("outValues", outcome.out_values)
+                .map_err(put)?;
+            Ok(result)
         })
     }
 

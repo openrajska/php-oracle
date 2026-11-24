@@ -11,6 +11,7 @@
 
 use ext_php_rs::prelude::*;
 
+mod batch;
 mod bind;
 mod connect;
 mod connection;

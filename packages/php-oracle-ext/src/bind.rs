@@ -31,7 +31,7 @@ use std::sync::Arc;
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
-use oracledb::{DB_TYPE_CLOB, ExecResult, OracleNumber, Row, ToDbValue};
+use oracledb::{DB_TYPE_CLOB, DbType, ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::connection::ConnState;
 use crate::error::Error;
@@ -49,8 +49,12 @@ const NATIVE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Extension\\Cursor";
 /// The longest string that binds as VARCHAR2 (PL/SQL's limit).
 pub const MAX_VARCHAR2: usize = 32767;
 
-enum Value {
+/// One bind's value, as the crate takes it.
+pub enum Value {
+    /// NULL as VARCHAR2.
     Null(Option<String>),
+    /// NULL of another type: a NULL in a batch column of that type.
+    NullOf(&'static DbType),
     Int(i64),
     Number(OracleNumber),
     Text(String),
@@ -64,6 +68,7 @@ impl Value {
     fn as_db_value(&self) -> &dyn ToDbValue {
         match self {
             Value::Null(v) => v,
+            Value::NullOf(v) => v,
             Value::Int(v) => v,
             Value::Number(v) => v,
             Value::Text(v) => v,
@@ -74,7 +79,7 @@ impl Value {
     }
 
     /// Whether the user reads this bind back through `out()`.
-    fn is_out(&self) -> bool {
+    pub fn is_out(&self) -> bool {
         matches!(self, Value::Typed(typed) if typed.is_out())
     }
 
@@ -94,7 +99,7 @@ impl Value {
 
 /// Owned bind values, alive for the whole execute, each under the name the
 /// user wrote.
-pub struct Binds(Vec<(String, Value)>);
+pub struct Binds(pub Vec<(String, Value)>);
 
 impl Binds {
     /// Reads every bind: its name, then its value by inference. `describe`
@@ -146,6 +151,22 @@ impl Binds {
         Ok(params)
     }
 
+    /// The values in the order of the statement's placeholders
+    /// (`Statement::bind_names()`), for a positional execute. The binds must
+    /// have passed [`Binds::matched`].
+    pub fn positional(&self, placeholders: &[String]) -> Vec<&dyn ToDbValue> {
+        placeholders
+            .iter()
+            .filter_map(|placeholder| {
+                let placeholder = placeholder.to_uppercase();
+                self.0
+                    .iter()
+                    .find(|(name, _)| name.to_uppercase() == placeholder)
+                    .map(|(_, value)| value.as_db_value())
+            })
+            .collect()
+    }
+
     /// Writes every CLOB, NCLOB and BLOB value into a temporary LOB of the
     /// Session, so it binds: Round trips, so only once the statement passed
     /// every other check.
@@ -167,16 +188,20 @@ impl Binds {
     /// done with them, registered with the Connection so that its Release
     /// frees them; `None` when there is none.
     pub fn take_written(&mut self, state: &ConnState) -> Option<Arc<Written>> {
-        let lobs = self
-            .0
+        Written::keep(state, self.take_lobs())
+    }
+
+    /// Takes the temporary LOBs out of the binds, once the execute is done
+    /// with them.
+    pub fn take_lobs(&mut self) -> Vec<oracledb::Lob> {
+        self.0
             .iter_mut()
             .filter_map(|(_, value)| match value {
                 Value::Clob(temp) => temp.take(),
                 Value::Typed(typed) => typed.temp_lob().and_then(TempLob::take),
                 _ => None,
             })
-            .collect();
-        Written::keep(state, lobs)
+            .collect()
     }
 
     /// Fails for a LOB OUT bind of SQL `RETURNING … INTO`, before any Round
@@ -219,7 +244,7 @@ impl Binds {
         options: &Options,
     ) -> Result<ZBox<ZendHashTable>, Error> {
         let mut out = ZendHashTable::new();
-        if !self.0.iter().any(|(_, value)| value.is_out()) {
+        if !self.has_out() {
             return Ok(out);
         }
         let mut rows: Vec<Row> = match result {
@@ -227,27 +252,48 @@ impl Binds {
             Some(result) => result.returned_data(),
             None => Vec::new(),
         };
-        let put = |e: ext_php_rs::error::Error| Error::unsupported(e.to_string());
-        for (name, bind) in self.0.iter().filter(|(_, value)| value.is_out()) {
-            let what = format!("OUT bind '{name}'");
-            let index = rows.first().and_then(|row| {
-                row.columns()
-                    .iter()
-                    .position(|column| column.name().to_uppercase() == name.to_uppercase())
-            });
-            let mut values = ZendHashTable::with_capacity(u32::try_from(rows.len()).unwrap_or(0));
-            for row in &mut rows {
-                // A bind the block only reads sends nothing back.
-                let value = match index {
-                    Some(index) => cell(row, index, state, options, &what, bind.reads_as())?,
-                    None => Zval::null(),
-                };
-                values.push(value).map_err(put)?;
-            }
+        for (name, value) in self.0.iter().filter(|(_, value)| value.is_out()) {
+            let values = out_list(&mut rows, name, value, state, options)?;
             out.insert(name.as_str(), values).map_err(put)?;
         }
         Ok(out)
     }
+
+    /// Whether any bind is OUT or IN OUT.
+    pub fn has_out(&self) -> bool {
+        self.0.iter().any(|(_, value)| value.is_out())
+    }
+}
+
+/// A ZendHashTable insert or push failed: it does not, for these values.
+pub fn put(e: ext_php_rs::error::Error) -> Error {
+    Error::unsupported(e.to_string())
+}
+
+/// The list of values the OUT bind `name` produced, one per row of `rows`.
+pub fn out_list(
+    rows: &mut [Row],
+    name: &str,
+    bind: &Value,
+    state: &Arc<ConnState>,
+    options: &Options,
+) -> Result<ZBox<ZendHashTable>, Error> {
+    let what = format!("OUT bind '{name}'");
+    let index = rows.first().and_then(|row| {
+        row.columns()
+            .iter()
+            .position(|column| column.name().to_uppercase() == name.to_uppercase())
+    });
+    let mut values = ZendHashTable::with_capacity(u32::try_from(rows.len()).unwrap_or(0));
+    for row in rows {
+        // A bind the block only reads sends nothing back.
+        let value = match index {
+            Some(index) => cell(row, index, state, options, &what, bind.reads_as())?,
+            None => Zval::null(),
+        };
+        values.push(value).map_err(put)?;
+    }
+    Ok(values)
 }
 
 /// A bind's name: its key, which must be a placeholder name without `:`.

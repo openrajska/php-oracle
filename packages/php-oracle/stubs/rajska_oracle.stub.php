@@ -50,7 +50,7 @@ final class Connection
     /**
      * @param list<array<string, mixed>> $rows
      * @param array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string} $options
-     * @return array{rowCount: int, outValues: array<string, list<mixed>>}
+     * @return array{rowCount: int, outValues: array<string, list<list<mixed>>>}
      *
      * @throws Exception
      */

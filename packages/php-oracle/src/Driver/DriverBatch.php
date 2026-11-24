@@ -17,9 +17,11 @@ interface DriverBatch
     public function rowCount(): int;
 
     /**
-     * One value per bind row, in row order, keyed by bind name.
+     * Per OUT or IN OUT bind, keyed by bind name as written: one entry per
+     * bind row, in row order, each the list of values that row produced
+     * (one for a PL/SQL OUT, one per returned row for `RETURNING`).
      *
-     * @return array<string, list<mixed>>
+     * @return array<string, list<list<mixed>>>
      */
     public function outValues(): array;
 }
