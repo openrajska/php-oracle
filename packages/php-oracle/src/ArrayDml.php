@@ -57,7 +57,7 @@ final class ArrayDml implements \Countable
     /**
      * The values an OUT or IN OUT bind brought back: one OutValue per bind
      * row, in row order. With `RETURNING … INTO`, each holds the rows its
-     * bind row returned. `[]` for an ArrayDml of no rows.
+     * bind row returned. An ArrayDml of no rows has none.
      *
      * @return list<OutValue>
      *
@@ -65,9 +65,6 @@ final class ArrayDml implements \Countable
      */
     public function out(string $name): array
     {
-        if ($this->count === 0) {
-            return [];
-        }
         $values = $this->outValues ??= array_map(
             fn (array $rows): array => array_map(
                 fn (array $values): array => Lob::wrap(Cursor::wrap($values, $this->connection), $this->connection),

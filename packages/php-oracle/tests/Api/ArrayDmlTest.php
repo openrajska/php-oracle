@@ -100,7 +100,7 @@ final class ArrayDmlTest extends TestCase
 
     /**
      * out() with an unknown or an IN-only name fails like Execution::out(),
-     * and an empty ArrayDml has no OUT values at all.
+     * and so does any name on an empty ArrayDml, which has no OUT values.
      */
     #[Test]
     public function out_with_an_unknown_or_an_in_only_name_fails(): void
@@ -119,7 +119,9 @@ final class ArrayDmlTest extends TestCase
         $empty = $this->connection->runMany(self::INSERT, []);
         self::assertCount(0, $empty);
         self::assertSame(0, $empty->affected());
-        self::assertSame([], $empty->out('anything'));
+        $this->expectException(UsageException::class);
+        $this->expectExceptionMessage("No OUT bind is named 'anything'; the statement has none.");
+        $empty->out('anything');
     }
 
     /**
