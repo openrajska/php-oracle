@@ -126,8 +126,9 @@ try {
 }
 ```
 
-- Under Autocommit, the rows commit with the execute; a failed call costs one
-  more Round trip to roll back.
+- Under Autocommit, DML rows commit with the execute; a PL/SQL block commits
+  after it, once the call succeeded (one more Round trip). A failed call
+  never commits and costs one more Round trip to roll back.
 - Inside a transaction, each call sets a savepoint first (one more Round
   trip) and a failed call rolls back to it: the transaction's earlier work
   stays, still uncommitted.

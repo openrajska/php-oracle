@@ -86,11 +86,14 @@ server error, unless this page says otherwise.
 - A placeholder written twice in the statement is not supported.
 - `''` in a column that became CLOB binds as NULL. Each CLOB cell costs one
   Round trip plus one per MiB.
-- A block returning Implicit results is refused only after it ran; under
-  Autocommit its work is already committed.
+- A block returning Implicit results is refused only after it ran (its work
+  is undone, never committed).
 - Over 65535 failing rows, the exception carries no row list.
 - A failed call costs one more Round trip under Autocommit (the rollback);
   inside a transaction every call costs two (the savepoint and the execute).
+- Under Autocommit, a PL/SQL block costs one more Round trip than DML: it
+  runs without the commit, which is sent once the call succeeded, so a
+  failed call never commits.
 
 ## Values
 

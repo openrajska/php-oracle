@@ -344,8 +344,8 @@ final class ArrayDmlTest extends ConformanceTestCase
 
     /**
      * Transactions 13: Implicit results are refused loudly, once the block
-     * ran. Inside a transaction its rows are undone; under Autocommit they
-     * were committed with the execute, and the message says so.
+     * ran, and its rows are undone: inside a transaction, and under
+     * Autocommit too, where a PL/SQL block commits only after it succeeded.
      */
     #[Test]
     public function implicit_results_are_refused_once_the_block_ran(): void
@@ -353,21 +353,42 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $block = 'declare c sys_refcursor; begin insert into fx_tx_rows (id) values (:id); open c for select :id from dual; dbms_sql.return_result(c); end;';
         $refused = 'runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row.';
-        $outcomes = [
-            [false, " The block's rows are undone.", 0],
-            [true, ' Under Autocommit, the block already ran and committed for every row.', 2],
-        ];
 
-        foreach ($outcomes as [$autocommit, $outcome, $rows]) {
+        foreach ([false, true] as $autocommit) {
             try {
                 self::many($connection, $block, [['id' => 1], ['id' => 2]], $autocommit);
                 self::fail('The Implicit results came back.');
             } catch (UsageException $e) {
-                self::assertSame($refused . $outcome, $e->getMessage());
+                self::assertSame($refused . " The block's rows are undone.", $e->getMessage());
             }
-            self::assertSame($rows, self::value($connection, 'select count(*) from fx_tx_rows'));
+            self::assertSame(0, self::value($connection, 'select count(*) from fx_tx_rows'));
         }
-        self::assertSame('2', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
+        self::assertSame('0', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N'], 'nothing committed');
+    }
+
+    /**
+     * §9: under Autocommit, a PL/SQL block runs without autocommit and the
+     * commit follows once it succeeded: one Round trip more than DML, whose
+     * commit rides on the execute (C21). Both commit every row. (The
+     * block's first run in a Session costs one more: the crate runs its
+     * first row alone.)
+     */
+    #[Test]
+    public function under_autocommit_a_plsql_block_takes_one_more_round_trip_for_its_commit(): void
+    {
+        $connection = $this->connect();
+        $sid = self::sid($connection);
+        $block = 'begin insert into fx_tx_rows (id) values (:id); end;';
+        $ids = static fn (int $from): array => array_map(static fn (int $id): array => ['id' => $id], range($from, $from + 99));
+        self::many($connection, $block, $ids(1));
+
+        $dml = self::$counter->during($sid, static fn () => self::many($connection, self::INSERT, self::valid(100)));
+        $plsql = self::$counter->during($sid, static fn () => self::many($connection, $block, $ids(101)));
+
+        self::assertSame(1, $dml);
+        self::assertSame(2, $plsql);
+        self::assertSame(100, self::committed());
+        self::assertSame('200', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
     /**

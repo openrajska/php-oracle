@@ -140,9 +140,11 @@ final class Connection
      *
      * The call is atomic: when rows fail, none of its rows is applied, and
      * one `ArrayDmlException` lists every failing DML row. Under Autocommit
-     * the rows commit with the execute; inside a transaction a savepoint
-     * (one Round trip more) undoes only this call. A PL/SQL block stops at
-     * its first failing row with that server error.
+     * DML rows commit with the execute and a PL/SQL block commits after it,
+     * once the call succeeded (one Round trip more); a failed call never
+     * commits. Inside a transaction a savepoint (one Round trip more) undoes
+     * only this call. A PL/SQL block stops at its first failing row with
+     * that server error.
      *
      * @param list<array<string, mixed>> $rows each keyed by placeholder name, without ':'
      *
