@@ -243,6 +243,46 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
     }
 
+    /**
+     * Native surface 8, for query Cursors. A Pool of one Session, so every
+     * cycle runs on the same Session: a Cursor left open on the server by a
+     * Release would pile up there until ORA-01000 (open_cursors is 300), and
+     * a close sent after the Release would land on the next owner.
+     */
+    #[Test]
+    public function after_close_its_cursors_fail_with_kind_usage_and_the_sessions_next_owner_is_unaffected(): void
+    {
+        $pool = ['maxConnections' => 1, 'connectTimeout' => 20_040] + self::nativePool(TestDatabase::fromEnvironment());
+        $options = ['fetchSize' => 1] + self::nativeOptions();
+        $sql = 'select level as n from dual connect by level <= 3';
+        $orphans = [];
+        for ($i = 0; $i < 1000; ++$i) {
+            $connection = NativeConnection::connect($pool, self::nativeSession());
+            $cursor = $connection->execute($sql, [], $options)['cursor'];
+            self::assertInstanceOf(NativeCursor::class, $cursor);
+            self::assertSame([['N' => 1]], $cursor->fetchBatch());
+            $connection->close();
+            $orphans[] = $cursor;
+        }
+
+        foreach (['fetchBatch()' => static fn () => $cursor->fetchBatch(), 'columns()' => static fn () => $cursor->columns()] as $call => $read) {
+            $e = $this->nativeException($read);
+            self::assertSame('usage', $e->kind, $call);
+            self::assertSame('The Connection is closed.', $e->getMessage(), $call);
+        }
+        $cursor->close();
+
+        $next = NativeConnection::connect($pool, self::nativeSession());
+        $this->natives[] = $next;
+        $reading = $next->execute($sql, [], $options)['cursor'];
+        self::assertInstanceOf(NativeCursor::class, $reading);
+        self::assertSame([['N' => 1]], $reading->fetchBatch());
+        unset($cursor, $orphans);
+        self::assertSame([['N' => 2]], $reading->fetchBatch());
+        self::assertSame([['N' => 3]], $reading->fetchBatch());
+        self::assertSame([], $reading->fetchBatch());
+    }
+
     private function native(): NativeConnection
     {
         $native = NativeConnection::connect(self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession());

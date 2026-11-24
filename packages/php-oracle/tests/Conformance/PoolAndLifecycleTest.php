@@ -7,12 +7,16 @@ namespace Rajska\Oracle\Tests\Conformance;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Exceptions\ConnectionException;
+use Rajska\Oracle\Exceptions\ConnectionLostException;
 use Rajska\Oracle\Exceptions\PoolExhaustedException;
+use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\KeyCase;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\RowShape;
 use Rajska\Oracle\Tests\Support\IndependentSession;
+use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tracing;
 use Rajska\Oracle\ValueMapping;
 
@@ -279,6 +283,188 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
 
         $sids = [self::sid($this->connect(...$fields)), self::sid($this->connect(...$fields))];
         self::assertContains($liveSid, $sids, 'The live Session came back after its ping.');
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function releases(): iterable
+    {
+        yield 'destroying the Connection' => ['destroy', false];
+        yield 'close()' => ['close', false];
+        yield 'a Standalone Connection' => ['close', true];
+    }
+
+    /**
+     * Pool and lifecycle 2. Destroying the Connection releases it in the
+     * native free path, in the middle of the request: no request end (no
+     * RSHUTDOWN, which FrankenPHP's worker mode skips) is involved.
+     */
+    #[Test]
+    #[DataProvider('releases')]
+    public function a_release_rolls_back_and_never_commits(string $release, bool $standalone): void
+    {
+        $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config(...self::ownPool(), standalone: $standalone));
+        $connection->execute("update fx_items set name = 'uncommitted' where id = 41", [], self::options(autocommit: false));
+        self::assertTrue(self::locked(41), 'The update holds the row.');
+
+        if ($release === 'destroy') {
+            unset($connection);
+        } else {
+            $connection->close();
+        }
+
+        self::assertFalse(self::locked(41), 'The Release rolled back.');
+        $observer = IndependentSession::open();
+        try {
+            self::assertSame([['NAME' => 'Item 0041']], $observer->select('select name from fx_items where id = 41'));
+        } finally {
+            $observer->close();
+        }
+    }
+
+    /**
+     * Pool and lifecycle 3.
+     *
+     * @return iterable<string, array{\Closure(DriverConnection): mixed}>
+     */
+    public static function connectionCalls(): iterable
+    {
+        yield 'execute()' => [static fn (DriverConnection $c) => $c->execute('select 1 from dual', [], self::options())];
+        yield 'executeMany()' => [static fn (DriverConnection $c) => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], self::options())];
+        yield 'commit()' => [static fn (DriverConnection $c) => $c->commit()];
+        yield 'rollback()' => [static fn (DriverConnection $c) => $c->rollback()];
+        yield 'trace()' => [static fn (DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
+        yield 'serverVersion()' => [static fn (DriverConnection $c) => $c->serverVersion()];
+    }
+
+    /**
+     * Pool and lifecycle 3: every call after `close()` fails, and a second
+     * `close()` is fine.
+     *
+     * @param \Closure(DriverConnection): mixed $call
+     */
+    #[Test]
+    #[DataProvider('connectionCalls')]
+    public function every_call_after_close_fails_as_usage(\Closure $call): void
+    {
+        $connection = $this->connect();
+        $connection->close();
+
+        try {
+            $call($connection);
+            self::fail('A call after close() succeeded.');
+        } catch (UsageException $e) {
+            self::assertSame('The Connection is closed.', $e->getMessage());
+        }
+        $connection->close();
+    }
+
+    /**
+     * Pool and lifecycle 4.
+     */
+    #[Test]
+    public function a_live_cursor_delays_the_release_and_freeing_it_then_rolls_back(): void
+    {
+        $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config());
+        $connection->execute("update fx_items set name = 'uncommitted' where id = 42", [], self::options(autocommit: false));
+        $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2))->cursor();
+        self::assertNotNull($cursor);
+        self::assertSame([['N' => 1], ['N' => 2]], $cursor->fetchBatch());
+
+        unset($connection);
+
+        self::assertTrue(self::locked(42), 'The Cursor keeps the Connection, and its transaction.');
+        self::assertSame([['N' => 3], ['N' => 4]], $cursor->fetchBatch());
+        self::assertSame([['N' => 5]], $cursor->fetchBatch());
+        self::assertSame([], $cursor->fetchBatch());
+
+        unset($cursor);
+
+        self::assertFalse(self::locked(42), 'Freeing the last Cursor released the Connection, rolling back.');
+    }
+
+    /**
+     * Pool and lifecycle 5, the pooled part: Release resets nothing, so the
+     * Session's next owner sees its package state (documented).
+     */
+    #[Test]
+    public function package_state_survives_a_pooled_release(): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1];
+        $first = $this->connect(...$fields);
+        $session = self::session($first);
+        self::assertSame(1, self::value($first, 'select fx_pool.bump_counter from dual'));
+        $first->close();
+
+        $second = $this->connect(...$fields);
+
+        self::assertSame($session, self::session($second));
+        self::assertSame(2, self::value($second, 'select fx_pool.bump_counter from dual'));
+    }
+
+    /**
+     * @return iterable<string, array{bool}>
+     */
+    public static function kills(): iterable
+    {
+        yield 'kill immediate' => [true];
+        yield 'kill' => [false];
+    }
+
+    /**
+     * Pool and lifecycle 6 and Errors 6: the call that sees the loss throws
+     * ConnectionLostException with the original code and message; every
+     * later call throws it with the same code and "Connection is broken:
+     * <original message>". Release discards the Session.
+     */
+    #[Test]
+    #[DataProvider('kills')]
+    public function a_killed_session_makes_the_connection_broken_and_never_comes_back(bool $immediate): void
+    {
+        // Two, not one: until #68, a Broken Session with an open transport
+        // (a kill without `immediate`) is held out of the Pool instead of
+        // dropped, so the Pool is one Session smaller afterwards.
+        $fields = self::ownPool() + ['maxConnections' => 2];
+        // The Session's second loan: the crate ends the first one with a
+        // request-boundary rollback of its own, which would hide a Session
+        // going back to the Pool.
+        $this->connect(...$fields)->close();
+        $connection = $this->connect(...$fields);
+        $session = self::session($connection);
+        $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2))->cursor();
+        self::assertNotNull($cursor);
+        $cursor->fetchBatch();
+        self::kill($connection, $immediate);
+
+        try {
+            self::value($connection, 'select 1 from dual');
+            self::fail('A call on a killed Session succeeded.');
+        } catch (ConnectionLostException $lost) {
+            self::assertStringStartsNotWith('Connection is broken: ', $lost->getMessage());
+        }
+        foreach ([
+            'execute()' => static fn () => $connection->execute('select 1 from dual', [], self::options()),
+            'commit()' => static fn () => $connection->commit(),
+            'rollback()' => static fn () => $connection->rollback(),
+            'serverVersion()' => static fn () => $connection->serverVersion(),
+            'fetchBatch()' => static fn () => $cursor->fetchBatch(),
+            'columns()' => static fn () => $cursor->columns(),
+        ] as $what => $call) {
+            try {
+                $call();
+                self::fail("$what on a Broken Connection succeeded.");
+            } catch (ConnectionLostException $later) {
+                self::assertSame($lost->getCode(), $later->getCode(), $what);
+                self::assertSame('Connection is broken: ' . $lost->getMessage(), $later->getMessage(), $what);
+            }
+        }
+
+        $cursor->close();
+        $connection->close();
+
+        $next = $this->connect(...$fields);
+        self::assertNotSame($session, self::session($next), 'The killed Session came back.');
     }
 
     /**
