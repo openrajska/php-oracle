@@ -81,10 +81,6 @@ pub fn execute(
         // Every check that needs no Round trip, before the LOB writes and
         // the savepoint, which do.
         rows.matched(statement.bind_names())?;
-        if !is_plsql {
-            rows.first().refuse_returned_lobs()?;
-            rows.first().refuse_returned_objects()?;
-        }
         rows.write_lobs(state)?;
         if !options.autocommit {
             state.with(|session| {

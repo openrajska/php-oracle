@@ -149,7 +149,8 @@ $closedIds = $closed->out('id')->list(); // every returned row
 ```
 
 A scalar getter needs exactly one returned row and throws on none or several;
-`list()` always works.
+`list()` always works. LOBs, Objects and Collections come back the same way,
+one per returned row.
 
 ## REF CURSORs
 

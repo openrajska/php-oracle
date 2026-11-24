@@ -449,10 +449,6 @@ impl NativeConnection {
                     // Every check that needs no Round trip, before the LOB
                     // writes, which do.
                     binds.matched(statement.bind_names())?;
-                    if !statement.is_query() && !statement.is_plsql() {
-                        binds.refuse_returned_lobs()?;
-                        binds.refuse_returned_objects()?;
-                    }
                     binds.write_lobs(&self.state)?;
                     self.state
                         .with(|session| execute(session, statement, &mut binds))

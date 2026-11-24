@@ -46,7 +46,7 @@ final class ExtensionConnection implements DriverConnection
             throw ExceptionTranslator::translate($e, $sql);
         }
 
-        return new ExtensionBatch($result['rowCount'], $result['outValues']);
+        return new ExtensionBatch($result['rowCount'], ExtensionCursor::handlesPerRow($result['outValues'], $sql));
     }
 
     public function commit(): void

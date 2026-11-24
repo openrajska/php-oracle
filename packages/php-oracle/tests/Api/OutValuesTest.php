@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\Date;
 use Rajska\Oracle\Bind\Indexed;
@@ -210,6 +211,31 @@ final class OutValuesTest extends TestCase
         self::assertFails(fn () => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
         self::assertFails(fn () => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
         self::assertFails(fn () => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
+    }
+
+    /**
+     * Scope 4 (#73): a LOB, an Object and a Collection come back from SQL
+     * `RETURNING … INTO` like any other type.
+     */
+    #[Test]
+    public function returning_into_a_lob_an_object_or_a_collection_gives_one_value_per_row(): void
+    {
+        $lob = $this->connection->run(
+            'update fx_lobs set label = label where id = 1 returning text_value into :t',
+            ['t' => Clob::out()],
+        );
+        self::assertSame("Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}", $lob->out('t')->lob()?->contents());
+
+        $shapes = $this->connection->run(
+            'update fx_shapes set id = id where id in (1, 2) returning id, center, tags into :id, :center, :tags',
+            ['id' => Number::out(), 'center' => Struct::out('fx_point'), 'tags' => Collection::out('fx_string_varray')],
+        );
+        $rows = array_map(null, $shapes->out('id')->list(), $shapes->out('center')->list(), $shapes->out('tags')->list());
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        self::assertSame([
+            [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
+            [2, null, null],
+        ], $rows);
     }
 
     /**

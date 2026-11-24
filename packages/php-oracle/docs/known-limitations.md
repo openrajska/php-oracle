@@ -4,13 +4,6 @@ What v1 does differently from what you might expect, and what it does not do
 yet. Anything not supported fails loudly, with `UnsupportedException` or a
 server error, unless this page says otherwise.
 
-## Being fixed
-
-These are being fixed in the oracledb fork for v1; until then:
-
-- `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
-  `UnsupportedException`; write the statement inside a PL/SQL block instead.
-
 ## Sessions and the Pool
 
 - A pooled Session keeps its package state, `ALTER SESSION` settings (NLS
@@ -140,6 +133,10 @@ These are being fixed in the oracledb fork for v1; until then:
   bind the new shape.
 - Nested tables and VARRAYs are both `Collection`, and the client never
   checks a VARRAY's limit.
+- `RETURNING … INTO` a nested table column fails with
+  `UnsupportedException`, in SQL and in a PL/SQL block: the server sends a
+  reference to the stored rows instead of the elements. Select the column
+  afterwards.
 - Types reached through a public synonym do not resolve: write the owner,
   `SYS.ODCINUMBERLIST`.
 - An Associative array is never NULL in PL/SQL: `Indexed::in($type, null)`
