@@ -4,6 +4,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::{Duration, Instant};
 
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::exception::PhpResult;
@@ -13,10 +14,11 @@ use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 
 use crate::bind::Binds;
 use crate::cursor::NativeCursor;
-use crate::error::{Error, run, run_seeing};
+use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
 use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey, lock};
+use crate::session::{Settings, Tracing};
 
 /// The keys of `$pool`: the Pool-key fields of `ConnectionConfig`.
 const POOL_KEYS: &[&str] = &[
@@ -34,8 +36,6 @@ const POOL_KEYS: &[&str] = &[
     "statementCacheSize",
     "standalone",
 ];
-const SESSION_KEYS: &[&str] = &["tracing", "callTimeout"];
-const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientInfo"];
 
 /// SQL starting with this runs into a panic, in debug builds only: the
 /// test-only hook for Errors 15 (spec #32 §12, Panics).
@@ -51,6 +51,9 @@ pub type CursorSlot = Mutex<Option<oracledb::Cursor>>;
 /// Release (`close()`, or the last of them going).
 pub struct ConnState {
     inner: Mutex<Inner>,
+    /// The Connection's own Call timeout (`$session`), in effect between
+    /// executes; `None` is no limit.
+    call_timeout: Option<Duration>,
     /// Every native cursor opened on this Connection and still alive. A
     /// lock of its own: a cursor registers while the Session is in use.
     cursors: Mutex<Vec<Weak<CursorSlot>>>,
@@ -70,12 +73,13 @@ struct Broken {
 }
 
 impl ConnState {
-    fn new(lease: Lease) -> Self {
+    fn new(lease: Lease, call_timeout: Option<Duration>) -> Self {
         Self {
             inner: Mutex::new(Inner {
                 lease: Some(lease),
                 broken: None,
             }),
+            call_timeout,
             cursors: Mutex::new(Vec::new()),
         }
     }
@@ -112,6 +116,31 @@ impl ConnState {
     ) -> Result<T, Error> {
         let inner = self.inner();
         f(Self::lease(&inner)?.session())
+    }
+
+    /// Runs `f`, whose Round trips each get the Call timeout `limit`, then
+    /// puts the Connection's own back (spec #32 §10). A Round trip over it
+    /// fails as `timeout`; when the server ignored the break, the Session is
+    /// lost too, and the Connection becomes Broken.
+    pub fn timed<T>(
+        &self,
+        limit: Option<Duration>,
+        f: impl FnOnce() -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        self.with(|session| Ok(session.set_call_timeout(limit)?))?;
+        let started = Instant::now();
+        let result = f();
+        // Fails only once the Session is gone: nothing left to restore.
+        let _ = self.with(|session| Ok(session.set_call_timeout(self.call_timeout)?));
+        result.map_err(|e| match limit {
+            Some(limit) if e.kind() == Kind::Timeout => Error::timeout(limit, false),
+            // The crate tells an ignored break only as "unable to recover":
+            // a lost Session after the whole limit went by is that.
+            Some(limit) if e.kind() == Kind::ConnectionLost && started.elapsed() >= limit => {
+                Error::timeout(limit, true)
+            }
+            _ => e,
+        })
     }
 
     /// Registers a native cursor of this Connection, so Release can drop it.
@@ -183,22 +212,8 @@ impl Drop for ConnState {
     }
 }
 
-fn read_session(session: &ZendHashTable) -> Result<(), Error> {
-    let fields = Fields::new("$session", session, SESSION_KEYS)?;
-    fields.optional_int("callTimeout")?;
-    let tracing = Fields::new(
-        "$session['tracing']",
-        fields.array("tracing")?,
-        TRACING_KEYS,
-    )?;
-    for key in TRACING_KEYS {
-        tracing.optional_string(key)?;
-    }
-    Ok(())
-}
-
-/// Reads `$pool` into the Pool key, and checks `$session`.
-fn read_pool(pool: &ZendHashTable, session: &ZendHashTable) -> Result<PoolKey, Error> {
+/// Reads `$pool` into the Pool key.
+fn read_pool(pool: &ZendHashTable) -> Result<PoolKey, Error> {
     let fields = Fields::new("$pool", pool, POOL_KEYS)?;
     let optional = |key| -> Result<Option<String>, Error> {
         Ok(fields.optional_string(key)?.map(str::to_string))
@@ -218,7 +233,6 @@ fn read_pool(pool: &ZendHashTable, session: &ZendHashTable) -> Result<PoolKey, E
         statement_cache_size: fields.int("statementCacheSize")?,
         standalone: fields.bool("standalone")?,
     };
-    read_session(session)?;
     Ok(key)
 }
 
@@ -239,9 +253,13 @@ impl NativeConnection {
     #[php(sensitive(pool))]
     pub fn connect(pool: &ZendHashTable, session: &ZendHashTable) -> PhpResult<Self> {
         run(|| {
-            let session = pool::acquire(&read_pool(pool, session)?)?;
+            let key = read_pool(pool)?;
+            let settings = Settings::read(session)?;
+            let lease = pool::acquire(&key)?;
+            // Overwrites what the Session's previous Connection left.
+            settings.apply(lease.session())?;
             Ok(Self {
-                state: Arc::new(ConnState::new(session)),
+                state: Arc::new(ConnState::new(lease, settings.call_timeout)),
             })
         })
     }
@@ -260,7 +278,7 @@ impl NativeConnection {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
             let mut implicit = Vec::new();
-            let (row_count, cursor, warning, out_values) = self.state.with(|session| {
+            let execute = |session: &oracledb::Connection| {
                 #[cfg(debug_assertions)]
                 if sql.starts_with(PANIC_HOOK) {
                     panic!("injected through the test hook");
@@ -327,7 +345,10 @@ impl NativeConnection {
                     .last_warning()?
                     .filter(|w| before.as_ref() != Some(w));
                 Ok((row_count, cursor, warning, out_values))
-            })?;
+            };
+            let (row_count, cursor, warning, out_values) = self
+                .state
+                .timed(options.timeout, || self.state.with(execute))?;
 
             let mut result = ZendHashTable::with_capacity(5);
             let put = |e: ext_php_rs::error::Error| Error::unsupported(e.to_string());
@@ -382,12 +403,9 @@ impl NativeConnection {
     /// Replaces the whole tracing set (`module`, `action`,
     /// `clientIdentifier`, `clientInfo`), with no Round trip.
     pub fn trace(&self, tracing: &ZendHashTable) -> PhpResult<()> {
-        let _ = tracing;
         self.state.run(|| {
-            self.state.ensure_usable()?;
-            Err(Error::unsupported(
-                "Connection::trace() is not implemented yet.",
-            ))
+            let tracing = Tracing::read("$tracing", tracing)?;
+            self.state.with(|session| tracing.apply(session))
         })
     }
 

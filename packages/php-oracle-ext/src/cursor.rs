@@ -412,16 +412,18 @@ impl NativeCursor {
             if self.exhausted {
                 return Ok(rows);
             }
-            let mut fetched = Vec::with_capacity(self.fetch_size());
-            while fetched.len() < self.fetch_size() {
-                match cursor.next() {
-                    Some(row) => fetched.push(row?),
-                    None => {
-                        self.exhausted = true;
-                        break;
+            let size = self.fetch_size();
+            let mut fetched = Vec::with_capacity(size);
+            // Each Round trip of the fetch gets the execute's Call timeout.
+            self.exhausted = state.timed(self.options.timeout, || {
+                while fetched.len() < size {
+                    match cursor.next() {
+                        Some(row) => fetched.push(row?),
+                        None => return Ok(true),
                     }
                 }
-            }
+                Ok(false)
+            })?;
             for row in &mut fetched {
                 rows.push(self.row(row)?).map_err(put)?;
             }

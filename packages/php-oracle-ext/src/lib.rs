@@ -18,6 +18,7 @@ mod error;
 mod input;
 mod options;
 mod pool;
+mod session;
 mod typed;
 mod value;
 
