@@ -26,6 +26,8 @@ prompt 08_bench
 @@08_bench.sql
 prompt 09_bind
 @@09_bind.sql
+prompt 10_call
+@@10_call.sql
 
 commit;
 
