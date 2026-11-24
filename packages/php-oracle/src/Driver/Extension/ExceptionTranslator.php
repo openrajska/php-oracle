@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
-use Rajska\Oracle\Exceptions\BatchException;
+use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
@@ -42,7 +42,7 @@ final class ExceptionTranslator
             'database' => $code === self::UNIQUE_VIOLATION
                 ? new UniqueViolationException($message, $code, $sql, null, $native->offset)
                 : new QueryException($message, $code, $sql, null, $native->offset),
-            'batch' => new BatchException($message, $code, self::rows($native), $sql),
+            'array_dml' => new ArrayDmlException($message, $code, self::rows($native), $sql),
             'connection' => new ConnectionException($message, $code, $sql),
             'connection_lost' => new ConnectionLostException($message, $code, $sql),
             'pool_exhausted' => new PoolExhaustedException($message, $code, $sql),

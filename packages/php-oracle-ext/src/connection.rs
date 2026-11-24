@@ -13,7 +13,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 use oracledb::DbObjectType;
 
-use crate::batch;
+use crate::array_dml;
 use crate::bind::{Binds, Matched, put};
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
@@ -526,10 +526,10 @@ impl NativeConnection {
     }
 
     /// Runs one DML statement or PL/SQL block once per row of binds, every
-    /// row in one execute (see [`batch`]):
+    /// row in one execute (see [`array_dml`]):
     /// `['rowCount' => int, 'outValues' => array<string, list<list<mixed>>>]`,
     /// each OUT bind giving one list per row. When rows fail, none is
-    /// applied, and the error (kind `batch`) lists every one of them.
+    /// applied, and the error (kind `array_dml`) lists every one of them.
     #[php(sensitive(rows))]
     pub fn execute_many(
         &self,
@@ -539,7 +539,7 @@ impl NativeConnection {
     ) -> PhpResult<ZBox<ZendHashTable>> {
         self.state.run(|| {
             let options = Options::read(options)?;
-            let outcome = batch::execute(&self.state, sql, rows, &options)?;
+            let outcome = array_dml::execute(&self.state, sql, rows, &options)?;
             let mut result = ZendHashTable::with_capacity(2);
             result
                 .insert(

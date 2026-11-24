@@ -8,7 +8,7 @@ exceptions.
 OracleException (interface)                     sql(), call()
 ├─ QueryException          RuntimeException     a server error; offset()
 │  ├─ UniqueViolationException                  ORA-00001
-│  └─ BatchException                            rows(): the failing rows of runMany()
+│  └─ ArrayDmlException                            rows(): the failing rows of runMany()
 ├─ ConnectionException     RuntimeException     no Session obtained (wrong password, unreachable host)
 │  ├─ PoolExhaustedException                    acquireTimeout expired
 │  └─ ConnectionLostException                   a Broken Connection

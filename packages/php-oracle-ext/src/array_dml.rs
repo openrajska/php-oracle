@@ -12,7 +12,7 @@
 //!   column, and a column of typed binds takes no plain value;
 //! - a REF CURSOR (`Cursor::out()`) is refused, and so is a query.
 //!
-//! The call is atomic. Rows that fail do not stop the batch (C3): their
+//! The call is atomic. Rows that fail do not stop the call (C3): their
 //! errors come back together, and the Extension then rolls back what the
 //! others did. Under Autocommit that is a rollback (C21 commits nothing when
 //! a row failed); inside an Explicit transaction, the execute runs after a
@@ -38,7 +38,7 @@ use crate::object::Describe;
 use crate::options::Options;
 use crate::temp_lob::{TempLob, Written};
 
-/// The savepoint a batch inside an Explicit transaction rolls back to.
+/// The savepoint an Array DML call inside an Explicit transaction rolls back to.
 const SAVEPOINT: &str = "rajska_run_many";
 
 /// What one Array DML execute gave back: the DML count and, per OUT bind,
@@ -130,7 +130,7 @@ pub fn execute(
             })
             .collect();
         if !failures.is_empty() {
-            return Err(undo(state, options, Error::batch(failures, rows.0.len())));
+            return Err(undo(state, options, Error::array_dml(failures, rows.0.len())));
         }
         // What the execute gave back may point at the temporary LOBs its
         // binds were written into: everything born of it keeps them.
@@ -144,11 +144,11 @@ pub fn execute(
     })
 }
 
-/// The crate's error for a batch of `total` rows. Past 65535 failing rows
-/// the server lists none, so there is no BatchException to give. A
-/// placeholder written twice in SQL needs one value per occurrence, which
-/// named rows cannot give yet. Types differing down a column are caught
-/// before, by [`Rows::read`].
+/// The crate's error for an Array DML call of `total` rows. Past 65535
+/// failing rows the server lists none, so there is no ArrayDmlException to
+/// give. A placeholder written twice in SQL needs one value per occurrence,
+/// which named rows cannot give yet. Types differing down a column are
+/// caught before, by [`Rows::read`].
 fn executed_error(e: oracledb::Error, total: usize) -> Error {
     match e.kind() {
         ErrorKind::TooManyBatchErrors(failed) => Error::new(

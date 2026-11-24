@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
-use Rajska\Oracle\Driver\DriverBatch;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
  * What one `runMany()` produced: every bind row ran, in one Round trip.
  */
-final class Batch implements \Countable
+final class ArrayDml implements \Countable
 {
     /**
      * The OUT values, per bind, one list per bind row, each LOB wrapped
@@ -27,7 +27,7 @@ final class Batch implements \Countable
      * @param list<string> $bindNames every bind's name as the user wrote it
      */
     public function __construct(
-        private readonly DriverBatch $driver,
+        private readonly DriverArrayDml $driver,
         private readonly int $count,
         private readonly string $sql,
         private readonly ConnectionState $connection,
@@ -57,7 +57,7 @@ final class Batch implements \Countable
     /**
      * The values an OUT or IN OUT bind brought back: one OutValue per bind
      * row, in row order. With `RETURNING … INTO`, each holds the rows its
-     * bind row returned. `[]` for a Batch of no rows.
+     * bind row returned. `[]` for an ArrayDml of no rows.
      *
      * @return list<OutValue>
      *

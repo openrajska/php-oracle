@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
-use Rajska\Oracle\Driver\DriverBatch;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Driver\DriverOptions;
@@ -49,7 +49,7 @@ final class ExtensionConnection implements DriverConnection
         );
     }
 
-    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverBatch
+    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml
     {
         try {
             $result = $this->native->executeMany($sql, $rows, $this->options($options));
@@ -57,7 +57,7 @@ final class ExtensionConnection implements DriverConnection
             throw ExceptionTranslator::translate($e, $sql);
         }
 
-        return new ExtensionBatch($result['rowCount'], ExtensionCursor::handlesPerRow($result['outValues'], $sql));
+        return new ExtensionArrayDml($result['rowCount'], ExtensionCursor::handlesPerRow($result['outValues'], $sql));
     }
 
     public function commit(): void

@@ -6,7 +6,7 @@ namespace Rajska\Oracle\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
-use Rajska\Oracle\Exceptions\BatchException;
+use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
@@ -31,7 +31,7 @@ final class ErrorsTest extends ConformanceTestCase
     {
         yield 'QueryException' => [QueryException::class, \RuntimeException::class];
         yield 'UniqueViolationException' => [UniqueViolationException::class, QueryException::class];
-        yield 'BatchException' => [BatchException::class, QueryException::class];
+        yield 'ArrayDmlException' => [ArrayDmlException::class, QueryException::class];
         yield 'ConnectionException' => [ConnectionException::class, \RuntimeException::class];
         yield 'PoolExhaustedException' => [PoolExhaustedException::class, ConnectionException::class];
         yield 'ConnectionLostException' => [ConnectionLostException::class, ConnectionException::class];

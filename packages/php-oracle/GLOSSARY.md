@@ -113,7 +113,9 @@ _Avoid_: manual transaction, user transaction
 
 **Array DML**:
 One SQL statement or PL/SQL block run once per row of binds, with every row
-sent in a single Round trip. It applies every row or none.
+sent in a single Round trip. It applies every row or none. In code it is
+`ArrayDml`, what `runMany()` returns, and `ArrayDmlException` lists its failing
+rows.
 _Avoid_: batch (that word belongs to a Cursor's fetch), bulk insert,
 executemany
 
@@ -192,6 +194,15 @@ write "Laravel Collection")
 **Associative array**:
 A PL/SQL-only `INDEX BY` table, which may be sparse. It is not a Collection.
 _Avoid_: index-by table, PL/SQL table, hash
+
+**Struct**:
+The typed Bind of an Object (`Struct::in()`). It is not named `Object` because
+`object` is a reserved word in PHP.
+_Avoid_: Object (for the Bind class), record
+
+**Indexed**:
+The typed Bind of an Associative array (`Indexed::in()`).
+_Avoid_: AssociativeArray, Map, Hash (for the Bind class)
 
 ### Values
 

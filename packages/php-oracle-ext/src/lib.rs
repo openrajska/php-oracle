@@ -13,7 +13,7 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::zend::ModuleEntry;
 use ext_php_rs::{info_table_end, info_table_row, info_table_start};
 
-mod batch;
+mod array_dml;
 mod bind;
 mod connect;
 mod connection;

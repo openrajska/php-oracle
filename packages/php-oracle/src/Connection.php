@@ -9,7 +9,7 @@ use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\PlsInteger;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverOptions;
-use Rajska\Oracle\Exceptions\BatchException;
+use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\UsageException;
 
@@ -130,8 +130,8 @@ final class Connection
 
     /**
      * Array DML: runs one DML statement or PL/SQL block once per bind row,
-     * every row in one execute and one Round trip. There is no batch size:
-     * chunk large inputs yourself.
+     * every row in one execute and one Round trip. There is no limit on the
+     * rows of one call: chunk large inputs yourself.
      *
      * Each row binds like `run()`'s binds, and every row has the same keys.
      * A column takes one type, set by its first non-null value (an int and
@@ -139,19 +139,19 @@ final class Connection
      * column CLOB; a typed bind keeps its class down its column.
      *
      * The call is atomic: when rows fail, none of its rows is applied, and
-     * one `BatchException` lists every failing DML row. Under Autocommit
+     * one `ArrayDmlException` lists every failing DML row. Under Autocommit
      * the rows commit with the execute; inside a transaction a savepoint
      * (one Round trip more) undoes only this call. A PL/SQL block stops at
      * its first failing row with that server error.
      *
      * @param list<array<string, mixed>> $rows each keyed by placeholder name, without ':'
      *
-     * @throws BatchException listing every failing row
+     * @throws ArrayDmlException listing every failing row
      * @throws UsageException for rows that differ in keys or column types, a query, a REF CURSOR or Implicit results
      */
-    public function runMany(string $sql, #[\SensitiveParameter] array $rows, ?ExecuteOptions $options = null): Batch
+    public function runMany(string $sql, #[\SensitiveParameter] array $rows, ?ExecuteOptions $options = null): ArrayDml
     {
-        return new Batch(
+        return new ArrayDml(
             $this->driver->executeMany($sql, $rows, $this->resolve($options)),
             \count($rows),
             $sql,

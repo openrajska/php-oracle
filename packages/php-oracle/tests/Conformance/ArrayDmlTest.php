@@ -14,10 +14,10 @@ use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Struct;
 use Rajska\Oracle\Bind\Varchar;
-use Rajska\Oracle\Driver\DriverBatch;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverLob;
-use Rajska\Oracle\Exceptions\BatchException;
+use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\RowFailure;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
@@ -78,15 +78,15 @@ final class ArrayDmlTest extends ConformanceTestCase
         $sid = self::sid($connection);
         $rows = self::valid(1000);
 
-        $batch = null;
-        $trips = self::$counter->during($sid, static function () use ($connection, $rows, &$batch): void {
-            $batch = $connection->executeMany(self::INSERT, $rows, self::options());
+        $arrayDml = null;
+        $trips = self::$counter->during($sid, static function () use ($connection, $rows, &$arrayDml): void {
+            $arrayDml = $connection->executeMany(self::INSERT, $rows, self::options());
         });
 
         self::assertSame(1, $trips);
-        self::assertInstanceOf(DriverBatch::class, $batch);
-        self::assertSame(1000, $batch->rowCount());
-        self::assertSame([], $batch->outValues());
+        self::assertInstanceOf(DriverArrayDml::class, $arrayDml);
+        self::assertSame(1000, $arrayDml->rowCount());
+        self::assertSame([], $arrayDml->outValues());
         self::assertSame(1000, self::committed());
     }
 
@@ -99,13 +99,13 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $batch = self::many($connection, self::INSERT, [
+        $arrayDml = self::many($connection, self::INSERT, [
             ['id' => 1, 'code' => 'one', 'qty' => 10],
             ['QTY' => 20, 'Id' => 2, 'code' => 'two'],
             ['id' => 3, 'code' => 'three', 'qty' => 30],
         ]);
 
-        self::assertSame(3, $batch->rowCount());
+        self::assertSame(3, $arrayDml->rowCount());
         self::assertSame(
             [['ID' => '1', 'CODE' => 'one', 'QTY' => '10'], ['ID' => '2', 'CODE' => 'two', 'QTY' => '20'], ['ID' => '3', 'CODE' => 'three', 'QTY' => '30']],
             self::$observer->select('select id, code, qty from fx_batch_rows order by id'),
@@ -114,12 +114,12 @@ final class ArrayDmlTest extends ConformanceTestCase
 
     /**
      * Transactions 10 and Errors 12: rows 3, 5 and 7 fail (ORA-00001,
-     * 01400, 02290); one BatchException lists exactly those, with row 3's
+     * 01400, 02290); one ArrayDmlException lists exactly those, with row 3's
      * code, and nothing is applied: under Autocommit the valid rows are not
      * committed, nor left in the Session's transaction.
      */
     #[Test]
-    public function failing_rows_under_autocommit_give_one_batch_exception_and_apply_nothing(): void
+    public function failing_rows_under_autocommit_give_one_array_dml_exception_and_apply_nothing(): void
     {
         $connection = $this->connect();
 
@@ -155,11 +155,11 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 12: it is still a BatchException when every failure is
+     * Errors 12: it is still a ArrayDmlException when every failure is
      * ORA-00001, never a UniqueViolationException.
      */
     #[Test]
-    public function only_duplicates_still_give_a_batch_exception(): void
+    public function only_duplicates_still_give_an_array_dml_exception(): void
     {
         $connection = $this->connect();
         $rows = self::valid(4);
@@ -168,7 +168,7 @@ final class ArrayDmlTest extends ConformanceTestCase
 
         $e = self::failing(static fn () => self::many($connection, self::INSERT, $rows));
 
-        self::assertSame(BatchException::class, $e::class);
+        self::assertSame(ArrayDmlException::class, $e::class);
         self::assertSame([[1, 1], [3, 1]], self::failures($e));
         self::assertSame(0, self::committed());
     }
@@ -250,14 +250,14 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $batch = self::many($connection, 'begin :doubled := :n * 2; :name := :prefix || :n; end;', [
+        $arrayDml = self::many($connection, 'begin :doubled := :n * 2; :name := :prefix || :n; end;', [
             ['n' => 1, 'doubled' => Number::out(), 'prefix' => 'a', 'name' => Varchar::out()],
             ['n' => 2, 'doubled' => Number::out(), 'prefix' => 'b', 'name' => Varchar::out()],
             ['n' => 3, 'doubled' => Number::out(), 'prefix' => 'c', 'name' => Varchar::out()],
         ]);
 
-        self::assertSame(0, $batch->rowCount());
-        self::assertSame(['doubled' => [[2], [4], [6]], 'name' => [['a1'], ['b2'], ['c3']]], $batch->outValues());
+        self::assertSame(0, $arrayDml->rowCount());
+        self::assertSame(['doubled' => [[2], [4], [6]], 'name' => [['a1'], ['b2'], ['c3']]], $arrayDml->outValues());
     }
 
     /**
@@ -269,15 +269,15 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $sid = self::sid($connection);
 
-        $batch = null;
-        $trips = self::$counter->during($sid, static function () use ($connection, &$batch): void {
-            $batch = self::many($connection, self::INSERT, []);
+        $arrayDml = null;
+        $trips = self::$counter->during($sid, static function () use ($connection, &$arrayDml): void {
+            $arrayDml = self::many($connection, self::INSERT, []);
         });
 
         self::assertSame(0, $trips);
-        self::assertInstanceOf(DriverBatch::class, $batch);
-        self::assertSame(0, $batch->rowCount());
-        self::assertSame([], $batch->outValues());
+        self::assertInstanceOf(DriverArrayDml::class, $arrayDml);
+        self::assertSame(0, $arrayDml->rowCount());
+        self::assertSame([], $arrayDml->outValues());
     }
 
     /**
@@ -310,7 +310,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      */
     #[Test]
     #[DataProvider('refusals')]
-    public function a_refused_batch_fails_before_any_round_trip(string $sql, array $rows, string $message): void
+    public function a_refused_array_dml_fails_before_any_round_trip(string $sql, array $rows, string $message): void
     {
         $connection = $this->connect();
         $sid = self::sid($connection);
@@ -318,7 +318,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $trips = self::$counter->during($sid, static function () use ($connection, $sql, $rows, $message): void {
             try {
                 self::many($connection, $sql, $rows);
-                self::fail('The batch ran.');
+                self::fail('The Array DML ran.');
             } catch (UsageException $e) {
                 self::assertSame($message, $e->getMessage());
             }
@@ -379,14 +379,14 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $batch = self::many($connection, 'begin :length := fx_lob.text_length(:text); end;', [
+        $arrayDml = self::many($connection, 'begin :length := fx_lob.text_length(:text); end;', [
             ['text' => 'short', 'length' => Number::out()],
             ['text' => str_repeat('é', 20000), 'length' => Number::out()],
             ['text' => '', 'length' => Number::out()],
             ['text' => null, 'length' => Number::out()],
         ]);
 
-        self::assertSame(['length' => [[5], [20000], [null], [null]]], $batch->outValues());
+        self::assertSame(['length' => [[5], [20000], [null], [null]]], $arrayDml->outValues());
     }
 
     /**
@@ -418,7 +418,7 @@ final class ArrayDmlTest extends ConformanceTestCase
 
     /**
      * §9: Struct, Collection and Indexed bind per row, IN and OUT (C2
-     * covers the batch path), and an Object type changing down a column is
+     * covers the Array DML path), and an Object type changing down a column is
      * refused before any Round trip.
      */
     #[Test]
@@ -433,12 +433,12 @@ final class ArrayDmlTest extends ConformanceTestCase
             'sum' => Number::out(),
         ];
 
-        $batch = self::many($connection, $block, [$row(1), $row(2), $row(3)]);
+        $arrayDml = self::many($connection, $block, [$row(1), $row(2), $row(3)]);
 
         self::assertSame([
             'point' => [[['X' => 2, 'Y' => 3, 'LABEL' => 'p1']], [['X' => 3, 'Y' => 4, 'LABEL' => 'p2']], [['X' => 4, 'Y' => 5, 'LABEL' => 'p3']]],
             'sum' => [[2], [5], [9]],
-        ], $batch->outValues());
+        ], $arrayDml->outValues());
 
         $changed = $row(2);
         $changed['point'] = Struct::inOut('fx_polygon', null);
@@ -495,7 +495,7 @@ final class ArrayDmlTest extends ConformanceTestCase
             self::many($connection, self::INSERT, $rows);
             self::fail('The rows were inserted.');
         } catch (QueryException $e) {
-            self::assertNotInstanceOf(BatchException::class, $e);
+            self::assertNotInstanceOf(ArrayDmlException::class, $e);
             self::assertSame('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.', $e->getMessage());
         }
 
@@ -508,7 +508,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      * trip, and the rows stay uncommitted.
      */
     #[Test]
-    public function inside_a_transaction_a_batch_takes_one_more_round_trip_for_its_savepoint(): void
+    public function inside_a_transaction_an_array_dml_takes_one_more_round_trip_for_its_savepoint(): void
     {
         $connection = $this->connect();
         $sid = self::sid($connection);
@@ -533,7 +533,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $trips = self::$counter->during($sid, static function () use ($connection): void {
             try {
                 self::many($connection, 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
-                self::fail('The batch ran.');
+                self::fail('The Array DML ran.');
             } catch (UnsupportedException $e) {
                 self::assertSame('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.', $e->getMessage());
             }
@@ -561,14 +561,14 @@ final class ArrayDmlTest extends ConformanceTestCase
     /**
      * @param \Closure(): mixed $call
      */
-    private static function failing(\Closure $call): BatchException
+    private static function failing(\Closure $call): ArrayDmlException
     {
         try {
             $call();
-        } catch (BatchException $e) {
+        } catch (ArrayDmlException $e) {
             return $e;
         }
-        self::fail('No BatchException.');
+        self::fail('No ArrayDmlException.');
     }
 
     /**
@@ -577,7 +577,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      *
      * @return list<array{int, int}>
      */
-    private static function failures(BatchException $e): array
+    private static function failures(ArrayDmlException $e): array
     {
         return array_map(static function (RowFailure $row): array {
             self::assertStringStartsWith(\sprintf('ORA-%05d: ', $row->code), $row->message);
@@ -637,7 +637,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     /**
      * @param list<array<string, mixed>> $rows
      */
-    private static function many(DriverConnection $connection, string $sql, array $rows, bool $autocommit = true): DriverBatch
+    private static function many(DriverConnection $connection, string $sql, array $rows, bool $autocommit = true): DriverArrayDml
     {
         return $connection->executeMany($sql, $rows, self::options(autocommit: $autocommit));
     }
