@@ -1,0 +1,15 @@
+# Fork openrajska/rust-oracledb (o crate `oracledb` com os nossos patches; ver
+# RAJSKA.md nele) montado no container web, para `ddev fork` rodar a suíte do
+# crate contra o serviço `oracle`.
+#
+# - O clone fica ao lado do monorepo:
+#     git clone git@github.com:openrajska/rust-oracledb.git ../rust-oracledb
+#   e depois `ddev restart`.
+# - Sem o clone, o Docker cria ../rust-oracledb vazio; `git clone` aceita um
+#   diretório vazio, então basta clonar e reiniciar.
+# - Bind mount comum, fora do Mutagen. O target/ do fork vai para o volume
+#   cargo-target (ver docker-compose.rust.yaml e .ddev/commands/web/fork).
+services:
+  web:
+    volumes:
+      - ${DDEV_APPROOT}/../rust-oracledb:/var/www/rust-oracledb
