@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 ext-php-rs = "0.16"
 # Our fork of the crate, pinned to an exact commit (ADR 0002, C17; see
 # CONTRIBUTING.md, "The oracledb fork").
-oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "c8882e88976fd5df6e11b271cfbe44bf7649de41", version = "=26.0.0-beta.6" }
+oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "e6ffb6441c5d754399b998473fe01dee42b8ae06", version = "=26.0.0-beta.6" }
 
 [dev-dependencies]
 # fork() and waitpid() for the Pool registry's tests.
