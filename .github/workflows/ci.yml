@@ -65,7 +65,7 @@ jobs:
       - name: Check thread safety
         run: |
           php -v
-          php -r 'exit(PHP_ZTS === ("${{ matrix.ts }}" === "zts" ? 1 : 0) ? 0 : 1);'
+          php -r 'exit(PHP_ZTS === ("${{ matrix.ts }}" === "zts") ? 0 : 1);'
 
       - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
         run: |
