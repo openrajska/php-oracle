@@ -147,7 +147,7 @@ after every restart). Then, from the repository root:
 
 # Core's suite, with the Extension built and loaded
 ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
-  && ddev exec -d /var/www/html/packages/php-oracle composer install \
+  && ddev exec -d /var/www/html/packages/php-oracle composer install --ignore-platform-req=ext-rajska_oracle \
   && ddev exec -d /var/www/html/packages/php-oracle php \
        -d extension=/var/cache/cargo-target/debug/librajska_oracle.so vendor/bin/phpunit
 ```

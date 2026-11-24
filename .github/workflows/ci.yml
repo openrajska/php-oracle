@@ -126,7 +126,8 @@ jobs:
 
       - name: Install Core's dependencies
         working-directory: packages/php-oracle
-        run: composer install --no-interaction --no-progress
+        # Composer runs without the Extension loaded (spec #32 §15).
+        run: composer install --no-interaction --no-progress --ignore-platform-req=ext-rajska_oracle
 
       - name: Static analysis
         working-directory: packages/php-oracle
