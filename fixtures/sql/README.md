@@ -11,7 +11,7 @@ Session, Pool) follow the [Core glossary](../../packages/php-oracle/GLOSSARY.md)
 ddev fixtures
 ```
 
-This runs `install.sql` as the app user (`rajska`) in `FREEPDB1` inside the
+This runs `grants.sql` (see below) and then `install.sql` as the app user (`rajska`) in `FREEPDB1` inside the
 `oracle` container, where this folder is mounted read-only at `/fixtures/sql`.
 The ddev database is ephemeral (`ddev restart` recreates it), so run the
 command again after every restart. It takes about 2 seconds.
@@ -26,7 +26,15 @@ cd fixtures/sql && sqlplus -s -l user/password@//host:1521/service @install.sql
 ```
 
 The scripts need `CREATE TABLE`, `CREATE PROCEDURE` and `CREATE TYPE`, plus
-enough tablespace quota for about 70 MB of LOB segments. They avoid
+enough tablespace quota for about 70 MB of LOB segments.
+
+The test suites also read V$ views (`V$SESSTAT` for Round-trip counts,
+`V$SESSION`, `V$SQL`). `grants.sql` grants them, run as SYSDBA with the user
+as the argument; `ddev fixtures` runs it before `install.sql`:
+
+```bash
+sqlplus -s -l sys/password@//host:1521/service as sysdba @grants.sql user
+``` They avoid
 23ai-only syntax (no `DROP ... IF EXISTS`), so they should also run on 19c.
 Non-ASCII seed data is written with `UNISTR`, so the files stay ASCII and the
 client `NLS_LANG` does not matter.
