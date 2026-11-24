@@ -100,13 +100,14 @@ abstract class ConformanceTestCase extends TestCase
     }
 
     /**
-     * The first column of the first row of a query.
+     * The first column of the first row of a query. It runs without
+     * Autocommit, so reading never commits the test's open work.
      *
      * @param array<string, mixed> $binds
      */
     protected static function value(DriverConnection $connection, string $sql, array $binds = []): mixed
     {
-        $cursor = $connection->execute($sql, $binds, self::options())->cursor();
+        $cursor = $connection->execute($sql, $binds, self::options(autocommit: false))->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");
         $rows = $cursor->fetchBatch();
         $cursor->close();
