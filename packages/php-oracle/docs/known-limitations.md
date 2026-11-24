@@ -12,10 +12,14 @@ server error, unless this page says otherwise.
 - After a PHP fatal error (memory or time limit), no destructor runs, so
   unread output enabled with `enableOutput()` stays with the pooled Session.
   The next user's `enableOutput()` still starts empty.
-- The Session time zone is set when the Session is created. After
-  `date_default_timezone_set()`, the next `connect()` uses a separate Pool
-  for the new zone; Connections already open keep theirs. TIMESTAMP WITH
-  LOCAL TIME ZONE values are converted with PHP's default zone at fetch time.
+- The Session time zone is set when the Session is created, and PHP's
+  default zone is part of the Pool key: after `date_default_timezone_set()`,
+  the next `connect()` uses a separate Pool for the new zone; Connections
+  already open keep theirs. An application that switches zones per request
+  gets one Pool per zone, each with its own `maxConnections`, so a process
+  can hold up to `maxConnections` Sessions per zone it has seen. TIMESTAMP
+  WITH LOCAL TIME ZONE values are converted with PHP's default zone at fetch
+  time.
 - DRCP gives no gain under PHP-FPM yet: the client does not release the DRCP
   server between uses, so each worker's idle Sessions keep theirs.
 - An unreachable host fails after `connectTimeout` plus about one second.

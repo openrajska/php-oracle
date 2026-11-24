@@ -166,7 +166,16 @@ $hasVectors = version_compare($version, '23.4', '>=');
 These fields identify the Pool a `connect()` uses: `dsn`, `user`,
 `password`, `proxyUser`, `walletLocation`, `walletPassword`, `configDir`,
 `connectTimeout`, `drcpConnectionClass`, `maxConnections`, `acquireTimeout`,
-`statementCacheSize` and `standalone`. Configs that differ only in `tracing`,
-`callTimeout`, `fetchSize`, `values`, `rowShape` or `keyCase` share one Pool.
-A changed password creates a new Pool; the old one stays idle until the
-process ends.
+`statementCacheSize` and `standalone`, plus PHP's default time zone
+(`date_default_timezone_get()` when `connect()` runs), which every Session
+of the Pool uses as its Session time zone. Configs that differ only in
+`tracing`, `callTimeout`, `fetchSize`, `values`, `rowShape` or `keyCase`
+share one Pool. A changed password creates a new Pool; the old one stays
+idle until the process ends.
+
+An application that switches the default zone per request (one zone per
+tenant or per user, say) gets one Pool per zone, each with its own
+`maxConnections`: a process serving three zones can hold up to three times
+`maxConnections` Sessions. Size `maxConnections` and the database's
+`processes` / `sessions` for the number of zones a process sees, or keep
+PHP's default zone fixed and convert in PHP (`setTimezone()`).
