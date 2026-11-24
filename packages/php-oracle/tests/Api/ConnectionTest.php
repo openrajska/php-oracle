@@ -10,6 +10,7 @@ use Rajska\Oracle\Connection;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
 /**
@@ -108,5 +109,41 @@ final class ConnectionTest extends TestCase
             self::assertSame('select 1 from dual', $e->sql());
         }
         $this->connection->close();
+    }
+
+    #[Test]
+    public function server_version_is_the_five_part_version_full_with_no_round_trip(): void
+    {
+        $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
+        self::assertIsString($sid);
+        $counter = RoundTripCounter::open();
+
+        try {
+            $version = null;
+            $trips = $counter->during((int) $sid, function () use (&$version): void {
+                $version = $this->connection->serverVersion();
+            });
+        } finally {
+            $counter->close();
+        }
+
+        self::assertSame(0, $trips);
+        self::assertIsString($version);
+        self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+\.\d+\.\d+$/', $version);
+        self::assertSame(
+            $this->connection->select("select version_full from product_component_version where product like 'Oracle%'")->value(),
+            $version,
+        );
+    }
+
+    #[Test]
+    public function server_version_after_close_fails(): void
+    {
+        $this->connection->close();
+
+        $this->expectException(UsageException::class);
+        $this->expectExceptionMessage('The Connection is closed.');
+
+        $this->connection->serverVersion();
     }
 }
