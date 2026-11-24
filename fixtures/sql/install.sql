@@ -24,6 +24,8 @@ prompt 07_pool
 @@07_pool.sql
 prompt 08_bench
 @@08_bench.sql
+prompt 09_bind
+@@09_bind.sql
 
 commit;
 
