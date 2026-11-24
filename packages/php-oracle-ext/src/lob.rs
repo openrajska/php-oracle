@@ -8,8 +8,7 @@
 //! LOB no larger than that reads with no Round trip of its own, under
 //! `LobMode::Inline` and through `readChunk()` alike. A larger one costs one
 //! Round trip per `readChunk()`, and one under `LobMode::Inline`; so does
-//! every non-empty LOB of a REF CURSOR, an Implicit result or an OUT bind,
-//! which the crate fetches without the define that asks for the prefetch.
+//! every non-empty LOB of an OUT bind, which comes without prefetched data.
 
 use std::io::{self, Read};
 use std::panic::{AssertUnwindSafe, catch_unwind};
