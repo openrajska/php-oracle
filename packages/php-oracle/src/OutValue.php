@@ -25,6 +25,7 @@ final class OutValue
         private readonly string $name,
         private readonly array $values,
         private readonly ?string $sql = null,
+        private readonly ?string $call = null,
     ) {
     }
 
@@ -83,6 +84,7 @@ final class OutValue
                 "OUT bind '{$this->name}' returned $rows rows, and $getter needs exactly one; read every returned row with list().",
                 0,
                 $this->sql,
+                $this->call,
             );
         }
 
@@ -104,6 +106,7 @@ final class OutValue
             "OUT bind '{$this->name}' holds ".get_debug_type($value).", not $expected.$hint",
             0,
             $this->sql,
+            $this->call,
         );
     }
 }

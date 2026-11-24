@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverOptions;
+use Rajska\Oracle\Exceptions\UsageException;
 
 /**
  * A Session to run statements on. Get one from `Oracle::connect()`.
@@ -43,6 +45,41 @@ final class Connection
     public function select(string $sql, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Cursor
     {
         return $this->run($sql, $binds, $options)->rows();
+    }
+
+    /**
+     * Calls a stored procedure by name, in named notation: an omitted
+     * parameter takes its PL/SQL default. OUT and IN OUT values are read
+     * with `out()` by parameter name.
+     *
+     * @param string $name 1 to 3 dot-separated parts (`schema.package.procedure`), each an identifier or a double-quoted name
+     * @param array<string, mixed> $binds keyed by parameter name
+     *
+     * @throws UsageException if the name or a parameter name is not valid, before any Round trip
+     */
+    public function procedure(string $name, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
+    {
+        return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options));
+    }
+
+    /**
+     * A stored function, called by name like `procedure()`. Nothing runs
+     * until a terminal of the FunctionCall names the return type:
+     * `function('pkg.total', ['id' => 1])->number()`.
+     *
+     * @param string $name 1 to 3 dot-separated parts (`schema.package.function`), each an identifier or a double-quoted name
+     * @param array<string, mixed> $binds keyed by parameter name
+     *
+     * @throws UsageException if the name or a parameter name is not valid, before any Round trip
+     */
+    public function function(string $name, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): FunctionCall
+    {
+        $call = Call::of($name, $binds);
+
+        return new FunctionCall(
+            $call,
+            fn (Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return),
+        );
     }
 
     /**

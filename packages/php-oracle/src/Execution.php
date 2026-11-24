@@ -19,11 +19,13 @@ final class Execution
      * @internal use Connection::run()
      *
      * @param list<string> $bindNames every bind's name as the user wrote it
+     * @param ?string $call the Call name, for a Call
      */
     public function __construct(
         private readonly DriverExecution $driver,
         private readonly string $sql,
         private readonly array $bindNames = [],
+        private readonly ?string $call = null,
     ) {
     }
 
@@ -48,16 +50,16 @@ final class Execution
             /** @var list<mixed> $list */
             $list = $values[$key];
 
-            return new OutValue($key, $list, $this->sql);
+            return new OutValue($key, $list, $this->sql, $this->call);
         }
 
         $in = self::find($name, $this->bindNames);
         if ($in !== null) {
-            throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql);
+            throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql, $this->call);
         }
         $names = $values === [] ? 'the statement has none' : "they are '".implode("', '", array_keys($values))."'";
 
-        throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql);
+        throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql, $this->call);
     }
 
     /**
@@ -74,6 +76,7 @@ final class Execution
             'The statement is not a query, so it has no rows: read OUT values with out() and Implicit results with results().',
             0,
             $this->sql,
+            $this->call,
         );
 
         return $this->rows = new Cursor($cursor);

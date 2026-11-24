@@ -55,8 +55,8 @@ final class SeamAndRowsTest extends ConformanceTestCase
     }
 
     /**
-     * Seam and rows 1 (Calls come with `procedure()`): every statement kind
-     * returns a complete Execution; the count is the DML count, else 0.
+     * Seam and rows 1: every statement kind returns a complete Execution; the
+     * count is the DML count, else 0. Calls are Core's (Api\CallsTest).
      */
     #[Test]
     public function every_statement_kind_returns_a_complete_execution(): void
