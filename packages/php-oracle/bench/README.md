@@ -80,10 +80,18 @@ the scalar Call, then the end of the request with the transaction open),
 
 Apple M5, 10 cores, OrbStack; PHP 8.4.28 NTS; Oracle AI Database 26ai Free
 in the next container. Extension 0.1.0 at `spec/32-core-v1` after the
-performance tickets #76–#79 (oracledb fork `d2cbb0f`). 20 rounds, pooled
-from two runs on a quiet machine; the full table, p95 and memory are in
-[`output/summary-nts.md`](output/summary-nts.md). The *#64* column is the
-first benchmark, before #76–#79.
+performance tickets #76–#79 (`e566cd3`, oracledb fork `d2cbb0f`). 20
+rounds, pooled from two runs on a quiet machine; the full table, p95 and
+memory are in [`output/summary-nts.md`](output/summary-nts.md). The *#64*
+column is the first benchmark, before #76–#79.
+
+The code-review fixes that followed (`72f7647`) touch LOB reads, the
+DATE object, connect and `runMany()`, so those scenarios were rerun on
+them (2 × 10 rounds, [`output/summary-nts-rerun.md`](output/summary-nts-rerun.md)):
+the same verdicts, within the noise. Dates `Object` 1.43× (Core 9.33 ms),
+`String` 1.66×; small LOBs 6.06× inline, 5.11× `contents()`; the 16 MiB
+BLOB 0.50×; `runMany()` 5.69× a loop, 0.94× `FORALL`; connect + close
+0.81×; connect + query + close 1.31×.
 
 **The goal is met for fetches, numbers, LOBs and Array DML, not for the
 rest.** Core reaches 2× oci8 on the default 10k fetch with `all()`, the
@@ -232,7 +240,10 @@ is left:
 
 `runMany()` against a `FORALL` block (0.96×) and a standalone logon (1.13×)
 are one Round trip or one logon each on both sides: the server's time
-dominates.
+dominates. Since the review fixes, `runMany()` of a PL/SQL block under
+Autocommit commits in a Round trip of its own, once the block succeeded:
+one more than before. The benchmark's `runMany()` is an INSERT, whose
+Round trips did not change.
 
 ## Noise
 
