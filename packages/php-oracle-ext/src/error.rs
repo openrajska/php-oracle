@@ -18,6 +18,8 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals};
 
+use crate::bind::put;
+
 /// What went wrong, as the native exception's `kind` names it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
@@ -425,29 +427,34 @@ impl NativeException {
     /// `database`, `connection`, `connection_lost`, `pool_exhausted`,
     /// `timeout`, `unsupported`, `usage`, `configuration` or `array_dml`.
     #[php(getter)]
-    pub fn kind(&self) -> String {
-        self.kind.as_str().to_string()
+    pub fn kind(&self) -> PhpResult<String> {
+        run(|| Ok(self.kind.as_str().to_string()))
     }
 
     /// The server's error offset, for a `database` error.
     #[php(getter)]
-    pub fn offset(&self) -> Option<i64> {
-        self.offset
+    pub fn offset(&self) -> PhpResult<Option<i64>> {
+        run(|| Ok(self.offset))
     }
 
     /// One entry per failing row of an `array_dml` error:
     /// `list<array{index: int, code: int, message: string}>`.
     #[php(getter)]
     pub fn rows(&self) -> PhpResult<ZBox<ZendHashTable>> {
-        let mut rows = ZendHashTable::with_capacity(u32::try_from(self.rows.len()).unwrap_or(0));
-        for failure in &self.rows {
-            let mut row = ZendHashTable::with_capacity(3);
-            row.insert("index", i64::try_from(failure.index).unwrap_or(i64::MAX))?;
-            row.insert("code", i64::from(failure.code))?;
-            row.insert("message", failure.message.as_str())?;
-            rows.push(row)?;
-        }
-        Ok(rows)
+        run(|| {
+            let mut rows =
+                ZendHashTable::with_capacity(u32::try_from(self.rows.len()).unwrap_or(0));
+            for failure in &self.rows {
+                let mut row = ZendHashTable::with_capacity(3);
+                let index = i64::try_from(failure.index).unwrap_or(i64::MAX);
+                row.insert("index", index).map_err(put)?;
+                row.insert("code", i64::from(failure.code)).map_err(put)?;
+                row.insert("message", failure.message.as_str())
+                    .map_err(put)?;
+                rows.push(row).map_err(put)?;
+            }
+            Ok(rows)
+        })
     }
 }
 
