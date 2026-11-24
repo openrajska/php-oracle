@@ -23,8 +23,6 @@ use Rajska\Oracle\Tests\Support\TransactionObserver;
  */
 final class OutputTest extends TestCase
 {
-    private static int $pools = 0;
-
     /** @var list<Connection> */
     private array $connections = [];
 
@@ -166,8 +164,7 @@ final class OutputTest extends TestCase
     #[DataProvider('releasesAndNextUsers')]
     public function unread_output_enabled_through_the_api_is_purged_on_release(bool $close, bool $enable): void
     {
-        $pool = self::ownPool();
-        $first = $this->pooled($pool);
+        $first = self::fresh();
         $session = self::session($first);
         $first->enableOutput();
         $first->run("begin dbms_output.put_line('secret of A'); end;");
@@ -176,8 +173,7 @@ final class OutputTest extends TestCase
         }
         unset($first);
 
-        $second = $this->pooled($pool);
-        $this->connections[] = $second;
+        $second = $this->next();
         self::assertSame($session, self::session($second), 'B has A\'s Session.');
         if ($enable) {
             $second->enableOutput();
@@ -195,8 +191,7 @@ final class OutputTest extends TestCase
     #[Test]
     public function output_is_purged_when_a_connection_is_dropped_before_its_cursor(): void
     {
-        $pool = self::ownPool();
-        $first = $this->pooled($pool);
+        $first = self::fresh();
         $session = self::session($first);
         $first->enableOutput();
         $first->run("begin dbms_output.put_line('secret of A'); end;");
@@ -211,8 +206,7 @@ final class OutputTest extends TestCase
         self::assertSame([['N' => 1], ['N' => 2], ['N' => 3]], [...$rows, ...$cursor->all()]);
         unset($cursor);
 
-        $second = $this->pooled($pool);
-        $this->connections[] = $second;
+        $second = $this->next();
         self::assertSame($session, self::session($second), 'B has A\'s Session.');
         self::assertSame([], $second->output());
     }
@@ -225,13 +219,11 @@ final class OutputTest extends TestCase
     #[Test]
     public function output_enabled_through_raw_sql_stays_with_the_session(): void
     {
-        $pool = self::ownPool();
-        $first = $this->pooled($pool);
+        $first = self::fresh();
         $first->run("begin dbms_output.enable(null); dbms_output.put_line('left by A'); end;");
         $first->close();
 
-        $second = $this->pooled($pool);
-        $this->connections[] = $second;
+        $second = $this->next();
 
         self::assertSame(['left by A'], $second->output());
     }
@@ -247,7 +239,7 @@ final class OutputTest extends TestCase
     {
         $observer = IndependentSession::open();
         try {
-            $connection = $this->pooled(['standalone' => true]);
+            $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(standalone: true));
             $connection->enableOutput();
             $sid = self::sid($connection);
             $serial = $observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
@@ -290,7 +282,7 @@ final class OutputTest extends TestCase
         try {
             $observer->execute("insert into fx_tx_rows (id, note) values (1, 'committed')");
             $note = static fn (): ?string => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
-            $connection = $this->pooled([]);
+            $connection = self::fresh();
             $connection->begin();
             $connection->run("update fx_tx_rows set note = 'uncommitted' where id = 1");
             $connection->enableOutput();
@@ -324,7 +316,7 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * After `close()`, every output call fails before any Round trip.
+     * After `close()`, every output call fails.
      *
      * @param \Closure(Connection): mixed $call
      */
@@ -342,24 +334,38 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Pool fields of a Pool of this test's own, one Session big, so the
-     * next Connection gets the Session the last one released.
-     *
-     * @return array{maxConnections: int, connectTimeout: float}
+     * A Connection from a Pool only these tests use, one Session big, so
+     * each Connection gets the Session the last one released. One Pool for
+     * the file: a Pool keeps its Session for the whole process. tearDown()
+     * does not close it.
      */
-    private static function ownPool(): array
+    private static function pooled(): Connection
     {
-        return ['maxConnections' => 1, 'connectTimeout' => 30.062 + ++self::$pools / 100_000];
+        return Oracle::connect(TestDatabase::fromEnvironment()->config(maxConnections: 1, connectTimeout: 30.062));
     }
 
     /**
-     * A pooled Connection the test owns: tearDown() does not close it.
-     *
-     * @param array<string, mixed> $pool
+     * A pooled Connection whose Session has DBMS_OUTPUT off and empty,
+     * whatever an earlier test left in it. tearDown() does not close it.
      */
-    private function pooled(array $pool): Connection
+    private static function fresh(): Connection
     {
-        return Oracle::connect(TestDatabase::fromEnvironment()->config(...$pool));
+        $connection = self::pooled();
+        $connection->run('begin dbms_output.disable; end;');
+
+        return $connection;
+    }
+
+    /**
+     * The next user of the Session, as the last Connection left it; closed
+     * in tearDown().
+     */
+    private function next(): Connection
+    {
+        $connection = self::pooled();
+        $this->connections[] = $connection;
+
+        return $connection;
     }
 
     /**
@@ -374,12 +380,11 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * A Session of its own: a fresh Standalone Connection, so no earlier
-     * test's DBMS_OUTPUT state is in it.
+     * A fresh() Connection, closed in tearDown().
      */
-    private function connect(mixed ...$fields): Connection
+    private function connect(): Connection
     {
-        $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(...['standalone' => true, ...$fields]));
+        $connection = self::fresh();
         $this->connections[] = $connection;
 
         return $connection;
