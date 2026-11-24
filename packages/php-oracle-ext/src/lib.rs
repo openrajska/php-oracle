@@ -10,6 +10,8 @@
 #![cfg_attr(windows, feature(abi_vectorcall))]
 
 use ext_php_rs::prelude::*;
+use ext_php_rs::zend::ModuleEntry;
+use ext_php_rs::{info_table_end, info_table_row, info_table_start};
 
 mod bind;
 mod connect;
@@ -34,6 +36,16 @@ pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<cursor::NativeCursor>()
         .class::<lob::NativeLob>()
         .shutdown_function(shutdown)
+        .info_function(info)
+}
+
+/// MINFO, for `php --ri rajska_oracle` and `phpinfo()`. A custom MINFO
+/// replaces PHP's default table, so it prints the Version row itself: the
+/// Cargo version, as `phpversion('rajska_oracle')` reports it.
+extern "C" fn info(_module: *mut ModuleEntry) {
+    info_table_start!();
+    info_table_row!("Version", env!("CARGO_PKG_VERSION"));
+    info_table_end!();
 }
 
 /// MSHUTDOWN: closes every Pool of this process, joining its manager thread,
