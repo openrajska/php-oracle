@@ -352,16 +352,7 @@ impl NativeConnection {
                 }
                 build(session, true)
             };
-            let mut execute = |session: &oracledb::Connection,
-                               mut statement: oracledb::Statement,
-                               binds: &mut Binds| {
-                // The crate keeps the Session's last warning for the
-                // Session's whole life, across pooled Connections, so a
-                // warning belongs to this execute only if it changed during
-                // it. The same text twice in a row is
-                // missed the second time: that needs a per-execute warning
-                // in the fork.
-                let before = session.last_warning()?;
+            let mut execute = |mut statement: oracledb::Statement, binds: &mut Binds| {
                 let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
                 let (query, mut result) = {
                     let matched = binds.matched(statement.bind_names())?;
@@ -391,6 +382,15 @@ impl NativeConnection {
                         (None, Some(statement.execute_named(&params)?))
                     }
                 };
+                // The warning of this execute only: the Session's last
+                // warning (`last_warning()`) outlives it, across pooled
+                // Connections.
+                let warning = match (&query, &result) {
+                    (Some(cursor), _) => cursor.warning(),
+                    (_, Some(result)) => result.warning(),
+                    _ => None,
+                }
+                .map(str::to_owned);
                 // What the execute gave back may point at the temporary LOBs
                 // its binds were written into (an OUT parameter set to the
                 // IN one, a `select :c`): everything born of it keeps them.
@@ -434,9 +434,6 @@ impl NativeConnection {
                         )?);
                     }
                 }
-                let warning = session
-                    .last_warning()?
-                    .filter(|w| before.as_ref() != Some(w));
                 Ok((row_count, cursor, warning, out_values))
             };
             let (row_count, cursor, warning, out_values) =
@@ -451,8 +448,7 @@ impl NativeConnection {
                         binds.refuse_returned_objects()?;
                     }
                     binds.write_lobs(&self.state)?;
-                    self.state
-                        .with(|session| execute(session, statement, &mut binds))
+                    self.state.with(|_| execute(statement, &mut binds))
                 })?;
 
             let mut result = ZendHashTable::with_capacity(5);
