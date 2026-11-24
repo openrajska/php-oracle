@@ -92,13 +92,14 @@ final readonly class Call
     /**
      * Runs the Call as a procedure.
      */
-    public function procedure(DriverConnection $driver, DriverOptions $options): Execution
+    public function procedure(DriverConnection $driver, DriverOptions $options, ConnectionState $connection): Execution
     {
         $sql = "BEGIN {$this->name}{$this->arguments}; END;";
 
         return new Execution(
             new CallExecution($this->execute($driver, $sql, $this->binds, $options), $this->parameters),
             $sql,
+            $connection,
             array_values($this->parameters),
             $this->name,
         );

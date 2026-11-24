@@ -11,6 +11,7 @@ use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Driver\Extension\ExtensionDriver;
 use Rajska\Oracle\KeyCase;
 use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
 
@@ -123,5 +124,55 @@ abstract class ConformanceTestCase extends TestCase
         self::assertIsString($sid);
 
         return (int) $sid;
+    }
+
+    /**
+     * Which Session is behind a Connection: its AUDSID, unique per logon
+     * (a SID is reused by the next Session in its slot).
+     */
+    protected static function session(DriverConnection $connection): string
+    {
+        $session = self::value($connection, "select sys_context('userenv', 'sessionid') from dual");
+        self::assertIsString($session);
+
+        return $session;
+    }
+
+    /**
+     * Kills the Session behind a Connection from another Session, as a DBA
+     * would: `immediate` ends it at once, otherwise its next call gets
+     * ORA-00028 first.
+     */
+    protected static function kill(DriverConnection $connection, bool $immediate = true): void
+    {
+        $sid = self::sid($connection);
+        $observer = IndependentSession::open();
+        try {
+            $serial = $observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
+            $observer->execute("alter system kill session '$sid,$serial'" . ($immediate ? ' immediate' : ''));
+        } finally {
+            $observer->close();
+        }
+    }
+
+    /**
+     * Whether another Session finds the fx_items row locked
+     * (`FOR UPDATE NOWAIT` fails with ORA-00054). It never keeps the lock.
+     */
+    protected static function locked(int $item): bool
+    {
+        $observer = IndependentSession::open();
+        try {
+            $observer->select('select id from fx_items where id = :id for update nowait', ['id' => $item]);
+
+            return false;
+        } catch (\RuntimeException $e) {
+            self::assertSame(54, $e->getCode(), $e->getMessage());
+
+            return true;
+        } finally {
+            $observer->rollback();
+            $observer->close();
+        }
     }
 }

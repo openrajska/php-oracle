@@ -7,6 +7,7 @@ namespace Rajska\Oracle;
 use Generator;
 use IteratorAggregate;
 use Rajska\Oracle\Driver\DriverCursor;
+use Rajska\Oracle\Exceptions\UsageException;
 
 /**
  * The rows of a query, read lazily, batch by batch, in one pass.
@@ -34,8 +35,10 @@ final class Cursor implements IteratorAggregate
     /**
      * @internal use Connection::select() or Execution::rows()
      */
-    public function __construct(private readonly DriverCursor $driver)
-    {
+    public function __construct(
+        private readonly DriverCursor $driver,
+        private readonly ConnectionState $connection,
+    ) {
     }
 
     /**
@@ -57,6 +60,7 @@ final class Cursor implements IteratorAggregate
      */
     public function all(): array
     {
+        $this->ensureOpen();
         $rows = $this->next === 0 ? $this->batch : \array_slice($this->batch, $this->next);
         while (($batch = $this->driver->fetchBatch()) !== []) {
             array_push($rows, ...$batch);
@@ -117,6 +121,7 @@ final class Cursor implements IteratorAggregate
      */
     private function next(): ?array
     {
+        $this->ensureOpen();
         if (!isset($this->batch[$this->next])) {
             $this->batch = $this->driver->fetchBatch();
             $this->next = 0;
@@ -127,5 +132,16 @@ final class Cursor implements IteratorAggregate
         ++$this->position;
 
         return $this->batch[$this->next++];
+    }
+
+    /**
+     * Rows of the last batch are still here after the Connection's Release:
+     * they must not be served either.
+     */
+    private function ensureOpen(): void
+    {
+        if ($this->connection->released) {
+            throw new UsageException('The Connection is closed.');
+        }
     }
 }

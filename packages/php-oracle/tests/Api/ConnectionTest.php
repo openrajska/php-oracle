@@ -94,4 +94,19 @@ final class ConnectionTest extends TestCase
             self::assertStringStartsWith('ORA-01017', $e->getMessage());
         }
     }
+
+    #[Test]
+    public function a_call_after_close_fails_and_a_second_close_is_fine(): void
+    {
+        $this->connection->close();
+
+        try {
+            $this->connection->run('select 1 from dual');
+            self::fail('run() after close() succeeded.');
+        } catch (UsageException $e) {
+            self::assertSame('The Connection is closed.', $e->getMessage());
+            self::assertSame('select 1 from dual', $e->sql());
+        }
+        $this->connection->close();
+    }
 }

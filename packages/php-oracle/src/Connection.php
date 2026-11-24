@@ -14,6 +14,8 @@ use Rajska\Oracle\Exceptions\UsageException;
  */
 final class Connection
 {
+    private readonly ConnectionState $state;
+
     /**
      * @internal use Oracle::connect()
      */
@@ -21,6 +23,7 @@ final class Connection
         private readonly DriverConnection $driver,
         private readonly ConnectionConfig $config,
     ) {
+        $this->state = new ConnectionState();
     }
 
     /**
@@ -33,6 +36,7 @@ final class Connection
         return new Execution(
             $this->driver->execute($sql, $binds, $this->resolve($options)),
             $sql,
+            $this->state,
             array_map(strval(...), array_keys($binds)),
         );
     }
@@ -59,7 +63,7 @@ final class Connection
      */
     public function procedure(string $name, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
     {
-        return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options));
+        return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options), $this->state);
     }
 
     /**
@@ -83,10 +87,21 @@ final class Connection
     }
 
     /**
-     * Ends the Session. Idempotent.
+     * Releases the Session now: an open transaction rolls back (never
+     * commits), the Session goes back to the Pool, and every later call on
+     * this Connection or its Cursors fails. Idempotent.
+     *
+     * Without it, the Release happens when the Connection and all its
+     * Cursors are gone.
+     *
+     * The Release resets nothing else: a pooled Session keeps its package
+     * state and `ALTER SESSION` settings for its next user. A Standalone
+     * Connection (`standalone: true`) logs off instead, so every one starts
+     * clean.
      */
     public function close(): void
     {
+        $this->state->released = true;
         $this->driver->close();
     }
 

@@ -236,6 +236,32 @@ final class CallsTest extends TestCase
     }
 
     /**
+     * Pool and lifecycle 3: a Call after `close()` fails like `run()` does,
+     * and carries its name; a FunctionCall made before `close()` fails when
+     * its terminal runs.
+     */
+    #[Test]
+    public function a_call_after_close_fails(): void
+    {
+        $function = $this->connection->function('fx_call.f_number', ['p_value' => 1]);
+        $this->connection->close();
+
+        $calls = [
+            'fx_call.echo' => fn () => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)]),
+            'fx_call.f_number' => fn () => $function->number(),
+        ];
+        foreach ($calls as $name => $call) {
+            try {
+                $call();
+                self::fail("$name after close() succeeded.");
+            } catch (UsageException $e) {
+                self::assertSame('The Connection is closed.', $e->getMessage());
+                self::assertSame($name, $e->call());
+            }
+        }
+    }
+
+    /**
      * A library-written message names the parameter the user wrote, never
      * the synthetic bind of the generated block.
      */
