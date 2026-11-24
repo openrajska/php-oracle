@@ -30,12 +30,23 @@ use crate::value;
 
 /// How a column's values become PHP values.
 enum Mapping {
-    /// NUMBER: `int` when integral and within 64 bits (decided per value),
-    /// else the exact canonical string; under `NumberMode::Float`, a
-    /// non-integral value becomes a `float`.
+    /// NUMBER (and PLS_INTEGER): `int` when integral and within 64 bits
+    /// (decided per value), else the exact canonical string; under
+    /// `NumberMode::Float`, a non-integral value becomes a `float`.
     Number(NumberMode),
-    /// Character types: `string`.
+    /// Character types and LONG: `string`; CHAR and NCHAR keep their blank
+    /// padding.
     Text,
+    /// BINARY_DOUBLE: `float`, NaN and the infinities included.
+    Double,
+    /// BINARY_FLOAT: `float`, widened through its shortest round-trip text.
+    Float,
+    /// BOOLEAN: `bool`.
+    Boolean,
+    /// RAW, LONG RAW: the bytes.
+    Bytes,
+    /// ROWID, UROWID: their text.
+    Rowid,
     /// DATE, TIMESTAMP, TSTZ, TSLTZ: a `DateTimeImmutable`, or ISO text.
     Temporal(Temporal, TemporalMode),
     /// INTERVAL DAY TO SECOND: a `DateInterval`.
@@ -223,8 +234,18 @@ impl Column {
 
     fn new(metadata: &Metadata, options: &Options) -> Self {
         let db_type = metadata.db_type();
-        let mapping = if db_type == DB_TYPE_NUMBER {
+        let mapping = if db_type == DB_TYPE_NUMBER || db_type == DB_TYPE_BINARY_INTEGER {
             Mapping::Number(options.numbers)
+        } else if db_type == DB_TYPE_BINARY_DOUBLE {
+            Mapping::Double
+        } else if db_type == DB_TYPE_BINARY_FLOAT {
+            Mapping::Float
+        } else if db_type == DB_TYPE_BOOLEAN {
+            Mapping::Boolean
+        } else if db_type == DB_TYPE_RAW || db_type == DB_TYPE_LONG_RAW {
+            Mapping::Bytes
+        } else if db_type == DB_TYPE_ROWID || db_type == DB_TYPE_UROWID {
+            Mapping::Rowid
         } else if [
             DB_TYPE_VARCHAR,
             DB_TYPE_CHAR,
@@ -277,24 +298,31 @@ impl Column {
                 )));
             }
             Mapping::Number(numbers) => match row.get::<Option<OracleNumber>>(index)? {
-                Some(number) => {
-                    // Display gives the exact decimal text, never an exponent.
-                    let text = number.to_string();
-                    if let Ok(int) = text.parse::<i64>() {
-                        zval.set_long(int);
-                    } else if *numbers == NumberMode::Float && text.contains('.') {
-                        // Correctly rounded from the exact decimal text.
-                        zval.set_double(text.parse::<f64>().map_err(|e| {
-                            Error::unsupported(format!("Column {}: {e}", self.name))
-                        })?);
-                    } else {
-                        set_string(&mut zval, &text)?;
-                    }
-                }
+                Some(number) => value::number_value(&mut zval, number, *numbers)?,
                 None => zval.set_null(),
             },
             Mapping::Text => match row.get::<Option<&str>>(index)? {
                 Some(text) => set_string(&mut zval, text)?,
+                None => zval.set_null(),
+            },
+            Mapping::Double => match row.get::<Option<f64>>(index)? {
+                Some(v) => zval.set_double(v),
+                None => zval.set_null(),
+            },
+            Mapping::Float => match row.get::<Option<f32>>(index)? {
+                Some(v) => zval.set_double(value::widen(v)),
+                None => zval.set_null(),
+            },
+            Mapping::Boolean => match row.get::<Option<bool>>(index)? {
+                Some(v) => zval.set_bool(v),
+                None => zval.set_null(),
+            },
+            Mapping::Bytes => match row.get::<Option<&[u8]>>(index)? {
+                Some(bytes) => zval.set_binary(bytes.to_vec()),
+                None => zval.set_null(),
+            },
+            Mapping::Rowid => match row.get::<Option<String>>(index)? {
+                Some(text) => set_string(&mut zval, &text)?,
                 None => zval.set_null(),
             },
             Mapping::Temporal(temporal, mode) => {
