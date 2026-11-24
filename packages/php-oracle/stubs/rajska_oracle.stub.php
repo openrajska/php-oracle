@@ -1,0 +1,116 @@
+<?php
+
+/**
+ * Stub of the rajska_oracle Extension's native surface (spec #32 §14), for
+ * static analysis and IDEs. Core keeps an identical copy in
+ * packages/php-oracle/stubs/ for PHPStan only.
+ *
+ * Every class is final; none can be created with `new`, cloned or
+ * serialized. Arrays of scalars cross the seam: enums as backing values,
+ * durations in milliseconds, null for no limit; an unknown or missing key
+ * fails with `kind: usage` before any Round trip.
+ */
+
+namespace Rajska\Oracle\Extension;
+
+/**
+ * One Session.
+ *
+ * @internal Core reaches it only through its Extension adapter.
+ */
+final class Connection
+{
+    /**
+     * @param array{dsn: string, user: string, password: string, proxyUser: ?string, walletLocation: ?string, walletPassword: ?string, configDir: ?string, connectTimeout: int, drcpConnectionClass: ?string, maxConnections: int, acquireTimeout: int, statementCacheSize: int, standalone: bool} $pool
+     * @param array{tracing: array{module: ?string, action: ?string, clientIdentifier: ?string, clientInfo: ?string}, callTimeout: ?int} $session
+     *
+     * @throws Exception
+     */
+    public static function connect(#[\SensitiveParameter] array $pool, array $session): Connection {}
+
+    /**
+     * @param array<string, mixed> $binds
+     * @param array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string} $options
+     * @return array{rowCount: int, cursor: ?Cursor, outValues: array<string, mixed>, implicitResults: list<Cursor>, warning: ?string}
+     *
+     * @throws Exception
+     */
+    public function execute(string $sql, #[\SensitiveParameter] array $binds, array $options): array {}
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @param array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string} $options
+     * @return array{rowCount: int, outValues: array<string, list<mixed>>}
+     *
+     * @throws Exception
+     */
+    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, array $options): array {}
+
+    /** @throws Exception */
+    public function commit(): void {}
+
+    /** @throws Exception */
+    public function rollback(): void {}
+
+    /**
+     * @param array{module: ?string, action: ?string, clientIdentifier: ?string, clientInfo: ?string} $tracing
+     *
+     * @throws Exception
+     */
+    public function trace(array $tracing): void {}
+
+    /** @throws Exception */
+    public function serverVersion(): string {}
+
+    /**
+     * Idempotent.
+     *
+     * @throws Exception
+     */
+    public function close(): void {}
+}
+
+/**
+ * The rows of one query.
+ *
+ * @internal Core reaches it only through its Extension adapter.
+ */
+final class Cursor
+{
+    /**
+     * @return list<array<string, mixed>>
+     *
+     * @throws Exception
+     */
+    public function columns(): array {}
+
+    /**
+     * @return list<array<int|string, mixed>>
+     *
+     * @throws Exception
+     */
+    public function fetchBatch(): array {}
+
+    /** @throws Exception */
+    public function close(): void {}
+}
+
+/**
+ * Thrown by every native method. Core's ExceptionTranslator maps `kind` to
+ * a public class.
+ *
+ * @internal Core reaches it only through its Extension adapter.
+ */
+final class Exception extends \RuntimeException
+{
+    /**
+     * database, connection, connection_lost, pool_exhausted, timeout,
+     * unsupported, usage, configuration or batch.
+     */
+    public readonly string $kind;
+
+    public readonly ?int $offset;
+
+    /** @var list<array{index: int, code: int, message: string}> */
+    public readonly array $rows;
+}

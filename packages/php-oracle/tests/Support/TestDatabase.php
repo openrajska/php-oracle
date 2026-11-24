@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Support;
 
+use Rajska\Oracle\ConnectionConfig;
 use RuntimeException;
 
 /**
@@ -19,6 +20,21 @@ final readonly class TestDatabase
         public string $user,
         #[\SensitiveParameter] public string $password,
     ) {
+    }
+
+    /**
+     * A ConnectionConfig for the test database; named arguments override
+     * the other fields.
+     */
+    public function config(mixed ...$fields): ConnectionConfig
+    {
+        // @phpstan-ignore argument.type (the named fields go through as given)
+        return new ConnectionConfig(...[
+            'dsn' => $this->connectString,
+            'user' => $this->user,
+            'password' => $this->password,
+            ...$fields,
+        ]);
     }
 
     public static function fromEnvironment(): self

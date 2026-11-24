@@ -7,3 +7,6 @@ parameters:
         # Raises PHP issues on purpose (see SuiteRulesTest).
         - tests/Harness/Probes
     tmpDir: .phpstan.cache
+    # The Extension's native surface; analysis runs without the Extension.
+    scanFiles:
+        - stubs/rajska_oracle.stub.php

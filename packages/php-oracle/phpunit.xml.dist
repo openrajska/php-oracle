@@ -28,6 +28,14 @@
         <testsuite name="harness">
             <directory>tests/Harness</directory>
         </testsuite>
+        <!-- The Driver contract seam: the conformance catalog of spec #32. -->
+        <testsuite name="conformance">
+            <directory>tests/Conformance</directory>
+        </testsuite>
+        <!-- Core's public API seam. -->
+        <testsuite name="api">
+            <directory>tests/Api</directory>
+        </testsuite>
     </testsuites>
 
     <source>
