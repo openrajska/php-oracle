@@ -23,6 +23,7 @@ use crate::connection::{ConnState, CursorSlot};
 use crate::error::{Error, run};
 use crate::options::{KeyCase, NumberMode, Options, RowShape};
 use crate::pool::lock;
+use crate::value;
 
 /// How a column's values become PHP values.
 enum Mapping {
@@ -32,6 +33,9 @@ enum Mapping {
     Number(NumberMode),
     /// Character types: `string`.
     Text,
+    /// A nested `CURSOR()` (or a REF CURSOR in a select list): a native
+    /// Cursor nested in this one, with its options.
+    Cursor,
     /// A type whose values cannot be fetched yet; describing it is fine.
     Unsupported(String),
 }
@@ -212,6 +216,8 @@ impl Column {
         .contains(&db_type)
         {
             Mapping::Text
+        } else if db_type == DB_TYPE_CURSOR {
+            Mapping::Cursor
         } else {
             Mapping::Unsupported(metadata.data_type())
         };
@@ -226,9 +232,16 @@ impl Column {
         }
     }
 
+    /// The value of a column of a scalar type (any but `Mapping::Cursor`).
     fn value(&self, row: &Row, index: usize) -> Result<Zval, Error> {
         let mut zval = Zval::new();
         match &self.mapping {
+            Mapping::Cursor => {
+                return Err(Error::unsupported(format!(
+                    "Column {}: a Cursor is not a scalar value.",
+                    self.name
+                )));
+            }
             Mapping::Number(numbers) => match row.get::<Option<OracleNumber>>(index)? {
                 Some(number) => {
                     // Display gives the exact decimal text, never an exponent.
@@ -275,22 +288,32 @@ fn put(e: ext_php_rs::error::Error) -> Error {
 #[php(flags = ClassFlags::Final)]
 pub struct NativeCursor {
     /// Emptied by `close()` and by the Connection's Release. Declared
-    /// before `state`, so it drops first, while the Session is still held.
+    /// before `parents` and `state`, so it drops first, while they are
+    /// still held. Nested Cursors hold it too: the server closes them with
+    /// it.
     cursor: Arc<CursorSlot>,
+    /// For a nested `CURSOR()`, the slots of the Cursors it is nested in,
+    /// outermost first: held, so dropping a parent object keeps it open;
+    /// closing a parent invalidates this Cursor.
+    parents: Vec<Arc<CursorSlot>>,
     exhausted: bool,
     columns: Vec<Column>,
-    row_shape: RowShape,
-    fetch_size: usize,
+    /// The options of the execute this Cursor was born of, inherited by
+    /// the Cursors nested in it.
+    options: Options,
     state: Arc<ConnState>,
 }
 
 impl NativeCursor {
     /// Describes the columns and builds the row keys, once per Cursor.
     /// Duplicate keys under `Assoc` fail here, when the Cursor opens.
+    /// `parents` are the slots of the Cursors a nested one is nested in,
+    /// outermost first; empty for a query or a REF CURSOR.
     pub fn new(
         state: Arc<ConnState>,
         cursor: oracledb::Cursor,
         options: &Options,
+        parents: Vec<Arc<CursorSlot>>,
     ) -> Result<Self, Error> {
         let columns: Vec<Column> = cursor
             .columns()
@@ -310,20 +333,42 @@ impl NativeCursor {
         }
         Ok(Self {
             cursor: state.register(cursor),
+            parents,
             exhausted: false,
             columns,
-            row_shape: options.row_shape,
-            fetch_size: options.fetch_size as usize,
+            options: *options,
             state,
         })
     }
 
-    fn row(&self, row: &Row) -> Result<ZBox<ZendHashTable>, Error> {
+    fn fetch_size(&self) -> usize {
+        self.options.fetch_size as usize
+    }
+
+    /// Fails if a Cursor this one is nested in was closed: the server
+    /// closed this one with it.
+    fn ensure_parents_open(&self) -> Result<(), Error> {
+        if self.parents.iter().any(|parent| lock(parent).is_none()) {
+            return Err(Error::usage(
+                "The Cursor this one is nested in is closed, which closed this one too.",
+            ));
+        }
+        Ok(())
+    }
+
+    fn row(&self, row: &mut Row) -> Result<ZBox<ZendHashTable>, Error> {
         let mut values =
             ZendHashTable::with_capacity(u32::try_from(self.columns.len()).unwrap_or(0));
         for (index, column) in self.columns.iter().enumerate() {
-            let value = column.value(row, index)?;
-            match self.row_shape {
+            let value = match column.mapping {
+                Mapping::Cursor => {
+                    let mut parents = self.parents.clone();
+                    parents.push(Arc::clone(&self.cursor));
+                    value::cursor(row, index, &self.state, &self.options, parents)?
+                }
+                _ => column.value(row, index)?,
+            };
+            match self.options.row_shape {
                 RowShape::Assoc => values.insert(column.name.as_str(), value).map_err(put)?,
                 RowShape::List => values.push(value).map_err(put)?,
             }
@@ -342,6 +387,7 @@ impl NativeCursor {
             if lock(&self.cursor).is_none() {
                 return Err(Error::usage("The Cursor is closed."));
             }
+            self.ensure_parents_open()?;
             let mut columns =
                 ZendHashTable::with_capacity(u32::try_from(self.columns.len()).unwrap_or(0));
             for column in &self.columns {
@@ -360,13 +406,14 @@ impl NativeCursor {
             let cursor = slot
                 .as_mut()
                 .ok_or_else(|| Error::usage("The Cursor is closed."))?;
+            self.ensure_parents_open()?;
             let mut rows =
-                ZendHashTable::with_capacity(u32::try_from(self.fetch_size).unwrap_or(0));
+                ZendHashTable::with_capacity(u32::try_from(self.fetch_size()).unwrap_or(0));
             if self.exhausted {
                 return Ok(rows);
             }
-            let mut fetched = Vec::with_capacity(self.fetch_size);
-            while fetched.len() < self.fetch_size {
+            let mut fetched = Vec::with_capacity(self.fetch_size());
+            while fetched.len() < self.fetch_size() {
                 match cursor.next() {
                     Some(row) => fetched.push(row?),
                     None => {
@@ -375,7 +422,7 @@ impl NativeCursor {
                     }
                 }
             }
-            for row in &fetched {
+            for row in &mut fetched {
                 rows.push(self.row(row)?).map_err(put)?;
             }
             Ok(rows)
@@ -383,7 +430,7 @@ impl NativeCursor {
     }
 
     /// Closes the server cursor: the close rides on the Session's next Round
-    /// trip. Idempotent.
+    /// trip. The Cursors nested in it stop working. Idempotent.
     pub fn close(&mut self) -> PhpResult<()> {
         run(|| {
             lock(&self.cursor).take();
@@ -394,8 +441,16 @@ impl NativeCursor {
 
 impl Drop for NativeCursor {
     /// Closes the server cursor before `state` goes (perhaps Releasing the
-    /// Connection). A panic must not cross into PHP's free handler.
+    /// Connection), unless nested Cursors still hold it; then each parent
+    /// this Cursor was the last to hold, innermost first. A panic must not
+    /// cross into PHP's free handler.
     fn drop(&mut self) {
-        let _ = catch_unwind(AssertUnwindSafe(|| lock(&self.cursor).take()));
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            for slot in std::iter::once(&self.cursor).chain(self.parents.iter().rev()) {
+                if Arc::strong_count(slot) == 1 {
+                    lock(slot).take();
+                }
+            }
+        }));
     }
 }

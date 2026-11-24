@@ -9,6 +9,7 @@ use Rajska\Oracle\Bind\BinaryDouble;
 use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Cursor as CursorBind;
 use Rajska\Oracle\Bind\NChar;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\NVarchar;
@@ -198,11 +199,12 @@ final class FunctionCall
     }
 
     /**
-     * The returned REF CURSOR; never null.
+     * The returned REF CURSOR, a lazy Cursor with the Call's options; never
+     * null.
      */
     public function cursor(): Cursor
     {
-        throw $this->call->unsupported('cursor()');
+        return ($this->run)(CursorBind::out())->cursor();
     }
 
     /**

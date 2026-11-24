@@ -41,6 +41,7 @@ pub enum KeyCase {
 }
 
 /// The options of one execute, read from `$options`.
+#[derive(Clone, Copy)]
 pub struct Options {
     pub fetch_size: u32,
     pub numbers: NumberMode,

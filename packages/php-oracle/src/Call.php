@@ -106,16 +106,15 @@ final readonly class Call
     }
 
     /**
-     * Runs the Call as a function whose return value binds as `$return`.
+     * Runs the Call as a function whose return value binds as `$return`. A
+     * REF CURSOR return value becomes a Cursor of the Connection.
      */
-    public function function(DriverConnection $driver, DriverOptions $options, Bind $return): OutValue
+    public function function(DriverConnection $driver, DriverOptions $options, Bind $return, ConnectionState $connection): OutValue
     {
         $sql = "BEGIN :b0 := {$this->name}{$this->arguments}; END;";
         $values = $this->execute($driver, $sql, ['b0' => $return] + $this->binds, $options)->outValues();
-        /** @var list<mixed> $value */
-        $value = $values['b0'] ?? [];
 
-        return new OutValue("{$this->name} return value", $value, $sql, $this->name);
+        return new OutValue("{$this->name} return value", Cursor::wrap($values['b0'] ?? [], $connection), $sql, $this->name);
     }
 
     /**

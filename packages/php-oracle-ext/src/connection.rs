@@ -42,8 +42,9 @@ const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientI
 #[cfg(debug_assertions)]
 const PANIC_HOOK: &str = "/* rajska_oracle: panic */";
 
-/// Where a native cursor lives: shared by its `Cursor` object and, weakly,
-/// by its Connection, which empties it on Release.
+/// Where a native cursor lives: shared by its `Cursor` object and the
+/// Cursors nested in it and, weakly, by its Connection, which empties it on
+/// Release. A query, a REF CURSOR and a nested `CURSOR()` each have one.
 pub type CursorSlot = Mutex<Option<oracledb::Cursor>>;
 
 /// What a Connection and its Cursors share: the Session, on loan until
@@ -287,11 +288,12 @@ impl NativeConnection {
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
                 let (row_count, cursor, out_values) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;
-                    let cursor = NativeCursor::new(Arc::clone(&self.state), cursor, &options)?;
+                    let cursor =
+                        NativeCursor::new(Arc::clone(&self.state), cursor, &options, Vec::new())?;
                     (
                         0,
                         Some(cursor),
-                        binds.out_values(None, false, options.numbers)?,
+                        binds.out_values(None, false, &self.state, &options)?,
                     )
                 } else {
                     let mut result = statement.execute_named(&params)?;
@@ -304,7 +306,8 @@ impl NativeConnection {
                     let out_values = binds.out_values(
                         Some(&mut result),
                         statement.is_plsql(),
-                        options.numbers,
+                        &self.state,
+                        &options,
                     )?;
                     (count, None, out_values)
                 };

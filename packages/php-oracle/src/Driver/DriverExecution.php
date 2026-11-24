@@ -23,9 +23,11 @@ interface DriverExecution
     public function cursor(): ?DriverCursor;
 
     /**
-     * Keyed by bind name as written; RETURNING values included.
+     * Keyed by bind name as written; RETURNING values included. Each is the
+     * list of values the bind produced: one for a PL/SQL OUT, one per
+     * returned row for RETURNING. A REF CURSOR is a DriverCursor there.
      *
-     * @return array<string, mixed>
+     * @return array<string, list<mixed>>
      */
     public function outValues(): array;
 

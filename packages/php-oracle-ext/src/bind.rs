@@ -21,16 +21,22 @@
 //! [`crate::typed`]).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
 use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
 
+use crate::connection::ConnState;
 use crate::error::Error;
-use crate::options::NumberMode;
+use crate::options::Options;
 use crate::typed::{self, Typed};
 use crate::value::cell;
+
+/// Core's Cursor and the native one: passing either back is later.
+const CORE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Cursor";
+const NATIVE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Extension\\Cursor";
 
 /// The longest string that binds as VARCHAR2 (PL/SQL's limit).
 pub const MAX_VARCHAR2: usize = 32767;
@@ -118,18 +124,20 @@ impl Binds {
     /// The OUT and IN OUT values, keyed by the name the user wrote. Each is
     /// the list of values the bind produced: one for a PL/SQL block, one per
     /// returned row for `RETURNING`, none for anything else. IN binds have no
-    /// entry.
+    /// entry. A REF CURSOR becomes a native Cursor of `state`, with
+    /// `options`.
     pub fn out_values(
         &self,
         result: Option<&mut ExecResult>,
         is_plsql: bool,
-        numbers: NumberMode,
+        state: &Arc<ConnState>,
+        options: &Options,
     ) -> Result<ZBox<ZendHashTable>, Error> {
         let mut out = ZendHashTable::new();
         if !self.0.iter().any(|(_, value)| value.is_out()) {
             return Ok(out);
         }
-        let rows: Vec<Row> = match result {
+        let mut rows: Vec<Row> = match result {
             Some(result) if is_plsql => vec![result.out_bind_data()],
             Some(result) => result.returned_data(),
             None => Vec::new(),
@@ -143,10 +151,10 @@ impl Binds {
                     .position(|column| column.name().to_uppercase() == name.to_uppercase())
             });
             let mut values = ZendHashTable::with_capacity(u32::try_from(rows.len()).unwrap_or(0));
-            for row in &rows {
+            for row in &mut rows {
                 // A bind the block only reads sends nothing back.
                 let value = match index {
-                    Some(index) => cell(row, index, numbers, &what)?,
+                    Some(index) => cell(row, index, state, options, &what)?,
                     None => Zval::null(),
                 };
                 values.push(value).map_err(put)?;
@@ -266,6 +274,9 @@ fn object_value(name: &str, object: &ZendObject) -> Result<Value, Error> {
     let is = |class: &str| ClassEntry::try_find(class).is_some_and(|ce| object.instance_of(ce));
     if is(typed::BIND_CLASS) {
         return typed::read(name, object).map(Value::Typed);
+    }
+    if is(CORE_CURSOR_CLASS) || is(NATIVE_CURSOR_CLASS) {
+        return Err(typed::cursor_in(name));
     }
     if is("DateTimeInterface") {
         return Err(Error::usage(format!(
