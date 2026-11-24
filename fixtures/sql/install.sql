@@ -34,6 +34,8 @@ prompt 12_object_kinds
 @@12_object_kinds.sql
 prompt 13_json_vector
 @@13_json_vector.sql
+prompt 14_scalar_types
+@@14_scalar_types.sql
 
 commit;
 
