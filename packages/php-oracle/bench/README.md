@@ -11,8 +11,11 @@ every v1 verb, and compares each ratio with the spike's.
 
 ```bash
 ddev fixtures        # once: the fx_* tables in the rajska schema
-ddev bench           # release build, crosscheck, then the matrix (about 15 min)
+ddev bench           # release build, crosscheck, then the matrix (about 7 min)
 ddev bench rounds=3 only=call,fetch   # a subset; scale=0.2 cuts iterations
+ddev bench tag=run1 && ddev bench tag=run2   # two runs, then pool them:
+ddev exec -d /var/www/html/packages/php-oracle/bench \
+  php run.php from=run1,run2 tag=nts       # one summary of their 20 rounds
 ddev bench layers    # where Core's time goes (see below)
 ddev bench-zts       # FrankenPHP worker mode, PHP ZTS, in Docker (about 10 min)
 ```
@@ -21,6 +24,8 @@ ddev bench-zts       # FrankenPHP worker mode, PHP ZTS, in Docker (about 10 min)
   into `/var/cache/cargo-target/bench` (`BENCH_TARGET_DIR` overrides it),
   runs `crosscheck.php`, then `run.php`, which writes
   `output/summary-<tag>.md` and `output/raw-<tag>.jsonl` (not committed).
+  `run.php from=<tag>,<tag>` runs nothing: it pools those raw files into
+  one summary.
 - Another schema: set `ORACLE_USER` / `ORACLE_PASSWORD` (it needs the
   fixtures, and `fixtures/sql/grants.sql` for `layers`).
 - From a worktree, run the scripts the commands run:
@@ -74,43 +79,52 @@ the scalar Call, then the end of the request with the transaction open),
 ## Results (2026-11-24)
 
 Apple M5, 10 cores, OrbStack; PHP 8.4.28 NTS; Oracle AI Database 26ai Free
-in the next container. Extension 0.1.0 at `spec/32-core-v1` (oracledb fork
-`c99ec8c`). 10 rounds; the full table, p95 and memory are in
-[`output/summary-nts.md`](output/summary-nts.md).
+in the next container. Extension 0.1.0 at `spec/32-core-v1` after the
+performance tickets #76–#79 (oracledb fork `d2cbb0f`). 20 rounds, pooled
+from two runs on a quiet machine; the full table, p95 and memory are in
+[`output/summary-nts.md`](output/summary-nts.md). The *#64* column is the
+first benchmark, before #76–#79.
 
-**The goal is not met.** Core reaches 2× oci8 only on numbers, small LOBs
-read inline, Array DML against a loop of executes, and the fetch with the
-fast opt-ins. The default fetch, the REF CURSOR and the Call are below the
-spike's ratios; the scalar Call, DATE objects, `Lob::contents()`, a large
-LOB and connect + close are slower than oci8, and a large LOB and
-connect + close are below the 2×-slower floor.
+**The goal is met for fetches, numbers, LOBs and Array DML, not for the
+rest.** Core reaches 2× oci8 on the default 10k fetch with `all()`, the
+fetch with a larger Fetch size, the fast opt-ins, numbers, small LOBs (read
+inline or through `Lob::contents()`) and `runMany()` against a loop. It is
+faster than oci8 but below 2× on `foreach` fetches, dates, the REF CURSOR,
+the Call, a Pool request with a query, and a standalone logon. It is slower
+than oci8 on four: the Call by `procedure()` against oci8's strings (0.98×)
+and `runMany()` against a `FORALL` block (0.96×), both at parity, connect +
+close (0.87×, 0.2 µs), and one 16 MiB BLOB (0.51×). Nothing is below the
+2×-slower floor, but the 16 MiB BLOB sits on it: 0.48×–0.55× run by run
+(see [Where the time goes](#where-the-time-goes)).
 
-| Scenario | Core | oci8 | Speedup | Spike | |
-|---|---|---|---|---|---|
-| Call 3 IN + 3 OUT, `run()` (same values) | 25.0 µs | 22.6 µs | 0.90× | 1.28× | slower |
-| Call 3 IN + 3 OUT, `procedure()` (same values) | 33.7 µs | 22.6 µs | 0.67× | 1.28× | slower |
-| Fetch 10k × 9, `all()` (same values) | 27.97 ms | 33.72 ms | 1.21× | 1.73× | below 2× |
-| Fetch 10k × 9, `foreach` (same values) | 27.15 ms | 33.11 ms | 1.22× | 1.75× | below 2× |
-| Fetch 10k × 9, `all()`, Core's values vs oci8's strings | 27.97 ms | 21.28 ms | 0.76× | – | slower |
-| Fetch 10k × 9, fast opt-ins (same values) | 11.95 ms | 25.78 ms | 2.16× | – | **goal met** |
-| Fetch 10k × 9, fast opt-ins vs oci8's strings, `all()` | 11.95 ms | 21.28 ms | 1.78× | 1.69× (plain) | below 2× |
-| Fetch 10k × 9, fast opt-ins vs oci8's strings, `foreach` | 13.18 ms | 21.60 ms | 1.64× | 1.73× (plain) | below 2× |
-| Fetch 10k × 9, fetchSize / prefetch 1000 (same values) | 24.55 ms | 32.40 ms | 1.32× | – | below 2× |
-| Numbers 10k × 4, `Exact` (same values) | 4.57 ms | 19.46 ms | 4.26× | – | **goal met** |
-| Numbers 10k × 4, `Float` (same values) | 5.45 ms | 17.57 ms | 3.23× | – | **goal met** |
-| Dates 10k × 2, `Object` (same values) | 22.73 ms | 18.74 ms | 0.82× | – | slower |
-| Dates 10k × 2, `String` (same values) | 7.09 ms | 6.51 ms | 0.92× | – | slower |
-| REF CURSOR 1k, `all()` (same values) | 1.69 ms | 2.00 ms | 1.18× | 1.21× | below 2× |
-| REF CURSOR 1k, `foreach` (same values) | 1.76 ms | 1.77 ms | 1.01× | 1.27× | below 2× |
-| REF CURSOR 1k, fast opt-ins vs oci8's strings | 1.02 ms | 1.12 ms | 1.10× | 1.22× (plain) | below 2× |
-| 1k small LOBs, `Inline` vs `OCI_RETURN_LOBS` (same values) | 8.77 ms | 44.99 ms | 5.13× | – | **goal met** |
-| 1k small LOBs, `Lob::contents()` vs `load()` (same values) | 60.64 ms | 44.74 ms | 0.74× | – | slower |
-| One 16 MiB BLOB, `contents()` vs `load()` | 19.69 ms | 7.72 ms | 0.39× | – | **below the floor** |
-| Insert 1k rows, `runMany()` vs a loop of executes | 4.16 ms | 18.13 ms | 4.36× | – | **goal met** |
-| Insert 1k rows, `runMany()` vs a `FORALL` block | 4.16 ms | 3.30 ms | 0.79× | – | slower |
-| Connect + close, Pool vs `oci_pconnect` | 10.6 µs | 1.3 µs | 0.12× | – | **below the floor** |
-| Connect + 1-row query + close | 31.6 µs | 24.9 µs | 0.79× | – | slower |
-| Logon + logoff, `standalone` vs `oci_new_connect` | 13.64 ms | 16.66 ms | 1.22× | – | below 2× |
+| Scenario | Core | oci8 | Speedup | #64 | Spike | |
+|---|---|---|---|---|---|---|
+| Call 3 IN + 3 OUT, `run()` (same values) | 17.2 µs | 18.4 µs | 1.07× | 0.90× | 1.28× | below 2× |
+| Call 3 IN + 3 OUT, `procedure()` (same values) | 17.6 µs | 18.4 µs | 1.04× | 0.67× | 1.28× | below 2× |
+| Call, `procedure()` vs oci8's strings | 17.6 µs | 17.3 µs | 0.98× | 0.72× | 1.28× (plain) | slower |
+| Fetch 10k × 9, `all()` (same values) | 14.35 ms | 30.33 ms | 2.11× | 1.21× | 1.73× | **goal met** |
+| Fetch 10k × 9, `foreach` (same values) | 15.43 ms | 28.20 ms | 1.83× | 1.22× | 1.75× | below 2× |
+| Fetch 10k × 9, `all()`, Core's values vs oci8's strings | 14.35 ms | 17.22 ms | 1.20× | 0.76× | – | below 2× |
+| Fetch 10k × 9, fast opt-ins (same values) | 8.13 ms | 22.91 ms | 2.82× | 2.16× | – | **goal met** |
+| Fetch 10k × 9, fast opt-ins vs oci8's strings, `all()` | 8.13 ms | 17.22 ms | 2.12× | 1.78× | 1.69× (plain) | **goal met** |
+| Fetch 10k × 9, fast opt-ins vs oci8's strings, `foreach` | 9.11 ms | 17.55 ms | 1.93× | 1.64× | 1.73× (plain) | below 2× |
+| Fetch 10k × 9, `RowShape::List` vs oci8's `OCI_NUM` strings | 13.56 ms | 15.58 ms | 1.15× | 0.82× | – | below 2× |
+| Fetch 10k × 9, fetchSize / prefetch 1000 (same values) | 13.12 ms | 27.68 ms | 2.11× | 1.32× | – | **goal met** |
+| Numbers 10k × 4, `Exact` (same values) | 3.86 ms | 14.15 ms | 3.67× | 4.26× | – | **goal met** |
+| Numbers 10k × 4, `Float` (same values) | 3.97 ms | 14.14 ms | 3.56× | 3.23× | – | **goal met** |
+| Dates 10k × 2, `Object` (same values) | 10.52 ms | 12.64 ms | 1.20× | 0.82× | – | below 2× |
+| Dates 10k × 2, `String` (same values) | 3.17 ms | 5.07 ms | 1.60× | 0.92× | – | below 2× |
+| REF CURSOR 1k, `all()` (same values) | 955 µs | 1.32 ms | 1.39× | 1.18× | 1.21× | below 2× |
+| REF CURSOR 1k, `foreach` (same values) | 1.00 ms | 1.49 ms | 1.49× | 1.01× | 1.27× | below 2× |
+| REF CURSOR 1k, fast opt-ins vs oci8's strings | 661 µs | 799 µs | 1.21× | 1.10× | 1.22× (plain) | below 2× |
+| 1k small LOBs, `Inline` vs `OCI_RETURN_LOBS` (same values) | 7.00 ms | 39.03 ms | 5.57× | 5.13× | – | **goal met** |
+| 1k small LOBs, `Lob::contents()` vs `load()` (same values) | 7.67 ms | 40.23 ms | 5.24× | 0.74× | – | **goal met** |
+| One 16 MiB BLOB, `contents()` vs `load()` | 12.78 ms | 6.57 ms | 0.51× | 0.39× | – | slower, at the floor |
+| Insert 1k rows, `runMany()` vs a loop of executes | 2.91 ms | 16.22 ms | 5.57× | 4.36× | – | **goal met** |
+| Insert 1k rows, `runMany()` vs a `FORALL` block | 2.91 ms | 2.81 ms | 0.96× | 0.79× | – | slower |
+| Connect + close, Pool vs `oci_pconnect` | 1.3 µs | 1.1 µs | 0.87× | 0.12× | – | slower |
+| Connect + 1-row query + close | 15.0 µs | 19.5 µs | 1.30× | 0.79× | – | below 2× |
+| Logon + logoff, `standalone` vs `oci_new_connect` | 12.87 ms | 14.50 ms | 1.13× | 1.22× | – | below 2× |
 
 "Same values" pits Core's default values against oci8 plus the PHP
 conversions that give the same values; it is the comparison the spike's
@@ -119,16 +133,13 @@ spike's *plain* shape gave both drivers oci8's strings, which Core cannot
 return (its closest are the fast opt-ins: int and float numbers, temporal
 text).
 
-**Memory** (median RSS, kB): Core 19.7 MB before connecting and 21.5 MB
-after, against 29.0 and 50.6 MB for oci8 with Instant Client. The 10k fetch
-with `all()` peaks at 40.8 MB against 70.7 MB.
+Against the spike, Core now beats its ratios on the fetches and the REF
+CURSOR, and stays below them on the Call (1.04–1.07× against 1.28×).
 
-**The spike, rerun the same day** (`spikes/rust-oracledb/bench`, 3
-rounds), to tell a regression from the environment: Call 14.3 µs against
-oci8's 20.5 (1.44×); 10k fetch typed 15.1–16.5 ms against 27.2–27.4
-(1.65–1.81×); REF CURSOR typed 1.02–1.04 ms against 1.28–1.35 (1.25–1.30×).
-The spike's ratios still hold on this machine, so the gaps below are Core's
-and the Extension's, not the environment's.
+**Memory** (median RSS): Core 19.7 MB before connecting and 21.5 MB after,
+against 29.1 and 50.6 MB for oci8 with Instant Client. The 10k fetch with
+`all()` peaks at 40.9 MB against 70.8 MB, the 16 MiB BLOB at 54.4 MB
+against 85.8 MB.
 
 ### FrankenPHP worker mode (ZTS)
 
@@ -138,69 +149,105 @@ second, both rounds:
 
 | Workload | Connections | oci8 | Core, `connect()` per request | Core, held per worker |
 |---|---|---|---|---|
-| `scalar` | 1 | 4,875 / 4,379 | 3,484 / 3,852 | 4,302 / 4,778 |
-| `scalar` | 8 | 9,314 / 8,915 | 8,816 / 7,481 | 8,688 / 8,262 |
-| `scalar-txn` | 1 | 419 / 478 | 356 / 346 | 489 / 537 |
-| `scalar-txn` | 8 | 1,129 / 756 | 990 / 722 | 982 / 1,323 |
-| `cursor` | 8 | 1,334 / 1,132 | 1,481 / 1,159 | 1,205 / 1,183 |
-| `fetch` | 8 | 70 / 74 | 97 / 99 | 101 / 97 |
+| `scalar` | 1 | 4,992 / 6,019 | 4,945 / 5,564 | 5,418 / 5,001 |
+| `scalar` | 8 | 8,869 / 9,035 | 9,679 / 10,550 | 9,912 / 10,526 |
+| `scalar-txn` | 1 | 450 / 508 | 428 / 412 | 451 / 305 |
+| `scalar-txn` | 8 | 1,971 / 1,357 | 1,540 / 1,074 | 1,302 / 1,001 |
+| `cursor` | 8 | 996 / 1,228 | 1,645 / 1,721 | 1,525 / 1,464 |
+| `fetch` | 1 | 23 / 26 | 45 / 46 | 47 / 47 |
+| `fetch` | 8 | 70 / 70 | 127 / 144 | 128 / 136 |
 
-- `scalar-txn` (the spike's case) no longer collapses: the Release's
-  rollback runs outside the Pool mutex (C14), so Core at 8 connections is
-  level with oci8 (the spike's Pool fell to 134–1,100 req/s with a p50 of
-  6–13 ms). Every driver hits `wrk` timeouts on it: 8 open DML transactions
-  contend in the database, so read p50 and the order of magnitude, not the
-  exact rate.
-- The 10k fetch keeps a 1.3–1.4× lead; `connect()` per request costs about
-  20% of `scalar`'s rate at 1 connection (one Round trip per Release, below).
+- `connect()` per request now costs nothing measurable: `scalar` at 1
+  connection is level with oci8 (it was about 20% behind in #64), because
+  the Release makes no Round trip when no transaction is open (#78).
+- The 10k fetch serves 1.8–2.1× oci8's requests and the REF CURSOR
+  1.2–1.7×.
+- `scalar-txn` (the spike's case) ends each request with a transaction
+  open, so every Release rolls back. Core stays within the same range as
+  oci8 (the spike's Pool collapsed to 134–1,100 req/s with a p50 of
+  6–13 ms), but 8 open DML transactions contend in the database: p99 runs
+  to 0.4–1.8 s and `wrk` reports timeouts, so read the order of magnitude,
+  not the exact rate.
 
 ## Where the time goes
 
 `ddev bench layers` times the same work through the Extension's classes
 alone (*native*), Core's adapter (*driver*) and the public API (*core*), on
 one Session, and counts Round trips
-([`output/layers-nts.md`](output/layers-nts.md)):
+([`output/layers-nts.md`](output/layers-nts.md), the median of 3 runs):
 
 | Work | native | driver | core | Round trips |
 |---|---|---|---|---|
-| Call 3 IN + 3 OUT | 19.0 µs | 19.5 µs | 21.2 µs `run()`, 24.2 µs `procedure()` | 1 |
-| Fetch 10k × 9 | 19–24 ms (first in its run) | 21.9 ms | 23.0 ms `all()`, 22.5 ms `foreach` | 100 |
-| REF CURSOR 1k × 5 | 1.21 ms | 1.26 ms | 1.25 ms | 12 (oci8: 11.3) |
-| 1k small LOBs | 4.7 ms unread, 6.3 ms inline | – | 58.1 ms `contents()`, 6.8 ms inline | 10 |
-| One 16 MiB BLOB | – | – | 11.1 ms `contents()`, 22.8 ms inline | 17, 2 inline (oci8: 2) |
-| Connect + close | 7.4 µs | 8.0 µs | 8.2 µs | 1 (oci8: 0) |
+| Call 3 IN + 3 OUT | 15.8 µs (7.5 µs with no binds) | 16.3 µs | 17.1 µs `run()`, 18.6 µs `procedure()` | 1 |
+| Fetch 10k × 9 | 15.5 ms | 14.9 ms | 15.4 ms `all()`, 15.6 ms `foreach` | 100 |
+| REF CURSOR 1k × 5 | 1.02 ms | 1.06 ms | 1.04 ms | 12 |
+| 1k small LOBs | 5.8 ms unread, 8.7 ms inline | – | 9.6 ms `contents()`, 8.7 ms inline | 10 |
+| One 16 MiB BLOB | – | – | 12.8 ms `contents()`, 14.1 ms inline | 17, 2 inline (oci8: 2) |
+| Connect + close | 1.2 µs | 1.3 µs | 1.5 µs | 0 (oci8: 0) |
 
-Core's PHP layers cost little: under 5% of a fetch and 2–5 µs of a Call.
-The gaps are in the Extension, one follow-up each:
+Core's PHP layers cost little: within the noise of a fetch, 1.3 µs of a
+`run()` Call and 2.8 µs of a `procedure()`. What #76–#79 fixed, and what
+is left:
 
-1. **DATE / TIMESTAMP as `DateTimeImmutable`: 0.59 µs a value**, against
-   0.11 µs as text and 0.01–0.03 µs for a NUMBER (10k values of one column:
-   7.6 ms, 2.7 ms, 1.7–1.9 ms; the protocol floor is 1.7 ms). The two
-   temporal columns are about 12 of the default fetch's 22 ms. Each value
-   goes through two `format!`s, a lookup of
-   `date_create_immutable_from_format` by name and a userland call.
-   Removing most of it would put the default fetch near 2×.
-2. **`Lob::contents()`: about 29 µs of CPU per small LOB.** `readChunk()`
-   allocates a zeroed 1 MiB (BLOB) or 3 MiB (CLOB) buffer on every call, and
-   `contents()` calls it twice. A large LOB is read 1 MiB per Round trip and
-   joined in PHP; read inline, one 16 MiB read through the crate is slower
-   still.
-3. **The Release costs a Round trip**: it rolls back even when no
-   transaction is open, where `oci_pconnect` + `oci_close` costs none.
-4. **The Call: the Extension is about 5 µs slower than the spike's
-   extension** on the same statement (bind and options reading, OUT buffers
-   of 32767 bytes, the DATE OUT through item 1), and Core adds 2 µs for
-   `run()` and 5 µs for `procedure()` (`Call::of()` validates every name with
-   a regex on every call). A Call is one Round trip of about 8 µs, so 2× oci8
-   (11 µs) needs almost all of the client time gone.
+1. **Dates: fixed down to PHP's own cost.** A DATE or TIMESTAMP as
+   `DateTimeImmutable` went through `format!`, a function lookup by name and
+   a userland call (0.59 µs a value); the Extension now builds the object
+   with ext/date's own C functions (#76). What remains, about 0.37 µs a
+   value over the text, is PHP parsing and initialising the object: oci8
+   plus `new DateTimeImmutable()` pays the same 0.38 µs. So `Object` is
+   1.20× oci8 with the same values, but 0.48× oci8's raw strings (10.52 ms
+   against 5.07 ms for 20k values), and no Extension change closes that.
+   `TemporalMode::String` is 1.60× oci8's strings.
+2. **Small LOBs: fixed** (#77). `readChunk()` allocated a zeroed 1 MiB or
+   3 MiB buffer per call; a chunk is now sized by what is left, and
+   `contents()` joins its chunks once. `Lob::contents()` on 1k small LOBs
+   went from 0.74× to 5.24×.
+3. **A large LOB: half fixed, still at the floor.** The fork's fix for
+   end-of-response detection (C77: a data packet ending in byte 29 made the
+   crate re-parse the whole response) roughly halved a 16 MiB read, and
+   Core went from 0.39× to 0.51×. It still takes 17 Round trips (1 MiB
+   each) and about 2,048 packets of the default 8 KiB SDU, where oci8 takes
+   2 Round trips; read inline, one Round trip of 16 MiB is about 10%
+   slower than `contents()` because the crate re-joins the response. A
+   larger SDU helps: `(SDU=65535)` in the dsn read it 21–25% faster in an
+   in-process A/B (12.0 ms to 9.3 ms, about 0.65× oci8), at up to 2 × SDU
+   of buffers per Session (+70–90 kB RSS measured). The default stays
+   Oracle Net's 8 KiB, as in Oracle's own clients
+   ([Connecting](../docs/connecting.md#packet-size-sdu),
+   [Known limitations](../docs/known-limitations.md#values)). Left: the
+   crate's per-packet work and copies; CLOB UTF-16 decoding is a separate
+   candidate.
+4. **The Release Round trip: fixed** (#78). The Release rolls back only
+   when the server reports an open transaction (or a call failed), so
+   connect + close is CPU only: 1.3 µs against `oci_pconnect`'s 1.1 µs
+   (0.12× before). A request with a query is 1.30× oci8.
+5. **The Call: overhead cut, Round trip bound** (#79). Binds are matched
+   once, the Call timeout is no longer set and cleared per execute, and
+   Core caches validated Call shapes, so Core now adds 1.3 µs (`run()`) and
+   2.8 µs (`procedure()`) over the Extension, and the Call is 1.04–1.07× oci8
+   (0.67–0.90× before). A Call is one Round trip: an empty block takes
+   7.5 µs, so 2× oci8 (9.2 µs) is out of reach on this setup. The lead left
+   in the client: the crate clones its `CachedStatement` twice per execute
+   and builds Metadata per bind (a fork patch, not scheduled).
+
+`runMany()` against a `FORALL` block (0.96×) and a standalone logon (1.13×)
+are one Round trip or one logon each on both sides: the server's time
+dominates.
 
 ## Noise
 
-Client and database share one machine with other workloads (parallel builds
-and test suites during these runs: load average 4–6 on 10 cores). A
-Session's dedicated server process may also land on an efficiency core: one
-Session ran a Call 2.5× slower than its siblings for a whole run. Hence the
-wide per-round spreads in `summary-nts.md` (a Call: 22–50 µs). The pooled
-medians repeated across two full runs mostly within 10% (up to 20%);
-compare ratios, not absolute times, and rerun on an idle machine before
-reading a change under 10%.
+Client and database share one machine. These runs were on a quiet machine
+(load average 2–4.5, the benchmark itself included), yet the per-round
+spreads in `summary-nts.md` stay wide (a Call: 16.5–34.7 µs), because a
+Session's dedicated server process may land on an efficiency core for a
+whole round. The speedups of the two pooled runs mostly agreed within 15%,
+up to 30% for numbers `Float` (4.00× and 3.10×); the default fetch with
+`all()` met 2× in both (2.05× and 2.32×), the fast opt-ins with `foreach`
+against oci8's strings straddled it (1.82× and 2.13×). A third run, partly
+overlapping another workload on the database, gave the same verdicts except
+the Call by `procedure()` (0.83×): it sits at parity with oci8, on either
+side of 1× from run to run. An earlier run, made
+while Mutagen re-synced the growing `raw-*.jsonl` after every case, read
+15–40% slower for both drivers and is left out; `run.php` now writes that
+file once per round. Compare ratios, not absolute times, and rerun before
+reading a change under 15%.
