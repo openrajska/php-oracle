@@ -12,7 +12,6 @@ These are being fixed in the oracledb fork for v1; until then:
   read in any Session (`UnsupportedException`).
 - `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
   `UnsupportedException`; write the statement inside a PL/SQL block instead.
-- `LobMode::Inline` costs one extra Round trip per non-empty LOB.
 
 ## Sessions and the Pool
 
@@ -113,6 +112,11 @@ These are being fixed in the oracledb fork for v1; until then:
   LOCAL TIME ZONE values.
 - With `LobMode::Inline`, a LOB too large for `memory_limit` throws
   `UnsupportedException`.
+- A query brings up to 32767 characters (CLOB, NCLOB) or bytes (BLOB) of each
+  LOB with its row, read or not. A larger LOB, and every non-empty LOB of an
+  OUT bind, costs Round trips when read: one more under `LobMode::Inline`.
+- A CLOB, NCLOB or BLOB column of a REF CURSOR, a nested `CURSOR()` or an
+  Implicit result cannot be fetched yet: the fetch throws `QueryException`.
 - BFILE and XMLTYPE columns are described, but fetching any of their values,
   NULL included, throws `UnsupportedException`. A query with an XMLTYPE
   column is executed twice (one extra Round trip): mind functions with side
