@@ -7,6 +7,7 @@ namespace Rajska\Oracle\Tests\Conformance;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\Binds\Color;
 use Rajska\Oracle\Tests\Support\Binds\Priority;
@@ -70,6 +71,48 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame('Typ=252 Len=4: 0,0,0,0', self::value($connection, 'select dump(:v) from dual', ['v' => false]));
         self::assertSame('yes', self::value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => true]));
         self::assertSame('no', self::value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => false]));
+    }
+
+    /**
+     * Binds 3: strings of 4000, 4001, 32767, 32768 bytes and 1 MiB go into
+     * a CLOB column and read back exactly. Up to 32767 bytes they bind as
+     * VARCHAR2, over it as CLOB (PL/SQL picks the overload of the bind's
+     * type).
+     */
+    #[Test]
+    public function a_string_over_32767_bytes_binds_as_a_clob(): void
+    {
+        $connection = $this->connect();
+        // 4-byte characters, so a cut inside one would show.
+        $text = static fn (int $bytes): string => str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
+
+        foreach ([4000 => 'VARCHAR2', 4001 => 'VARCHAR2', 32767 => 'VARCHAR2', 32768 => 'CLOB', 1 << 20 => 'CLOB'] as $bytes => $type) {
+            $value = $text($bytes);
+            self::assertSame($bytes, \strlen($value));
+            $bound = $connection->execute(
+                "declare
+                   function type_of(v varchar2) return varchar2 is begin return 'VARCHAR2'; end;
+                   function type_of(v clob) return varchar2 is begin return 'CLOB'; end;
+                 begin
+                   :type := type_of(:v);
+                   insert into fx_lobs (id, label, text_value) values (100, 'inferred', :v);
+                 end;",
+                ['v' => $value, 'type' => Varchar::out()],
+                self::options(autocommit: false),
+            )->outValues();
+            self::assertSame(['type' => [$type]], $bound, "$bytes bytes");
+
+            [$row] = self::rows($connection, 'select text_value from fx_lobs where id = 100', [], self::options(autocommit: false));
+            $lob = $row['TEXT_VALUE'];
+            self::assertInstanceOf(DriverLob::class, $lob);
+            $read = '';
+            while (($chunk = $lob->readChunk()) !== '') {
+                $read .= $chunk;
+            }
+            self::assertSame($bytes, \strlen($read), "$bytes bytes");
+            self::assertSame($value, $read, "$bytes bytes");
+            $connection->rollback();
+        }
     }
 
     /**
@@ -197,6 +240,7 @@ final class BindsTest extends ConformanceTestCase
         yield 'float beyond NUMBER' => [['v' => 1e126], $one, 'bind it with BinaryDouble::in()'];
         yield 'float below NUMBER' => [['v' => 1e-131], $one, 'bind it with BinaryDouble::in()'];
         yield 'list' => [[1], $one, 'key 0 is an integer (is the array a list?)'];
+        yield 'a string over 32767 bytes beside an extra bind' => [['v' => 1, 'long' => str_repeat('x', 40_000)], $one, "Bind 'long' matches no placeholder"];
         yield 'int key' => [[5 => 1], $one, 'key 5 is an integer'];
         yield 'numeric string key' => [['7' => 1], $one, 'key 7 is an integer'];
         yield 'key starting with :' => [[':v' => 1], $one, "write the key without ':', as 'v'"];

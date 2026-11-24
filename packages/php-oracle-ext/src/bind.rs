@@ -8,7 +8,8 @@
 //! |-----------------------------|-------------------------------------------|
 //! | `int`                       | NUMBER                                    |
 //! | `float`                     | NUMBER from its shortest round-trip text  |
-//! | `string` ≤ 32767 bytes      | VARCHAR2 (longer: CLOB, not yet)          |
+//! | `string` ≤ 32767 bytes      | VARCHAR2                                  |
+//! | `string` > 32767 bytes      | CLOB, through a temporary LOB             |
 //! | `bool`                      | BOOLEAN                                   |
 //! | `null`                      | NULL VARCHAR2                             |
 //! | `BackedEnum`                | its backing value, inferred again         |
@@ -19,6 +20,10 @@
 //!
 //! A typed bind (`Rajska\Oracle\Bind\Bind`) binds as its declared type (see
 //! [`crate::typed`]).
+//!
+//! A CLOB, NCLOB or BLOB value is written into a temporary LOB by
+//! [`Binds::write_lobs`], after every check that needs no Round trip (see
+//! [`crate::temp_lob`]).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,12 +31,13 @@ use std::sync::Arc;
 use ext_php_rs::boxed::ZBox;
 use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
-use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
+use oracledb::{DB_TYPE_CLOB, ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::connection::ConnState;
 use crate::error::Error;
 use crate::object::Describe;
 use crate::options::Options;
+use crate::temp_lob::{TempLob, Written};
 use crate::temporal::Temporal;
 use crate::typed::{self, Typed};
 use crate::value::cell;
@@ -49,6 +55,8 @@ enum Value {
     Number(OracleNumber),
     Text(String),
     Bool(bool),
+    /// A string over 32767 bytes, as a CLOB.
+    Clob(TempLob),
     Typed(Typed),
 }
 
@@ -60,6 +68,7 @@ impl Value {
             Value::Number(v) => v,
             Value::Text(v) => v,
             Value::Bool(v) => v,
+            Value::Clob(v) => v.as_db_value(),
             Value::Typed(v) => v.as_db_value(),
         }
     }
@@ -135,6 +144,39 @@ impl Binds {
             }
         }
         Ok(params)
+    }
+
+    /// Writes every CLOB, NCLOB and BLOB value into a temporary LOB of the
+    /// Session, so it binds: Round trips, so only once the statement passed
+    /// every other check.
+    pub fn write_lobs(&mut self, state: &ConnState) -> Result<(), Error> {
+        for (name, value) in &mut self.0 {
+            let temp = match value {
+                Value::Clob(temp) => Some(temp),
+                Value::Typed(typed) => typed.temp_lob(),
+                _ => None,
+            };
+            if let Some(temp) = temp {
+                temp.write(state, name)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes the temporary LOBs out of the binds, once the execute is
+    /// done with them, registered with the Connection so that its Release
+    /// frees them; `None` when there is none.
+    pub fn take_written(&mut self, state: &ConnState) -> Option<Arc<Written>> {
+        let lobs = self
+            .0
+            .iter_mut()
+            .filter_map(|(_, value)| match value {
+                Value::Clob(temp) => temp.take(),
+                Value::Typed(typed) => typed.temp_lob().and_then(TempLob::take),
+                _ => None,
+            })
+            .collect();
+        Written::keep(state, lobs)
     }
 
     /// Fails for a LOB OUT bind of SQL `RETURNING … INTO`, before any Round
@@ -265,7 +307,8 @@ fn infer(name: &str, zval: &Zval, describe: &Describe<'_>) -> Result<Value, Erro
     }
 }
 
-/// A PHP string, which is bytes: VARCHAR2 when it is UTF-8 text.
+/// A PHP string, which is bytes: VARCHAR2 when it is UTF-8 text, CLOB over
+/// 32767 bytes.
 fn text(name: &str, zval: &Zval) -> Result<Value, Error> {
     let Some(text) = zval.str() else {
         return Err(Error::usage(format!(
@@ -273,9 +316,7 @@ fn text(name: &str, zval: &Zval) -> Result<Value, Error> {
         )));
     };
     if text.len() > MAX_VARCHAR2 {
-        return Err(Error::unsupported(format!(
-            "Bind '{name}': a string over {MAX_VARCHAR2} bytes binds as a CLOB, which is not implemented yet."
-        )));
+        return Ok(Value::Clob(TempLob::of(DB_TYPE_CLOB, zval)));
     }
     Ok(Value::Text(text.to_string()))
 }

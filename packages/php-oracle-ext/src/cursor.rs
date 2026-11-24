@@ -379,7 +379,7 @@ impl NativeCursor {
             parents,
             exhausted: false,
             columns,
-            options: *options,
+            options: options.clone(),
             state,
         })
     }

@@ -223,6 +223,52 @@ final class LobsTest extends TestCase
     }
 
     /**
+     * Binds 8: `Clob::in()`, `NClob::in()` and `Blob::in()` from a string
+     * and from a file stream, into a table and into a function's parameter,
+     * and `inOut()` back through `OutValue::lob()`.
+     */
+    #[Test]
+    public function lob_binds_write_strings_and_streams(): void
+    {
+        $file = tmpfile();
+        self::assertIsResource($file);
+        fwrite($file, str_repeat(self::TEXT . "\n", 100_000));
+        rewind($file);
+        $this->connection->begin();
+
+        $this->connection->run(
+            "insert into fx_lobs (id, label, text_value, binary_value) values (100, 'written', :text, :binary)",
+            ['text' => Clob::in($file), 'binary' => Blob::in("\x00\xff")],
+        );
+        $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 100')->first();
+        self::assertNotNull($row);
+        self::assertSame(str_repeat(self::TEXT . "\n", 100_000), self::lob($row['TEXT_VALUE'])->contents());
+        self::assertSame("\x00\xff", self::lob($row['BINARY_VALUE'])->contents());
+        $this->connection->rollback();
+
+        self::assertSame(10, $this->connection->function('fx_lob.text_length', ['p_text' => NClob::in(self::TEXT . ' 😀')])->number());
+        self::assertSame(
+            self::TEXT . '!',
+            $this->connection->run("begin :c := :c || '!'; end;", ['c' => Clob::inOut(self::TEXT)])->out('c')->lob()?->contents(),
+        );
+    }
+
+    /**
+     * Binds 3: a plain string over 32767 bytes binds as a CLOB.
+     */
+    #[Test]
+    public function a_string_over_32767_bytes_binds_as_a_clob(): void
+    {
+        $long = str_repeat('ç', 20_000);
+
+        self::assertSame(20_000, $this->connection->function('fx_lob.text_length', ['p_text' => $long])->number());
+        self::assertSame(
+            $long,
+            $this->connection->run('begin :out := :v; end;', ['v' => $long, 'out' => Clob::out()])->out('out')->lob()?->contents(),
+        );
+    }
+
+    /**
      * Values 15: under `lobs: Inline` a LOB is a string, `EMPTY_*()` gives
      * `''`, and `lob()` names the getter to use.
      */

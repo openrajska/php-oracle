@@ -124,7 +124,7 @@ impl ConnState {
 
     /// Runs `f` on the Session, or fails if the Connection is released or
     /// Broken.
-    fn with<T>(
+    pub fn with<T>(
         &self,
         f: impl FnOnce(&oracledb::Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
@@ -318,21 +318,14 @@ impl NativeConnection {
             let options = Options::read(options)?;
             // Types are described here, outside the Session's lock: reading
             // the binds may run PHP code.
-            let binds = Binds::read(binds, &|what, lookup| self.state.describe(what, lookup))?;
+            let mut binds = Binds::read(binds, &|what, lookup| self.state.describe(what, lookup))?;
             let mut implicit = Vec::new();
-            let execute = |session: &oracledb::Connection| {
+            let prepare = |session: &oracledb::Connection| {
                 #[cfg(debug_assertions)]
                 if sql.starts_with(PANIC_HOOK) {
                     panic!("injected through the test hook");
                 }
-                // The crate keeps the Session's last warning for the
-                // Session's whole life, across pooled Connections, so a
-                // warning belongs to this execute only if it changed during
-                // it. The same text twice in a row is
-                // missed the second time: that needs a per-execute warning
-                // in the fork.
-                let before = session.last_warning()?;
-                let mut statement = options
+                let statement = options
                     .commit(session.statement(sql)?)
                     .fetch_array_size(options.fetch_size)
                     // One row more than a batch: the server reports the end
@@ -344,57 +337,91 @@ impl NativeConnection {
                     // them as LONG / LONG RAW and the describe loses the type.
                     .fetch_lobs()
                     .build()?;
-                // Building parses the SQL on the client: no Round trip yet.
-                let matched = binds.matched(statement.bind_names())?;
-                let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
-                let (row_count, cursor, out_values) = if statement.is_query() {
-                    let cursor = statement.query_named(&params)?;
-                    let cursor =
-                        NativeCursor::new(Arc::clone(&self.state), cursor, &options, Vec::new())?;
-                    (
-                        0,
-                        Some(cursor),
-                        binds.out_values(None, false, &self.state, &options)?,
-                    )
-                } else {
-                    if !statement.is_plsql() {
-                        binds.refuse_returned_lobs()?;
-                        binds.refuse_returned_objects()?;
-                    }
-                    let mut result = statement.execute_named(&params)?;
-                    // The server counts 1 for a PL/SQL block; only DML counts.
-                    let count = if statement.is_dml() {
-                        result.rows_affected()
+                Ok(statement)
+            };
+            let mut execute = |session: &oracledb::Connection,
+                               mut statement: oracledb::Statement,
+                               binds: &mut Binds| {
+                // The crate keeps the Session's last warning for the
+                // Session's whole life, across pooled Connections, so a
+                // warning belongs to this execute only if it changed during
+                // it. The same text twice in a row is
+                // missed the second time: that needs a per-execute warning
+                // in the fork.
+                let before = session.last_warning()?;
+                let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
+                let (query, mut result) = {
+                    let matched = binds.matched(statement.bind_names())?;
+                    let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+                    if statement.is_query() {
+                        (Some(statement.query_named(&params)?), None)
                     } else {
-                        0
-                    };
-                    let out_values = binds.out_values(
-                        Some(&mut result),
-                        statement.is_plsql(),
-                        &self.state,
-                        &options,
-                    )?;
-                    // Each DBMS_SQL.RETURN_RESULT, in production order,
-                    // described in this Round trip; rows come on first fetch.
-                    // Registered like any Cursor, so Release drops them.
+                        (None, Some(statement.execute_named(&params)?))
+                    }
+                };
+                // What the execute gave back may point at the temporary LOBs
+                // its binds were written into (an OUT parameter set to the
+                // IN one, a `select :c`): everything born of it keeps them.
+                let options = &options.keeping(binds.take_written(&self.state));
+                let (row_count, cursor, out_values) = match query {
+                    Some(cursor) => {
+                        let cursor = NativeCursor::new(
+                            Arc::clone(&self.state),
+                            cursor,
+                            options,
+                            Vec::new(),
+                        )?;
+                        (
+                            0,
+                            Some(cursor),
+                            binds.out_values(None, false, &self.state, options)?,
+                        )
+                    }
+                    None => {
+                        // The server counts 1 for a PL/SQL block; only DML
+                        // counts.
+                        let count = match &result {
+                            Some(result) if is_dml => result.rows_affected(),
+                            _ => 0,
+                        };
+                        let out_values =
+                            binds.out_values(result.as_mut(), is_plsql, &self.state, options)?;
+                        (count, None, out_values)
+                    }
+                };
+                // Each DBMS_SQL.RETURN_RESULT, in production order,
+                // described in this Round trip; rows come on first fetch.
+                // Registered like any Cursor, so Release drops them.
+                if let Some(result) = result.as_mut() {
                     for result in result.implicit_results() {
                         implicit.push(NativeCursor::new(
                             Arc::clone(&self.state),
                             result,
-                            &options,
+                            options,
                             Vec::new(),
                         )?);
                     }
-                    (count, None, out_values)
-                };
+                }
                 let warning = session
                     .last_warning()?
                     .filter(|w| before.as_ref() != Some(w));
                 Ok((row_count, cursor, warning, out_values))
             };
-            let (row_count, cursor, warning, out_values) = self
-                .state
-                .timed(options.timeout, || self.state.with(execute))?;
+            let (row_count, cursor, warning, out_values) =
+                self.state.timed(options.timeout, || {
+                    // Building parses the SQL on the client: no Round trip.
+                    let statement = self.state.with(prepare)?;
+                    // Every check that needs no Round trip, before the LOB
+                    // writes, which do.
+                    binds.matched(statement.bind_names())?;
+                    if !statement.is_query() && !statement.is_plsql() {
+                        binds.refuse_returned_lobs()?;
+                        binds.refuse_returned_objects()?;
+                    }
+                    binds.write_lobs(&self.state)?;
+                    self.state
+                        .with(|session| execute(session, statement, &mut binds))
+                })?;
 
             let mut result = ZendHashTable::with_capacity(5);
             let put = |e: ext_php_rs::error::Error| Error::unsupported(e.to_string());
