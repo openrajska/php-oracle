@@ -29,8 +29,8 @@ The scripts need `CREATE TABLE`, `CREATE PROCEDURE` and `CREATE TYPE`, plus
 enough tablespace quota for about 70 MB of LOB segments.
 
 The test suites also read V$ views (`V$SESSTAT` for Round-trip counts,
-`V$SESSION`, `V$SQL`). `grants.sql` grants them, run as SYSDBA with the user
-as the argument; `ddev fixtures` runs it before `install.sql`:
+`V$SESSION`, `V$SQL`, `V$TEMPORARY_LOBS`). `grants.sql` grants them, run as
+SYSDBA with the user as the argument; `ddev fixtures` runs it before `install.sql`:
 
 ```bash
 sqlplus -s -l sys/password@//host:1521/service as sysdba @grants.sql user
@@ -59,7 +59,7 @@ client `NLS_LANG` does not matter.
 | Large LOB for streaming | `fx_lobs` row 4: 16 MiB CLOB and 16 MiB BLOB with deterministic content; rows 1–3: small, empty, NULL; `fx_lob.generate`, `text_line`, `text_length`, `binary_length` | `05_lob.sql` |
 | `execute_batch` with per-row errors | `fx_batch_rows` (empty; PK, UNIQUE, NOT NULL and CHECK constraints) | `06_batch.sql` |
 | `INSERT ... RETURNING ... INTO` | `fx_bind_rows` (global temporary table, rows gone at commit or rollback) | `09_bind.sql` |
-| Calls by name: IN / OUT / IN OUT with a defaulted parameter, a failing Call, one function per scalar return type, a quoted mixed-case name | `fx_call.echo` (`p_label` defaults to `'default'`), `fx_call.grow`, `fx_call.fail` / `f_fail` (ORA-20046), `fx_call.f_varchar` … `f_rowid` and `f_date` … `f_interval_ym` (a fixed value, or NULL when `p_null`), `"FX_Mixed_Case"("pValue")` | `10_call.sql` |
+| Calls by name: IN / OUT / IN OUT with a defaulted parameter, a failing Call, one function per scalar return type, a quoted mixed-case name | `fx_call.echo` (`p_label` defaults to `'default'`), `fx_call.grow`, `fx_call.fail` / `f_fail` (ORA-20046), `fx_call.f_varchar` … `f_rowid` and `f_date` … `f_interval_ym`, `f_clob` / `f_nclob` / `f_blob` (a fixed value, or NULL when `p_null`; an empty LOB when `p_empty`), `"FX_Mixed_Case"("pValue")` | `10_call.sql` |
 | Transactions: Autocommit, Explicit transactions, a deferred constraint failing at COMMIT | `fx_tx_rows` (empty; the `qty` CHECK is deferrable initially deferred), `fx_tx.add_row`, `fx_tx.add_row_count` (inserts, returns the row count) | `11_transaction.sql` |
 | One Pool shared across threads, Call timeout | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.slow`, `fx_pool.bump_counter` | `07_pool.sql` |
 | Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |

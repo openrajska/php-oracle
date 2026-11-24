@@ -41,6 +41,10 @@ create or replace package fx_call as
   function f_timestamp_ltz(p_null in boolean default false) return timestamp with local time zone;
   function f_interval_ds(p_null in boolean default false) return interval day to second;
   function f_interval_ym(p_null in boolean default false) return interval year to month;
+  -- 'Ação 日本' (CLOB, NCLOB), DEADBEEF (BLOB); an empty LOB when p_empty.
+  function f_clob(p_null in boolean default false, p_empty in boolean default false) return clob;
+  function f_nclob(p_null in boolean default false, p_empty in boolean default false) return nclob;
+  function f_blob(p_null in boolean default false, p_empty in boolean default false) return blob;
 
   -- Raises ORA-20046 'fx_call.f_fail raised'; p_value is never read.
   function f_fail(p_value in varchar2) return number;
@@ -162,6 +166,45 @@ create or replace package body fx_call as
   begin
     return case when p_null then null else interval '2-5' year to month end;
   end f_interval_ym;
+
+  function f_clob(p_null in boolean default false, p_empty in boolean default false) return clob is
+    l_value clob;
+  begin
+    if p_null then
+      return null;
+    elsif p_empty then
+      l_value := empty_clob();
+    else
+      l_value := unistr('A\00e7\00e3o \65e5\672c');
+    end if;
+    return l_value;
+  end f_clob;
+
+  function f_nclob(p_null in boolean default false, p_empty in boolean default false) return nclob is
+    l_value nclob;
+  begin
+    if p_null then
+      return null;
+    elsif p_empty then
+      l_value := empty_clob();
+    else
+      l_value := unistr('A\00e7\00e3o \65e5\672c');
+    end if;
+    return l_value;
+  end f_nclob;
+
+  function f_blob(p_null in boolean default false, p_empty in boolean default false) return blob is
+    l_value blob;
+  begin
+    if p_null then
+      return null;
+    elsif p_empty then
+      l_value := empty_blob();
+    else
+      l_value := hextoraw('DEADBEEF');
+    end if;
+    return l_value;
+  end f_blob;
 
   function f_fail(p_value in varchar2) return number is
   begin
