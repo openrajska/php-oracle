@@ -320,32 +320,66 @@ impl NativeConnection {
             // the binds may run PHP code.
             let mut binds = Binds::read(binds, &|what, lookup| self.state.describe(what, lookup))?;
             let mut implicit = Vec::new();
-            let prepare = |session: &oracledb::Connection| {
-                #[cfg(debug_assertions)]
-                if sql.starts_with(PANIC_HOOK) {
-                    panic!("injected through the test hook");
-                }
-                let statement = options
+            // `prefetch: false` builds a query whose execute fetches no row,
+            // outside the Statement cache.
+            let build = |session: &oracledb::Connection, prefetch: bool| {
+                let builder = options
                     .commit(session.statement(sql)?)
                     .fetch_array_size(options.fetch_size)
                     // One row more than a batch: the server reports the end
                     // of the rows only when asked for more than there are,
                     // so a query of up to fetchSize rows costs one Round
                     // trip. Every batch after it is still one Round trip.
-                    .prefetch_rows(options.fetch_size.saturating_add(1))
+                    .prefetch_rows(if prefetch {
+                        options.fetch_size.saturating_add(1)
+                    } else {
+                        0
+                    })
                     // LOB columns as locators: otherwise the crate redefines
                     // them as LONG / LONG RAW and the describe loses the type.
-                    .fetch_lobs()
-                    .build()?;
-                Ok(statement)
+                    .fetch_lobs();
+                let builder = if prefetch {
+                    builder
+                } else {
+                    builder.exclude_from_cache()
+                };
+                Ok::<_, Error>(builder.build()?)
             };
-            let mut execute = |mut statement: oracledb::Statement, binds: &mut Binds| {
+            let prepare = |session: &oracledb::Connection| {
+                #[cfg(debug_assertions)]
+                if sql.starts_with(PANIC_HOOK) {
+                    panic!("injected through the test hook");
+                }
+                build(session, true)
+            };
+            let mut execute = |session: &oracledb::Connection,
+                               mut statement: oracledb::Statement,
+                               binds: &mut Binds| {
                 let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
                 let (query, mut result) = {
                     let matched = binds.matched(statement.bind_names())?;
                     let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
                     if statement.is_query() {
-                        (Some(statement.query_named(&params)?), None)
+                        let cursor = match statement.query_named(&params) {
+                            // The prefetched rows hold a value of a type the
+                            // crate cannot read (XMLTYPE): the whole response
+                            // was read, so the Session is fine. A column of a
+                            // later type is described normally and only
+                            // fetching it fails (spec #32 §6), so the query
+                            // runs again without prefetch, which describes
+                            // it; its first fetch then fails. One Round trip
+                            // more, only on this path.
+                            Err(e)
+                                if matches!(
+                                    e.kind(),
+                                    oracledb::ErrorKind::UnsupportedDbType(_)
+                                ) =>
+                            {
+                                build(session, false)?.query_named(&params)?
+                            }
+                            cursor => cursor?,
+                        };
+                        (Some(cursor), None)
                     } else {
                         (None, Some(statement.execute_named(&params)?))
                     }
@@ -416,7 +450,8 @@ impl NativeConnection {
                         binds.refuse_returned_objects()?;
                     }
                     binds.write_lobs(&self.state)?;
-                    self.state.with(|_| execute(statement, &mut binds))
+                    self.state
+                        .with(|session| execute(session, statement, &mut binds))
                 })?;
 
             let mut result = ZendHashTable::with_capacity(5);

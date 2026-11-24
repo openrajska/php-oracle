@@ -87,6 +87,7 @@ client `NLS_LANG` does not matter.
 | Type names: quoted, synonym, package types | `"FX_Mixed_Point"` (quoted, with a quoted attribute `"x"`), `fx_point_alias` (synonym of `fx_point`), `fx_kinds.t_numbers` (packaged nested table), `fx_kinds.t_point_map` (Associative array of Objects), `fx_kinds.t_string_map` (`INDEX BY VARCHAR2`, not supported yet) | `12_object_kinds.sql` |
 | Collection of Collections; sparse nested table | `fx_number_matrix` (table of `fx_number_list`); `fx_kinds.sparse_numbers` (1 .. 5 with 2 and 4 deleted); `fx_kinds.string_map`, `echo_numbers`, `echo_map` | `12_object_kinds.sql` |
 | Native JSON and VECTOR (23ai and later; skipped on older databases) | `fx_vectors` (one column per format, dense and sparse, plus a flexible one; row 1: values, row 2: NULLs), `fx_vector_rows` (global temporary table to bind into), `fx_json_docs` (JSON collection table: its `_id` is an OSON id), `fx_json_vector.f_json`, `f_vector`, `f_sparse` | `13_json_vector.sql` |
+| Column-only scalar types: LONG, LONG RAW, UROWID | `fx_long_rows` (LONG), `fx_long_raw_rows` (LONG RAW); row 1: a value, row 2: NULL; writes use ids from 100 and roll back. `fx_iot` (index-organized: its ROWID is a UROWID; one row) | `14_scalar_types.sql` |
 | One Pool shared across threads, Call timeout | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.slow`, `fx_pool.bump_counter` | `07_pool.sql` |
 | Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
 

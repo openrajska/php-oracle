@@ -246,9 +246,11 @@ fn text_value(name: &str, value: &Zval) -> Result<Option<String>, Error> {
             "Bind '{name}': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in()."
         )));
     };
+    // Only a LONG column takes more: a LONG bind, which is later.
     if text.len() > MAX_VARCHAR2 {
-        return Err(Error::usage(format!(
-            "Bind '{name}': the string is over {MAX_VARCHAR2} bytes; bind it with Clob::in()."
+        return Err(Error::unsupported(format!(
+            "Bind '{name}': the string is over {MAX_VARCHAR2} bytes; bind it with Clob::in(). \
+             Writing more than {MAX_VARCHAR2} bytes to a LONG column is not supported yet."
         )));
     }
     Ok(Some(text.to_string()))
@@ -280,9 +282,11 @@ fn raw(name: &str, value: &Zval, direction: Direction) -> Result<Box<dyn ToDbVal
         let bytes = value
             .binary::<u8>()
             .ok_or_else(|| wrong(name, "a string"))?;
+        // Only a LONG RAW column takes more: a LONG bind, which is later.
         if bytes.len() > MAX_VARCHAR2 {
-            return Err(Error::usage(format!(
-                "Bind '{name}': the bytes are over {MAX_VARCHAR2}; bind them with Blob::in()."
+            return Err(Error::unsupported(format!(
+                "Bind '{name}': the bytes are over {MAX_VARCHAR2}; bind them with Blob::in(). \
+                 Writing more than {MAX_VARCHAR2} bytes to a LONG RAW column is not supported yet."
             )));
         }
         Some(bytes)

@@ -224,6 +224,9 @@ pub fn describe(
             .get_type(&quoted)
             .map_err(|e| crate_error(what, e))?;
     }
+    if !object_type.is_collection() && object_type.attributes().is_empty() {
+        return Err(opaque(what, &object_type));
+    }
     if let Some(package) = object_type.package_name()
         && object_type.is_collection()
         && !object_type.is_associative_array()
@@ -670,6 +673,14 @@ fn later(what: &Path<'_>, metadata: &Metadata) -> Error {
     ))
 }
 
+/// An opaque type (SYS.ANYDATA and kin): never supported (spec #32 §1).
+fn opaque(what: &Path<'_>, object_type: &DbObjectType) -> Error {
+    Error::unsupported(format!(
+        "{what}: {} is an opaque type, which is not supported.",
+        canonical(object_type)
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // From Oracle to PHP
 // ---------------------------------------------------------------------------
@@ -706,6 +717,12 @@ pub fn cell(
 fn object_value(mut object: DbObject, options: &Options, what: &Path<'_>) -> Result<Zval, Error> {
     let object_type = Arc::clone(object.object_type());
     let attributes = object_type.attributes();
+    // An Object type has at least one attribute: one with none is opaque
+    // (SYS.ANYDATA, ANYTYPE, ANYDATASET), whose value the crate cannot read,
+    // and would come back as an empty array.
+    if attributes.is_empty() {
+        return Err(opaque(what, &object_type));
+    }
     let mut array = ZendHashTable::with_capacity(u32::try_from(attributes.len()).unwrap_or(0));
     for (index, attribute) in attributes.iter().enumerate() {
         let path = Path::Attribute(what, attribute.name());
