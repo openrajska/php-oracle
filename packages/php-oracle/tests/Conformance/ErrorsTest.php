@@ -74,6 +74,55 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
+     * Errors 13: a compilation error is success with info, not a throw; the
+     * warning belongs to that one Execution.
+     */
+    #[Test]
+    public function a_compilation_error_gives_a_warning_and_a_valid_unit_gives_null(): void
+    {
+        $connection = $this->connect();
+        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
+        $valid = "create or replace procedure $procedure is begin null; end;";
+
+        try {
+            $warning = $connection->execute($invalid, [], self::options())->warning();
+            self::assertNotNull($warning);
+            self::assertStringContainsString('compilation errors', $warning);
+
+            self::assertNull($connection->execute('select 1 from dual', [], self::options())->warning(), 'a later query');
+            self::assertNull($connection->execute($valid, [], self::options())->warning(), 'a valid unit');
+        } finally {
+            $connection->execute("drop procedure $procedure", [], self::options());
+        }
+    }
+
+    /**
+     * Errors 13, the gap: the crate keeps only the Session's last warning, so
+     * the Extension cannot tell a repeated warning from the stale one.
+     */
+    #[Test]
+    public function the_same_compilation_error_twice_in_a_row_gives_a_warning_each_time(): void
+    {
+        $connection = $this->connect();
+        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
+
+        try {
+            $first = $connection->execute($invalid, [], self::options());
+            self::assertNotNull($first->warning());
+            $again = $connection->execute($invalid, [], self::options());
+        } finally {
+            $connection->execute("drop procedure $procedure", [], self::options());
+        }
+
+        if ($again->warning() === null) {
+            self::markTestIncomplete('Needs a per-execute warning in the oracledb fork (#37 hand-off).');
+        }
+        self::assertStringContainsString('compilation errors', $again->warning());
+    }
+
+    /**
      * Errors 3. The expected offsets are the ones oci8 reports for the same
      * statements.
      */

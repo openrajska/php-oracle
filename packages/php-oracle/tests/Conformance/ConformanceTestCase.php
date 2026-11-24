@@ -45,16 +45,43 @@ abstract class ConformanceTestCase extends TestCase
         return $connection;
     }
 
-    protected static function options(int $fetchSize = 100, bool $autocommit = true): DriverOptions
-    {
+    protected static function options(
+        int $fetchSize = 100,
+        bool $autocommit = true,
+        ValueMapping $values = new ValueMapping(),
+        RowShape $rowShape = RowShape::Assoc,
+        KeyCase $keyCase = KeyCase::Native,
+    ): DriverOptions {
         return new DriverOptions(
             autocommit: $autocommit,
             timeout: null,
             fetchSize: $fetchSize,
-            values: new ValueMapping(),
-            rowShape: RowShape::Assoc,
-            keyCase: KeyCase::Native,
+            values: $values,
+            rowShape: $rowShape,
+            keyCase: $keyCase,
         );
+    }
+
+    /**
+     * Every row of a query, read through the Driver contract.
+     *
+     * @param array<string, mixed> $binds
+     *
+     * @return list<array<int|string, mixed>>
+     *
+     * @phpstan-impure
+     */
+    protected static function rows(DriverConnection $connection, string $sql, array $binds = [], ?DriverOptions $options = null): array
+    {
+        $cursor = $connection->execute($sql, $binds, $options ?? self::options())->cursor();
+        self::assertNotNull($cursor, "Not a query: $sql");
+        $rows = [];
+        while (($batch = $cursor->fetchBatch()) !== []) {
+            array_push($rows, ...$batch);
+        }
+        $cursor->close();
+
+        return $rows;
     }
 
     /**

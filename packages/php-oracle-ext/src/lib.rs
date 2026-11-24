@@ -16,6 +16,7 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod options;
 
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
