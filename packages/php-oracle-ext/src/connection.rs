@@ -338,7 +338,9 @@ impl NativeConnection {
                     // LOB columns as locators: otherwise the crate redefines
                     // them as LONG / LONG RAW and the describe loses the type.
                     .fetch_lobs()
-                    // With their first characters or bytes (fork patch #74).
+                    // With their first characters or bytes, in the rows of the
+                    // statement and of the cursors it returns (fork patches
+                    // #74, #75).
                     .lob_prefetch_size(lob::PREFETCH);
                 let builder = if prefetch {
                     builder

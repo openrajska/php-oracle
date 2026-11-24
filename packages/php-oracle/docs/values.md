@@ -84,10 +84,11 @@ follows daylight saving.
 
 ## LOBs
 
-A CLOB, NCLOB or BLOB arrives as a read-only `Lob`. A query brings up to
-32767 characters (CLOB, NCLOB) or bytes (BLOB) of each LOB with its row, so
-reading a LOB that small costs no Round trip; a larger one costs Round trips
-only when you read it:
+A CLOB, NCLOB or BLOB arrives as a read-only `Lob`. A row of a query, a REF
+CURSOR, a nested `CURSOR()` or an Implicit result brings up to 32767
+characters (CLOB, NCLOB) or bytes (BLOB) of each LOB with it, so reading a LOB
+that small costs no Round trip; a larger one costs Round trips only when you
+read it:
 
 ```php
 $connection->run(
