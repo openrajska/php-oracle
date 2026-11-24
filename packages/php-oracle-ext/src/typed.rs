@@ -8,8 +8,8 @@
 
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use oracledb::{
-    BindValue, DB_TYPE_BLOB, DB_TYPE_CHAR, DB_TYPE_CLOB, DB_TYPE_CURSOR, DB_TYPE_NCHAR,
-    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
+    BindValue, DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_NCHAR, DB_TYPE_NVARCHAR, DB_TYPE_RAW,
+    DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
 };
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
@@ -18,6 +18,7 @@ use crate::json;
 use crate::object::{self, Describe};
 use crate::temp_lob::TempLob;
 use crate::temporal::{self, Temporal};
+use crate::type_name;
 use crate::vector;
 
 /// The base class every typed bind extends.
@@ -122,6 +123,8 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     // The PHP value itself, for a LOB: `value` becomes what the crate binds.
     let given = value;
     let mut object_type = None;
+    let mut reads_as = None;
+    let mut lob = false;
     let value: Box<dyn ToDbValue> = match type_name {
         "varchar" | "rowid" => text(name, DB_TYPE_VARCHAR, value, direction)?,
         // Fixed-length only on the way in: a CHAR OUT bind is a CHAR(32767)
@@ -151,14 +154,17 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         // NULL of the LOB type: the server sends back a locator (a
         // temporary LOB for a PL/SQL value). An IN or IN OUT value binds as
         // the temporary LOB it is written into (`temp`).
-        "clob" => Box::new(DB_TYPE_CLOB),
-        "nClob" => Box::new(DB_TYPE_NCLOB),
-        "blob" => Box::new(DB_TYPE_BLOB),
-        "date" | "timestamp" | "timestampTz" | "timestampLtz" => temporal::timestamp_bind(
-            name,
-            value,
-            Temporal::of_bind(type_name).unwrap_or(Temporal::Timestamp),
-        )?,
+        "clob" | "nClob" | "blob" => {
+            let lob_type = type_name::db_type(type_name)
+                .unwrap_or_else(|| unreachable!("a LOB type, matched above"));
+            lob = true;
+            Box::new(lob_type)
+        }
+        "date" | "timestamp" | "timestampTz" | "timestampLtz" => {
+            let temporal = Temporal::of_bind(type_name).unwrap_or(Temporal::Timestamp);
+            reads_as = Some(temporal);
+            temporal::timestamp_bind(name, value, temporal)?
+        }
         "intervalDs" => temporal::interval_ds_bind(name, value)?,
         "intervalYm" => temporal::interval_ym_bind(name, value)?,
         "json" => json::bind(name, value)?,
@@ -181,7 +187,6 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
             )));
         }
     };
-    let lob = matches!(type_name, "clob" | "nClob" | "blob");
     let temp = if lob {
         // NULL (and OUT) binds as `value`, NULL of the LOB type.
         TempLob::read(name, value.db_type(), given)?
@@ -191,7 +196,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     Ok(Typed {
         value,
         direction,
-        reads_as: Temporal::of_bind(type_name),
+        reads_as,
         temp,
         type_name: type_name.to_string(),
         object_type,

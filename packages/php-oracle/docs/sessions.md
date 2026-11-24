@@ -18,6 +18,9 @@ ZTS build share it).
 
 `maxConnections` is per process: 20 FPM workers with the default can open up
 to 320 Sessions. Size it, and the database's `processes` / `sessions`, together.
+It is per Pool too, and PHP's default time zone is part of the Pool key: a
+process that switches zones per request has one Pool, and up to
+`maxConnections` Sessions, per zone ([details](connecting.md#the-pool-key)).
 
 ## Release
 

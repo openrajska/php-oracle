@@ -12,10 +12,14 @@ server error, unless this page says otherwise.
 - After a PHP fatal error (memory or time limit), no destructor runs, so
   unread output enabled with `enableOutput()` stays with the pooled Session.
   The next user's `enableOutput()` still starts empty.
-- The Session time zone is set when the Session is created. After
-  `date_default_timezone_set()`, the next `connect()` uses a separate Pool
-  for the new zone; Connections already open keep theirs. TIMESTAMP WITH
-  LOCAL TIME ZONE values are converted with PHP's default zone at fetch time.
+- The Session time zone is set when the Session is created, and PHP's
+  default zone is part of the Pool key: after `date_default_timezone_set()`,
+  the next `connect()` uses a separate Pool for the new zone; Connections
+  already open keep theirs. An application that switches zones per request
+  gets one Pool per zone, each with its own `maxConnections`, so a process
+  can hold up to `maxConnections` Sessions per zone it has seen. TIMESTAMP
+  WITH LOCAL TIME ZONE values are converted with PHP's default zone at fetch
+  time.
 - DRCP gives no gain under PHP-FPM yet: the client does not release the DRCP
   server between uses, so each worker's idle Sessions keep theirs.
 - An unreachable host fails after `connectTimeout` plus about one second.
@@ -78,6 +82,9 @@ server error, unless this page says otherwise.
 - A LOB bind, or a string over 32767 bytes, costs one Round trip plus one per
   MiB before the statement's own. Its temporary LOB lives while any Cursor or
   `Lob` born of that Execution does.
+- A double-quoted placeholder (`:"Total"`) works in SQL, keyed without the
+  quotes (`['Total' => …]`), but not in a PL/SQL block, where the server
+  refuses it with PLS-00103 (oci8 too). Write `:total` there.
 
 ## Array DML
 
@@ -86,11 +93,14 @@ server error, unless this page says otherwise.
 - A placeholder written twice in the statement is not supported.
 - `''` in a column that became CLOB binds as NULL. Each CLOB cell costs one
   Round trip plus one per MiB.
-- A block returning Implicit results is refused only after it ran; under
-  Autocommit its work is already committed.
+- A block returning Implicit results is refused only after it ran (its work
+  is undone, never committed).
 - Over 65535 failing rows, the exception carries no row list.
 - A failed call costs one more Round trip under Autocommit (the rollback);
   inside a transaction every call costs two (the savepoint and the execute).
+- Under Autocommit, a PL/SQL block costs one more Round trip than DML: it
+  runs without the commit, which is sent once the call succeeded, so a
+  failed call never commits.
 
 ## Values
 
@@ -102,7 +112,10 @@ server error, unless this page says otherwise.
 - A database whose `DBTIMEZONE` is a region name cannot fetch TIMESTAMP WITH
   LOCAL TIME ZONE values.
 - With `LobMode::Inline`, a LOB too large for `memory_limit` throws
-  `UnsupportedException`.
+  `UnsupportedException`, and so does a `Lob` chunk (up to 1 MiB of bytes
+  or code units) that `memory_limit` cannot hold. Both count PHP's real
+  memory use (`memory_get_usage(true)`) plus 2 MiB for the allocator's next
+  chunk, so they refuse a little before PHP's own fatal error would.
 - A row of a query, a REF CURSOR, a nested `CURSOR()` or an Implicit result
   brings up to 32767 characters (CLOB, NCLOB) or bytes (BLOB) of each LOB with
   it, read or not. A larger LOB, and every non-empty LOB of an OUT bind, costs

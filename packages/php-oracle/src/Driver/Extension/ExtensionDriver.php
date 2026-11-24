@@ -57,14 +57,14 @@ final class ExtensionDriver implements Driver
     private static ?string $refusal = null;
 
     /**
-     * The config of the last connect(), and the `$pool` and `$session`
-     * arrays built from it: a ConnectionConfig is immutable, and an
-     * application usually connects with the same one every time.
+     * The `$pool` and `$session` arrays built from each config still alive:
+     * a ConnectionConfig is immutable, and an application usually connects
+     * with the same one every time. Weak, so what they copy (the passwords)
+     * goes with the config.
+     *
+     * @var ?\WeakMap<ConnectionConfig, array{PoolFields, SessionFields}>
      */
-    private static ?ConnectionConfig $last = null;
-
-    /** @var ?array{PoolFields, SessionFields} */
-    private static ?array $lastArrays = null;
+    private static ?\WeakMap $arrays = null;
 
     public function connect(ConnectionConfig $config): DriverConnection
     {
@@ -73,11 +73,8 @@ final class ExtensionDriver implements Driver
             throw new ConfigurationException(self::$refusal);
         }
 
-        if ($config !== self::$last || self::$lastArrays === null) {
-            self::$lastArrays = [self::pool($config), self::session($config)];
-            self::$last = $config;
-        }
-        [$pool, $session] = self::$lastArrays;
+        self::$arrays ??= new \WeakMap();
+        [$pool, $session] = self::$arrays[$config] ??= [self::pool($config), self::session($config)];
 
         try {
             return new ExtensionConnection(NativeConnection::connect($pool, $session));

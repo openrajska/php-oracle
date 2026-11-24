@@ -22,7 +22,7 @@ interface DriverConnection
     /**
      * @param list<array<string, mixed>> $rows one array of binds per row
      */
-    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverBatch;
+    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml;
 
     public function commit(): void;
 

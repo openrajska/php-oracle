@@ -171,7 +171,7 @@ final class Exception extends \RuntimeException
 {
     /**
      * database, connection, connection_lost, pool_exhausted, timeout,
-     * unsupported, usage, configuration or batch.
+     * unsupported, usage, configuration or array_dml.
      */
     public readonly string $kind;
 

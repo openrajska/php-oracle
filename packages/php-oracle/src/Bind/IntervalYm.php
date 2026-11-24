@@ -18,7 +18,7 @@ final readonly class IntervalYm extends Bind
     /**
      * @throws UsageException if the interval has days or smaller units
      */
-    public static function in(?\DateInterval $value): self
+    public static function in(#[\SensitiveParameter] ?\DateInterval $value): self
     {
         return new self(Type::IntervalYm, Direction::In, self::checked($value));
     }
@@ -31,12 +31,12 @@ final readonly class IntervalYm extends Bind
     /**
      * @throws UsageException if the interval has days or smaller units
      */
-    public static function inOut(?\DateInterval $value): self
+    public static function inOut(#[\SensitiveParameter] ?\DateInterval $value): self
     {
         return new self(Type::IntervalYm, Direction::InOut, self::checked($value));
     }
 
-    private static function checked(?\DateInterval $value): ?\DateInterval
+    private static function checked(#[\SensitiveParameter] ?\DateInterval $value): ?\DateInterval
     {
         if ($value !== null && ($value->d !== 0 || $value->h !== 0 || $value->i !== 0 || $value->s !== 0 || $value->f !== 0.0)) {
             throw new UsageException('IntervalYm::in() takes years and months only, but the DateInterval has days or smaller units; bind those with IntervalDs::in().');

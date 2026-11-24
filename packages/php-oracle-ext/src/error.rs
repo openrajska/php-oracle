@@ -18,6 +18,8 @@ use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals};
 
+use crate::bind::put;
+
 /// What went wrong, as the native exception's `kind` names it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
@@ -39,7 +41,7 @@ pub enum Kind {
     /// A programmer mistake, detected before any Round trip.
     Usage,
     /// Rows of an Array DML call failed; none was applied.
-    Batch,
+    ArrayDml,
 }
 
 impl Kind {
@@ -53,7 +55,7 @@ impl Kind {
             Kind::Configuration => "configuration",
             Kind::Unsupported => "unsupported",
             Kind::Usage => "usage",
-            Kind::Batch => "batch",
+            Kind::ArrayDml => "array_dml",
         }
     }
 }
@@ -71,7 +73,7 @@ pub struct Error {
     /// A PHP exception is already pending (thrown by user code the
     /// Extension called): it goes to the caller as is.
     pending: bool,
-    /// Every failing row of a `batch` error, in row order.
+    /// Every failing row of an `array_dml` error, in row order.
     rows: Vec<RowFailure>,
 }
 
@@ -110,7 +112,7 @@ impl Error {
     /// Rows of an Array DML call of `total` rows failed (`rows`, in row
     /// order, not empty): `"3 of 1000 rows failed; first: row 3: ORA-…"`,
     /// with the first failing row's code.
-    pub fn batch(rows: Vec<RowFailure>, total: usize) -> Self {
+    pub fn array_dml(rows: Vec<RowFailure>, total: usize) -> Self {
         let (code, message) = match rows.first() {
             Some(first) => (
                 first.code,
@@ -126,7 +128,7 @@ impl Error {
         Self {
             code,
             rows,
-            ..Self::new(Kind::Batch, message)
+            ..Self::new(Kind::ArrayDml, message)
         }
     }
 
@@ -423,31 +425,36 @@ pub struct NativeException {
 #[php_impl]
 impl NativeException {
     /// `database`, `connection`, `connection_lost`, `pool_exhausted`,
-    /// `timeout`, `unsupported`, `usage`, `configuration` or `batch`.
+    /// `timeout`, `unsupported`, `usage`, `configuration` or `array_dml`.
     #[php(getter)]
-    pub fn kind(&self) -> String {
-        self.kind.as_str().to_string()
+    pub fn kind(&self) -> PhpResult<String> {
+        run(|| Ok(self.kind.as_str().to_string()))
     }
 
     /// The server's error offset, for a `database` error.
     #[php(getter)]
-    pub fn offset(&self) -> Option<i64> {
-        self.offset
+    pub fn offset(&self) -> PhpResult<Option<i64>> {
+        run(|| Ok(self.offset))
     }
 
-    /// One entry per failing row of a `batch` error:
+    /// One entry per failing row of an `array_dml` error:
     /// `list<array{index: int, code: int, message: string}>`.
     #[php(getter)]
     pub fn rows(&self) -> PhpResult<ZBox<ZendHashTable>> {
-        let mut rows = ZendHashTable::with_capacity(u32::try_from(self.rows.len()).unwrap_or(0));
-        for failure in &self.rows {
-            let mut row = ZendHashTable::with_capacity(3);
-            row.insert("index", i64::try_from(failure.index).unwrap_or(i64::MAX))?;
-            row.insert("code", i64::from(failure.code))?;
-            row.insert("message", failure.message.as_str())?;
-            rows.push(row)?;
-        }
-        Ok(rows)
+        run(|| {
+            let mut rows =
+                ZendHashTable::with_capacity(u32::try_from(self.rows.len()).unwrap_or(0));
+            for failure in &self.rows {
+                let mut row = ZendHashTable::with_capacity(3);
+                let index = i64::try_from(failure.index).unwrap_or(i64::MAX);
+                row.insert("index", index).map_err(put)?;
+                row.insert("code", i64::from(failure.code)).map_err(put)?;
+                row.insert("message", failure.message.as_str())
+                    .map_err(put)?;
+                rows.push(row).map_err(put)?;
+            }
+            Ok(rows)
+        })
     }
 }
 

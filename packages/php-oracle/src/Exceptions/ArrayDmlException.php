@@ -8,7 +8,7 @@ namespace Rajska\Oracle\Exceptions;
  * Rows of an Array DML call failed; none of that call's rows was applied.
  * `getCode()` is the first failing row's code.
  */
-final class BatchException extends QueryException
+final class ArrayDmlException extends QueryException
 {
     /**
      * @param list<RowFailure> $rows

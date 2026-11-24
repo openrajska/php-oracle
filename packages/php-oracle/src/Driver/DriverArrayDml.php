@@ -9,7 +9,7 @@ namespace Rajska\Oracle\Driver;
  *
  * @internal
  */
-interface DriverBatch
+interface DriverArrayDml
 {
     /**
      * The total DML count across every bind row.

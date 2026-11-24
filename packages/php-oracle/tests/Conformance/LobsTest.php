@@ -462,6 +462,35 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
+     * Values 15: a chunk PHP's memory_limit cannot hold fails with
+     * UnsupportedException instead of PHP's fatal error, for a BLOB and a
+     * CLOB, and the LOB reads once memory allows.
+     */
+    #[Test]
+    public function a_chunk_too_large_for_memory_fails_instead_of_ending_the_request(): void
+    {
+        $connection = $this->connect();
+        $cursor = $connection->execute('select binary_value, text_value from fx_lobs where id = 4', [], self::options())->cursor();
+        self::assertNotNull($cursor);
+        $row = $cursor->fetchBatch()[0];
+        $limit = \ini_get('memory_limit');
+
+        foreach (['BINARY_VALUE', 'TEXT_VALUE'] as $column) {
+            $lob = self::lob($row[$column]);
+            \ini_set('memory_limit', (string) (memory_get_usage(true) + 512 * 1024));
+            try {
+                $lob->readChunk();
+                self::fail("$column: a 1 MiB chunk was read under a 512 KiB margin.");
+            } catch (UnsupportedException $e) {
+                self::assertStringContainsString('memory_limit', $e->getMessage(), $column);
+            } finally {
+                \ini_set('memory_limit', (string) $limit);
+            }
+            self::assertGreaterThanOrEqual(1024 * 1024, \strlen($lob->readChunk()), "$column reads once memory allows");
+        }
+    }
+
+    /**
      * The Cursors a query's rows can arrive in, besides its own.
      *
      * @return array<string, array{string}>

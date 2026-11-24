@@ -13,7 +13,7 @@ use Rajska\Oracle\Type;
  */
 final readonly class Raw extends Bind
 {
-    public static function in(?string $bytes): self
+    public static function in(#[\SensitiveParameter] ?string $bytes): self
     {
         return new self(Type::Raw, Direction::In, $bytes);
     }
@@ -29,7 +29,7 @@ final readonly class Raw extends Bind
     /**
      * Declares the largest buffer: 32767 bytes.
      */
-    public static function inOut(?string $bytes): self
+    public static function inOut(#[\SensitiveParameter] ?string $bytes): self
     {
         return new self(Type::Raw, Direction::InOut, $bytes);
     }

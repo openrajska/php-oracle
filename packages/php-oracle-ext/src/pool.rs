@@ -675,6 +675,23 @@ mod tests {
         std::fs::read_dir("/proc/self/task").unwrap().count()
     }
 
+    /// Whether this process comes to run `expected` threads within a
+    /// second. A joined thread's /proc entry can outlive the join by a
+    /// moment: join returns once the thread released its memory, before
+    /// the kernel reaps its task.
+    fn settles_at(expected: usize) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            if threads() == expected {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// Pool and lifecycle 14: the child forgets the Pool it inherited (never
     /// closes it, which would log off the parent's Sessions over shared
     /// sockets) and creates its own.
@@ -752,10 +769,10 @@ mod tests {
                 let lease = registry.pool(&key().view()).unwrap().acquire().unwrap();
                 lease.session().ping().unwrap();
             }
-            let with_pools = threads();
+            let with_pools = settles_at(before + 2);
             let mut logged = Vec::new();
             registry.shutdown(&mut |message| logged.push(message));
-            with_pools == before + 2 && threads() == before && logged.is_empty()
+            with_pools && settles_at(before) && logged.is_empty()
         }));
     }
 
@@ -771,7 +788,7 @@ mod tests {
             let lease = registry.pool(&key().view()).unwrap().acquire().unwrap();
             let mut logged = Vec::new();
             registry.shutdown(&mut |message| logged.push(message));
-            let leaked = threads() == before + 1;
+            let leaked = settles_at(before + 1);
             drop(lease);
             leaked && logged.len() == 1 && logged[0].contains("leaking it")
         }));

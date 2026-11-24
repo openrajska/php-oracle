@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
-use Rajska\Oracle\Driver\DriverBatch;
+use Rajska\Oracle\Driver\DriverArrayDml;
 
 /**
  * @internal
  */
-final readonly class ExtensionBatch implements DriverBatch
+final readonly class ExtensionArrayDml implements DriverArrayDml
 {
     /**
      * @param array<string, list<list<mixed>>> $outValues

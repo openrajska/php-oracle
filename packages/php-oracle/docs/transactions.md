@@ -95,7 +95,7 @@ A Release always rolls back, so a transaction left open never commits: see
 one execute and one Round trip:
 
 ```php
-$batch = $connection->runMany(
+$arrayDml = $connection->runMany(
     'insert into orders (customer_id, total) values (:customer, :total) returning id into :id',
     [
         ['customer' => 1, 'total' => 30, 'id' => Number::out()],
@@ -103,12 +103,12 @@ $batch = $connection->runMany(
     ],
 );
 
-$batch->count();    // 2 rows sent
-$batch->affected(); // 2 rows inserted
-$ids = array_map(fn (OutValue $id): ?int => $id->int(), $batch->out('id')); // one OutValue per row
+$arrayDml->count();    // 2 rows sent
+$arrayDml->affected(); // 2 rows inserted
+$ids = array_map(fn (OutValue $id): ?int => $id->int(), $arrayDml->out('id')); // one OutValue per row
 ```
 
-**It applies every row or none.** When rows fail, one `BatchException` lists
+**It applies every row or none.** When rows fail, one `ArrayDmlException` lists
 every failing row, and nothing of that call is applied:
 
 ```php
@@ -118,7 +118,7 @@ try {
         ['name' => 'Duplicate', 'email' => 'ada@example.com'], // already taken
         ['name' => null, 'email' => 'nobody@example.com'],      // NOT NULL
     ]);
-} catch (BatchException $exception) {
+} catch (ArrayDmlException $exception) {
     $exception->getMessage(); // '2 of 3 rows failed; first: row 1: ORA-00001: …'
     foreach ($exception->rows() as $failure) {
         // $failure->index (0-based), $failure->code, $failure->message
@@ -126,14 +126,15 @@ try {
 }
 ```
 
-- Under Autocommit, the rows commit with the execute; a failed call costs one
-  more Round trip to roll back.
+- Under Autocommit, DML rows commit with the execute; a PL/SQL block commits
+  after it, once the call succeeded (one more Round trip). A failed call
+  never commits and costs one more Round trip to roll back.
 - Inside a transaction, each call sets a savepoint first (one more Round
   trip) and a failed call rolls back to it: the transaction's earlier work
   stays, still uncommitted.
-- There is no batch size: chunk large inputs yourself, with
+- There is no limit on the rows of one call: chunk large inputs yourself, with
   `array_chunk($rows, 5000)`.
-- `runMany($sql, [])` makes no Round trip and returns an empty `Batch`.
+- `runMany($sql, [])` makes no Round trip and returns an empty `ArrayDml`.
 
 **Rows are checked before any Round trip.** Every row needs the same keys.
 Each column takes one type, from its first non-null value (`int` and `float`

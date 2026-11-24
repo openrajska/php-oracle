@@ -6,7 +6,7 @@
 | `select($sql, $binds)` | a query; the same as `run()->rows()` | `Cursor` |
 | `procedure($name, $binds)` | a stored procedure, by name | `Execution` |
 | `function($name, $binds)` | a stored function, by name | `FunctionCall`, then a type terminal |
-| `runMany($sql, $rows)` | one statement per bind row, in one Round trip ([Array DML](transactions.md#array-dml)) | `Batch` |
+| `runMany($sql, $rows)` | one statement per bind row, in one Round trip ([Array DML](transactions.md#array-dml)) | `ArrayDml` |
 
 Binds are always named: `['id' => 1]` for `:id`. See [Binds](binds.md).
 

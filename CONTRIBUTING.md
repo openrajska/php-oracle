@@ -104,6 +104,15 @@ revert: feat(core): add implicit results support
 This reverts commit 1a2b3c4.
 ```
 
+### Merge commits
+
+A merge commit that integrates one branch into another (a ticket branch
+into its integration branch, or the integration branch back into a ticket
+branch to bring it up to date) keeps the message git writes by default,
+`Merge branch '…' into …` or `Merge remote-tracking branch '…' into …`.
+It is exempt from the type and the 72-character rules above. Never rewrite
+history to change one.
+
 ### Examples
 
 ```

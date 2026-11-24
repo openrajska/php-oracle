@@ -6,11 +6,11 @@ namespace Rajska\Oracle\Tests\Api;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Rajska\Oracle\Batch;
+use Rajska\Oracle\ArrayDml;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Connection;
-use Rajska\Oracle\Exceptions\BatchException;
+use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\RowFailure;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -21,7 +21,7 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 
 /**
  * Array DML (catalog #26): `runMany()` sends every row in one Round trip,
- * gives a `Batch`, and throws one `BatchException` listing every failing
+ * gives a `ArrayDml`, and throws one `ArrayDmlException` listing every failing
  * row, none of that call's rows applied (fixtures/sql/06_batch.sql,
  * 11_transaction.sql). One observer Session serves the whole file.
  */
@@ -56,17 +56,17 @@ final class ArrayDmlTest extends TestCase
     }
 
     /**
-     * Transactions 9: a Batch counts the rows sent and the rows applied,
+     * Transactions 9: an ArrayDml counts the rows sent and the rows applied,
      * and under Autocommit they are committed.
      */
     #[Test]
-    public function run_many_gives_a_batch_and_commits_under_autocommit(): void
+    public function run_many_gives_an_array_dml_and_commits_under_autocommit(): void
     {
-        $batch = $this->connection->runMany(self::INSERT, self::valid(3));
+        $arrayDml = $this->connection->runMany(self::INSERT, self::valid(3));
 
-        self::assertInstanceOf(Batch::class, $batch);
-        self::assertSame(3, $batch->affected());
-        self::assertCount(3, $batch);
+        self::assertInstanceOf(ArrayDml::class, $arrayDml);
+        self::assertSame(3, $arrayDml->affected());
+        self::assertCount(3, $arrayDml);
         self::assertSame(3, self::committed());
 
         $updated = $this->connection->runMany('update fx_batch_rows set qty = 0 where id >= :low', [['low' => 2], ['low' => 1]]);
@@ -100,16 +100,16 @@ final class ArrayDmlTest extends TestCase
 
     /**
      * out() with an unknown or an IN-only name fails like Execution::out(),
-     * and an empty Batch has no OUT values at all.
+     * and so does any name on an empty ArrayDml, which has no OUT values.
      */
     #[Test]
     public function out_with_an_unknown_or_an_in_only_name_fails(): void
     {
-        $batch = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => Varchar::out()]]);
+        $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => Varchar::out()]]);
 
         foreach (['missing' => "No OUT bind is named 'missing'; they are 'label'.", 'PREFIX' => "Bind 'prefix' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back."] as $name => $message) {
             try {
-                $batch->out($name);
+                $arrayDml->out($name);
                 self::fail("out('$name') did not fail.");
             } catch (UsageException $e) {
                 self::assertSame($message, $e->getMessage());
@@ -119,12 +119,14 @@ final class ArrayDmlTest extends TestCase
         $empty = $this->connection->runMany(self::INSERT, []);
         self::assertCount(0, $empty);
         self::assertSame(0, $empty->affected());
-        self::assertSame([], $empty->out('anything'));
+        $this->expectException(UsageException::class);
+        $this->expectExceptionMessage("No OUT bind is named 'anything'; the statement has none.");
+        $empty->out('anything');
     }
 
     /**
      * Transactions 10 and Errors 12: inside begin(), failing rows give one
-     * BatchException, and only that call is undone: the transaction and
+     * ArrayDmlException, and only that call is undone: the transaction and
      * its earlier work go on.
      */
     #[Test]
@@ -140,7 +142,7 @@ final class ArrayDmlTest extends TestCase
         try {
             $this->connection->runMany(self::INSERT, $rows);
             self::fail('The bad rows were inserted.');
-        } catch (BatchException $e) {
+        } catch (ArrayDmlException $e) {
             self::assertSame(1, $e->getCode());
             self::assertSame(self::INSERT, $e->sql());
             self::assertStringStartsWith('3 of 8 rows failed; first: row 3: ORA-00001', $e->getMessage());
@@ -175,7 +177,7 @@ final class ArrayDmlTest extends TestCase
                 self::assertStringNotContainsString($secret, $e->getMessage(), $kind);
                 self::assertStringNotContainsString($secret, $e->getTraceAsString(), $kind);
                 self::assertStringNotContainsString($secret, (string) $e, $kind);
-                if ($e instanceof BatchException) {
+                if ($e instanceof ArrayDmlException) {
                     foreach ($e->rows() as $row) {
                         self::assertStringNotContainsString($secret, $row->message, $kind);
                     }

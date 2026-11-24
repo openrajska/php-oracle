@@ -12,13 +12,16 @@
 //!   column, and a column of typed binds takes no plain value;
 //! - a REF CURSOR (`Cursor::out()`) is refused, and so is a query.
 //!
-//! The call is atomic. Rows that fail do not stop the batch (C3): their
+//! The call is atomic. Rows that fail do not stop the call (C3): their
 //! errors come back together, and the Extension then rolls back what the
 //! others did. Under Autocommit that is a rollback (C21 commits nothing when
 //! a row failed); inside an Explicit transaction, the execute runs after a
 //! savepoint (one Round trip more) and rolls back to it, so earlier work in
 //! the transaction stays. The same goes for any other failure of the
 //! execute, such as a PL/SQL block failing at a row: the rows before it ran.
+//! Under Autocommit a PL/SQL block runs without the commit, which follows
+//! once the call succeeded (one Round trip more): a block can fail after its
+//! rows ran, and a failed call never commits.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -38,7 +41,7 @@ use crate::object::Describe;
 use crate::options::Options;
 use crate::temp_lob::{TempLob, Written};
 
-/// The savepoint a batch inside an Explicit transaction rolls back to.
+/// The savepoint an Array DML call inside an Explicit transaction rolls back to.
 const SAVEPOINT: &str = "rajska_run_many";
 
 /// What one Array DML execute gave back: the DML count and, per OUT bind,
@@ -67,19 +70,27 @@ pub fn execute(
     }
     state.timed(options.timeout, || {
         // Building parses the SQL on the client: no Round trip.
-        let mut statement = state.with(|session| {
-            Ok(options
-                .commit(session.statement(sql)?)
-                .batch_errors()
-                .fetch_lobs()
-                .build()?)
-        })?;
+        let build = |commit: bool| {
+            state.with(|session| {
+                let builder = session.statement(sql)?.batch_errors().fetch_lobs();
+                Ok(if commit { options.commit(builder) } else { builder }.build()?)
+            })
+        };
+        let mut statement = build(options.autocommit)?;
         if statement.is_query() {
             return Err(Error::usage(
                 "runMany() runs DML or PL/SQL, and this statement is a query; read rows with select().",
             ));
         }
         let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
+        // A PL/SQL block can fail after its rows ran (Implicit results, a
+        // LOB OUT value): under Autocommit it runs without the commit, which
+        // follows only once the call succeeded (one Round trip more).
+        let commit_after = options.autocommit && is_plsql;
+        if commit_after {
+            drop(statement);
+            statement = build(false)?;
+        }
         // Every check that needs no Round trip, before the LOB writes and
         // the savepoint, which do.
         rows.matched(statement.bind_names())?;
@@ -107,17 +118,13 @@ pub fn execute(
             Err(e) => return Err(undo(state, options, e)),
         };
         if !result.implicit_results().is_empty() {
-            // Seen only once the block ran: under Autocommit its rows are
-            // committed already (the commit rides on the execute).
-            let refused = "runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row.";
+            // Seen only once the block ran, which never committed.
             return Err(undo(
                 state,
                 options,
-                Error::usage(if options.autocommit {
-                    format!("{refused} Under Autocommit, the block already ran and committed for every row.")
-                } else {
-                    format!("{refused} The block's rows are undone.")
-                }),
+                Error::usage(
+                    "runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row. The block's rows are undone.",
+                ),
             ));
         }
         let failures: Vec<RowFailure> = result
@@ -130,12 +137,19 @@ pub fn execute(
             })
             .collect();
         if !failures.is_empty() {
-            return Err(undo(state, options, Error::batch(failures, rows.0.len())));
+            return Err(undo(state, options, Error::array_dml(failures, rows.0.len())));
         }
         // What the execute gave back may point at the temporary LOBs its
         // binds were written into: everything born of it keeps them.
         let options = &options.keeping(rows.take_written(state));
-        let out_values = rows.out_values(&mut result, is_plsql, state, options)?;
+        let out_values = rows.out_values(&mut result, is_plsql, state, options);
+        let out_values = if commit_after {
+            let committed =
+                out_values.and_then(|values| state.with(|session| Ok(session.commit()?)).map(|()| values));
+            committed.map_err(|e| undo(state, options, e))?
+        } else {
+            out_values?
+        };
         Ok(Outcome {
             // The server counts 1 per row for a PL/SQL block; only DML counts.
             row_count: if is_dml { result.rows_affected() } else { 0 },
@@ -144,11 +158,11 @@ pub fn execute(
     })
 }
 
-/// The crate's error for a batch of `total` rows. Past 65535 failing rows
-/// the server lists none, so there is no BatchException to give. A
-/// placeholder written twice in SQL needs one value per occurrence, which
-/// named rows cannot give yet. Types differing down a column are caught
-/// before, by [`Rows::read`].
+/// The crate's error for an Array DML call of `total` rows. Past 65535
+/// failing rows the server lists none, so there is no ArrayDmlException to
+/// give. A placeholder written twice in SQL needs one value per occurrence,
+/// which named rows cannot give yet. Types differing down a column are
+/// caught before, by [`Rows::read`].
 fn executed_error(e: oracledb::Error, total: usize) -> Error {
     match e.kind() {
         ErrorKind::TooManyBatchErrors(failed) => Error::new(

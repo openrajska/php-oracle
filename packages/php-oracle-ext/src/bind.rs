@@ -56,7 +56,7 @@ pub const MAX_VARCHAR2: usize = 32767;
 pub enum Value {
     /// NULL as VARCHAR2.
     Null(Option<String>),
-    /// NULL of another type: a NULL in a batch column of that type.
+    /// NULL of another type: a NULL in an Array DML column of that type.
     NullOf(&'static DbType),
     Int(i64),
     Number(OracleNumber),
@@ -99,7 +99,7 @@ impl Value {
 /// user wrote.
 pub struct Binds(pub Vec<(Name, Value)>);
 
-/// A bind's name, shared by the rows of a batch that write it the same.
+/// A bind's name, shared by the rows of an Array DML call that write it the same.
 pub type Name = Rc<str>;
 
 /// Up to this many binds, names are compared by a scan instead of a map.
@@ -131,7 +131,7 @@ impl Binds {
     }
 
     /// [`Binds::read`], with the class entries already looked up and the
-    /// binds of an earlier row, `like` (the rows of a batch share both):
+    /// binds of an earlier row, `like` (the rows of an Array DML call share both):
     /// a name written as `like` writes it at the same position is shared,
     /// and checked already.
     pub fn read_with(

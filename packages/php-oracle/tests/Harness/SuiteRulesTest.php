@@ -30,6 +30,22 @@ final class SuiteRulesTest extends TestCase
         }
     }
 
+    #[Test]
+    public function traces_show_string_arguments_whole(): void
+    {
+        $throw = static function (string $argument): never {
+            throw new RuntimeException('boom');
+        };
+
+        try {
+            $throw('a string longer than fifteen bytes');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString("('a string longer than fifteen bytes')", $exception->getTraceAsString());
+
+            return;
+        }
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
