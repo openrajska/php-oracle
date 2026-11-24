@@ -152,6 +152,12 @@ ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
        -d extension=/var/cache/cargo-target/debug/librajska_oracle.so vendor/bin/phpunit
 ```
 
+Core's suite has three parts (`--testsuite <name>` runs one): `harness` (the
+test helpers), `conformance` (the conformance catalog of spec #32, through the
+Driver contract: `new ExtensionDriver()->connect($config)`) and `api` (Core's
+public API). The Extension's stub, `packages/php-oracle-ext/rajska_oracle.stub.php`,
+has a copy in `packages/php-oracle/stubs/` for PHPStan; change both together.
+
 Core's suite fails on any PHP warning, notice or deprecation and runs with
 `zend.exception_ignore_args=Off` (`phpunit.xml.dist`). It reaches Oracle through
 `ORACLE_CONNECT_STRING`, `ORACLE_USER` and `ORACLE_PASSWORD`, which ddev sets.
