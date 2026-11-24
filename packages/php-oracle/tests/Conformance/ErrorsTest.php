@@ -81,8 +81,7 @@ final class ErrorsTest extends ConformanceTestCase
     #[Test]
     public function a_compilation_error_gives_a_warning_and_a_valid_unit_gives_null(): void
     {
-        // A pooled Session keeps its last warning: start from a fresh one.
-        $connection = $this->connect(...self::ownPool());
+        $connection = $this->connect();
         $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
         $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
         $valid = "create or replace procedure $procedure is begin null; end;";
@@ -125,28 +124,60 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 13, the gap: the crate keeps only the Session's last warning, so
-     * the Extension cannot tell a repeated warning from the stale one.
+     * Errors 13: each Execution reports its own warning, so the same one
+     * twice in a row on one Session is reported both times.
      */
     #[Test]
     public function the_same_compilation_error_twice_in_a_row_gives_a_warning_each_time(): void
     {
-        $connection = $this->connect(...self::ownPool());
+        $connection = $this->connect();
         $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
         $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
 
         try {
-            $first = $connection->execute($invalid, [], self::options());
-            self::assertNotNull($first->warning());
-            $again = $connection->execute($invalid, [], self::options());
+            $first = $connection->execute($invalid, [], self::options())->warning();
+            $again = $connection->execute($invalid, [], self::options())->warning();
         } finally {
             $connection->execute("drop procedure $procedure", [], self::options());
         }
 
-        if ($again->warning() === null) {
-            self::markTestIncomplete('Needs a per-execute warning in the oracledb fork (#37 hand-off).');
+        self::assertNotNull($first);
+        self::assertNotNull($again);
+        self::assertStringContainsString('compilation errors', $again);
+    }
+
+    /**
+     * Errors 13: a warning never leaks into a later Execution, nor into
+     * another Connection that reuses the pooled Session.
+     */
+    #[Test]
+    public function a_warning_never_leaks_into_a_later_execution_or_the_next_connection_on_the_pooled_session(): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1];
+        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
+        $first = $this->connect(...$fields);
+        $session = self::session($first);
+
+        try {
+            self::assertNotNull($first->execute($invalid, [], self::options())->warning());
+            self::assertNull($first->execute('begin null; end;', [], self::options())->warning(), 'a later block');
+            self::assertNull($first->execute('select 1 from dual', [], self::options())->warning(), 'a later query');
+            // The Session's last warning again, as the Connection is released.
+            self::assertNotNull($first->execute($invalid, [], self::options())->warning());
+            $first->close();
+
+            $second = $this->connect(...$fields);
+            self::assertSame($session, self::session($second));
+            self::assertNull($second->execute('select 1 from dual', [], self::options())->warning(), 'a query');
+            self::assertNull($second->execute('begin null; end;', [], self::options())->warning(), 'a block');
+            self::assertNull(
+                $second->execute("create or replace procedure $procedure is begin null; end;", [], self::options())->warning(),
+                'a valid unit',
+            );
+        } finally {
+            $this->connect()->execute("drop procedure $procedure", [], self::options());
         }
-        self::assertStringContainsString('compilation errors', $again->warning());
     }
 
     /**
