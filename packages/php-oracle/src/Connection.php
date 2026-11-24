@@ -7,14 +7,31 @@ namespace Rajska\Oracle;
 use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverOptions;
+use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
  * A Session to run statements on. Get one from `Oracle::connect()`.
+ *
+ * Outside an Explicit transaction every statement commits on its own, in
+ * its own Round trip (Autocommit), and a failed one commits nothing. Use
+ * `transaction()`, or `begin()` with `commit()` / `rollback()`, to group
+ * statements.
  */
 final class Connection
 {
     private readonly ConnectionState $state;
+
+    /**
+     * Inside an Explicit transaction: statements run without Autocommit.
+     */
+    private bool $inTransaction = false;
+
+    /**
+     * The closure of `transaction()` is running: it owns the transaction's
+     * end.
+     */
+    private bool $inCallback = false;
 
     /**
      * @internal use Oracle::connect()
@@ -43,6 +60,9 @@ final class Connection
 
     /**
      * Runs a query and returns its rows: the same as `run()->rows()`.
+     *
+     * Under Autocommit the query commits too, so `SELECT … FOR UPDATE`
+     * loses its locks at once: run it inside a transaction to keep them.
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
@@ -87,6 +107,99 @@ final class Connection
     }
 
     /**
+     * Runs `$callback` in an Explicit transaction and returns its value.
+     *
+     * The transaction commits when the closure returns. When it throws
+     * anything, the transaction rolls back and the same exception is
+     * rethrown; if that rollback fails too, its failure is chained as the
+     * exception's `previous` (at the end of the chain, if it already has
+     * one). If the commit fails (a deferred constraint, ORA-02091), its
+     * exception propagates. Either way, the Connection is back in
+     * Autocommit.
+     *
+     * Inside the closure, `begin()`, `commit()`, `rollback()` and
+     * `transaction()` throw. Savepoints go through `run('SAVEPOINT name')`.
+     *
+     * @template T
+     *
+     * @param \Closure(self): T $callback receives this Connection
+     *
+     * @return T
+     *
+     * @throws UsageException inside another transaction, before any Round trip
+     * @throws \Throwable what the closure throws, or the commit's failure
+     */
+    public function transaction(\Closure $callback): mixed
+    {
+        $this->begin();
+        $this->inCallback = true;
+        try {
+            $result = $callback($this);
+        } catch (\Throwable $e) {
+            $this->inCallback = false;
+            $this->rollBackAfter($e);
+        }
+        $this->inCallback = false;
+        $this->commit();
+
+        return $result;
+    }
+
+    /**
+     * Opens an Explicit transaction, with no Round trip: statements stop
+     * committing on their own until `commit()` or `rollback()`.
+     *
+     * Transactions are flat: savepoints go through `run('SAVEPOINT name')`,
+     * and `SET TRANSACTION` through `run()` right after `begin()`.
+     *
+     * @throws UsageException inside a transaction, before any Round trip
+     */
+    public function begin(): void
+    {
+        $this->ensureOpen();
+        if ($this->inTransaction) {
+            throw new UsageException(
+                "Transactions do not nest, and one is already open. Use run('SAVEPOINT name') for a savepoint.",
+            );
+        }
+        $this->inTransaction = true;
+    }
+
+    /**
+     * Commits the Explicit transaction, in one Round trip, and goes back to
+     * Autocommit, also when the commit fails.
+     *
+     * @throws UsageException outside a transaction or inside `transaction()`, before any Round trip
+     * @throws OracleException from the server, such as ORA-02091 for a deferred constraint
+     */
+    public function commit(): void
+    {
+        $this->ensureEnding('commit()', 'commit');
+        try {
+            $this->driver->commit();
+        } finally {
+            $this->inTransaction = false;
+        }
+    }
+
+    /**
+     * Rolls the Explicit transaction back, in one Round trip, and goes back
+     * to Autocommit.
+     *
+     * @throws UsageException outside a transaction or inside `transaction()`, before any Round trip
+     * @throws OracleException from the server, or for a Broken Connection
+     */
+    public function rollback(): void
+    {
+        $this->ensureEnding('rollback()', 'roll back');
+        try {
+            $this->driver->rollback();
+        } finally {
+            $this->inTransaction = false;
+        }
+    }
+
+    /**
      * Releases the Session now: an open transaction rolls back (never
      * commits), the Session goes back to the Pool, and every later call on
      * this Connection or its Cursors fails. Idempotent.
@@ -105,13 +218,65 @@ final class Connection
         $this->driver->close();
     }
 
+    /**
+     * Rolls back after the closure of `transaction()` threw `$e`, then
+     * rethrows `$e`, with a failed rollback chained as its `previous`.
+     */
+    private function rollBackAfter(\Throwable $e): never
+    {
+        try {
+            // A closure that closed the Connection has rolled back already.
+            if (!$this->state->released) {
+                $this->driver->rollback();
+            }
+        } catch (\Throwable $failure) {
+            $last = $e;
+            while ($last !== $failure && ($previous = $last->getPrevious()) !== null) {
+                $last = $previous;
+            }
+            if ($last !== $failure) {
+                // Throwable has no setter: `previous` is private to Exception and to Error.
+                new \ReflectionProperty($last instanceof \Exception ? \Exception::class : \Error::class, 'previous')
+                    ->setValue($last, $failure);
+            }
+        } finally {
+            $this->inTransaction = false;
+        }
+
+        throw $e;
+    }
+
+    private function ensureOpen(): void
+    {
+        if ($this->state->released) {
+            throw new UsageException('The Connection is closed.');
+        }
+    }
+
+    /**
+     * Fails unless `commit()` or `rollback()` can end a transaction now.
+     */
+    private function ensureEnding(string $method, string $verb): void
+    {
+        $this->ensureOpen();
+        if ($this->inCallback) {
+            throw new UsageException(
+                "$method inside transaction(): the transaction commits when the closure returns and rolls back when it throws.",
+            );
+        }
+        if (!$this->inTransaction) {
+            throw new UsageException(
+                "There is no transaction to $verb: call begin() first. Outside a transaction, every statement commits on its own.",
+            );
+        }
+    }
+
     private function resolve(?ExecuteOptions $options): DriverOptions
     {
         $options ??= new ExecuteOptions();
 
         return new DriverOptions(
-            // No Explicit transaction yet: always Autocommit.
-            autocommit: true,
+            autocommit: !$this->inTransaction,
             timeout: $options->timeout ?? $this->config->callTimeout,
             fetchSize: $options->fetchSize ?? $this->config->fetchSize,
             values: $options->values ?? $this->config->values,
