@@ -38,6 +38,15 @@ pub enum TemporalMode {
     String,
 }
 
+/// How CLOB, NCLOB and BLOB values reach PHP.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LobMode {
+    /// A native `Lob` over the locator, read chunk by chunk.
+    Locator,
+    /// The whole value as a string, read through the locator at fetch.
+    Inline,
+}
+
 /// Rows keyed by column name, or lists in column order.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RowShape {
@@ -63,6 +72,7 @@ pub struct Options {
     pub fetch_size: u32,
     pub numbers: NumberMode,
     pub temporals: TemporalMode,
+    pub lobs: LobMode,
     pub row_shape: RowShape,
     pub key_case: KeyCase,
 }
@@ -72,7 +82,10 @@ impl Options {
         let fields = Fields::new("$options", options, OPTION_KEYS)?;
         let autocommit = fields.bool("autocommit")?;
         let timeout = fields.optional_milliseconds("timeout")?;
-        fields.choice("lobs", &["locator", "inline"])?;
+        let lobs = match fields.choice("lobs", &["locator", "inline"])? {
+            "inline" => LobMode::Inline,
+            _ => LobMode::Locator,
+        };
         let numbers = match fields.choice("numbers", &["exact", "float"])? {
             "float" => NumberMode::Float,
             _ => NumberMode::Exact,
@@ -100,6 +113,7 @@ impl Options {
             fetch_size,
             numbers,
             temporals,
+            lobs,
             row_shape,
             key_case,
         })

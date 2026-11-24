@@ -79,6 +79,31 @@ final class OutValue
     }
 
     /**
+     * A CLOB, NCLOB or BLOB value. Under `LobMode::Inline` it arrives as a
+     * string: read it with `string()`.
+     */
+    public function lob(): ?Lob
+    {
+        $value = $this->one('lob()');
+
+        return $value === null || $value instanceof Lob ? $value : throw $this->wrongType($value, 'a Lob');
+    }
+
+    /**
+     * An Object (keyed by attribute name), a Collection (a `list`) or an
+     * Associative array (`int` keys, in key order). Atomically NULL gives
+     * `null`.
+     *
+     * @return array<mixed>|null
+     */
+    public function array(): ?array
+    {
+        $value = $this->one('array()');
+
+        return $value === null || \is_array($value) ? $value : throw $this->wrongType($value, 'an array');
+    }
+
+    /**
      * A REF CURSOR, as a lazy Cursor with the Execution's options; never
      * null. One the block never opened fails on its first read
      * (ORA-01001). The same Cursor on every call.
@@ -129,6 +154,7 @@ final class OutValue
         $hint = match (true) {
             \is_string($value) && is_numeric($value) && $expected !== 'a string' => ' A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).',
             \is_string($value) && $expected === 'a DateTimeImmutable' => ' Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().',
+            \is_string($value) && $expected === 'a Lob' => ' Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().',
             $value instanceof \DateTimeImmutable => ' Read it with dateTime().',
             $value instanceof \DateInterval => ' Read it with interval().',
             \is_int($value) => ' Read it with int().',
@@ -136,6 +162,8 @@ final class OutValue
             \is_string($value) => ' Read it with string().',
             \is_bool($value) => ' Read it with bool().',
             $value instanceof Cursor => ' Read it with cursor().',
+            $value instanceof Lob => ' Read it with lob().',
+            \is_array($value) => ' Read it with array().',
             default => ' Read it with value().',
         };
 

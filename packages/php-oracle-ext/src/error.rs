@@ -186,6 +186,14 @@ impl Error {
         &self.message
     }
 
+    /// The same error, its message after `what` ("Bind 'x': ").
+    pub fn prefixed(self, what: impl std::fmt::Display) -> Self {
+        Self {
+            message: format!("{what}: {}", self.message),
+            ..self
+        }
+    }
+
     /// A panic caught at the PHP boundary.
     fn panic(payload: Box<dyn Any + Send>) -> Self {
         let text = payload
@@ -293,8 +301,19 @@ fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
         | E::ParseError(..) => Kind::ConnectionLost,
         E::DbError(db) => kind_of_code(db.code()),
         // A feature the crate lacks, such as a TSLTZ value under a named
-        // DBTIMEZONE: fails loudly, never with wrong data.
-        E::NotImplemented(_) => Kind::Unsupported,
+        // DBTIMEZONE, or an Object with an attribute of a later type, or an
+        // instance of a subtype: fails loudly, never with wrong data.
+        E::NotImplemented(_)
+        | E::UnsupportedDbType(_)
+        | E::UnsupportedTdsType(_)
+        | E::UnsupportedObjectMetadataType(_)
+        | E::UnsupportedDbObjectAttributeType(..)
+        | E::UnsupportedDbObjectSubtype(_) => Kind::Unsupported,
+        // A value that does not fit an Object type, checked on the client
+        // before any Round trip.
+        E::WrongDbObjectTypeKind(..)
+        | E::CannotStoreDbObjectValue(..)
+        | E::MissingDbObjectType(_) => Kind::Usage,
         E::CallTimeoutExceeded => Kind::Timeout,
         _ => Kind::Database,
     }
@@ -432,6 +451,31 @@ mod tests {
             )),
             Kind::Unsupported
         );
+    }
+
+    /// Objects 12: what the crate cannot read or write in an Object fails
+    /// as unsupported; a value that does not fit its type, as usage.
+    #[test]
+    fn object_errors_classify_as_unsupported_or_usage() {
+        for kind in [
+            ErrorKind::UnsupportedTdsType(9),
+            ErrorKind::UnsupportedObjectMetadataType("X".to_string()),
+            ErrorKind::UnsupportedDbObjectAttributeType(
+                "attribute A".to_string(),
+                "CLOB".to_string(),
+            ),
+            ErrorKind::UnsupportedDbObjectSubtype("HR.DOG".to_string()),
+            ErrorKind::UnsupportedDbType(oracledb::DB_TYPE_XMLTYPE),
+        ] {
+            assert_eq!(kind_of(&kind), Kind::Unsupported, "{kind:?}");
+        }
+        for kind in [
+            ErrorKind::WrongDbObjectTypeKind("HR.LIST".to_string(), "an object type"),
+            ErrorKind::CannotStoreDbObjectValue("x".to_string(), "y".to_string(), "z".to_string()),
+            ErrorKind::MissingDbObjectType("x".to_string()),
+        ] {
+            assert_eq!(kind_of(&kind), Kind::Usage, "{kind:?}");
+        }
     }
 
     #[test]

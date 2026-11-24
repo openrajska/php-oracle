@@ -8,14 +8,16 @@ use ext_php_rs::types::{ZendClassObject, Zval};
 use oracledb::{
     DB_TYPE_BINARY_DOUBLE, DB_TYPE_BINARY_FLOAT, DB_TYPE_BINARY_INTEGER, DB_TYPE_BOOLEAN,
     DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_INTERVAL_DS, DB_TYPE_INTERVAL_YM, DB_TYPE_LONG,
-    DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_ROWID,
-    DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleIntervalDS, OracleIntervalYM, OracleNumber,
-    OracleTimestamp, Row,
+    DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW,
+    DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleIntervalDS, OracleIntervalYM,
+    OracleNumber, OracleTimestamp, Row,
 };
 
 use crate::connection::{ConnState, CursorSlot};
 use crate::cursor::NativeCursor;
 use crate::error::Error;
+use crate::lob;
+use crate::object;
 use crate::options::{NumberMode, Options};
 use crate::temporal::{self, Temporal};
 
@@ -42,6 +44,12 @@ pub fn cell(
     let db_type = metadata.db_type();
     if db_type == DB_TYPE_CURSOR {
         return cursor(row, index, state, options, Vec::new());
+    }
+    if lob::lob_type(db_type).is_some() {
+        return lob::cell(row, index, state, options, what);
+    }
+    if db_type == DB_TYPE_OBJECT {
+        return object::cell(row, index, options, &object::Path::Root(what));
     }
     if let Some(temporal) = Temporal::of(db_type) {
         return match row.get::<Option<OracleTimestamp>>(index)? {
@@ -140,7 +148,11 @@ pub fn cursor(
 
 /// NUMBER: `int` when integral and within 64 bits, else the exact canonical
 /// string, or a `float` under `NumberMode::Float` when it is not integral.
-fn number_value(zval: &mut Zval, number: OracleNumber, numbers: NumberMode) -> Result<(), Error> {
+pub fn number_value(
+    zval: &mut Zval,
+    number: OracleNumber,
+    numbers: NumberMode,
+) -> Result<(), Error> {
     // Display gives the exact decimal text, never an exponent.
     let text = number.to_string();
     if let Ok(int) = text.parse::<i64>() {
@@ -157,11 +169,11 @@ fn number_value(zval: &mut Zval, number: OracleNumber, numbers: NumberMode) -> R
 }
 
 /// A BINARY_FLOAT as the `float` its shortest round-trip text writes.
-fn widen(value: f32) -> f64 {
+pub fn widen(value: f32) -> f64 {
     format!("{value}").parse().unwrap_or(f64::from(value))
 }
 
-fn set_string(zval: &mut Zval, text: &str) -> Result<(), Error> {
+pub fn set_string(zval: &mut Zval, text: &str) -> Result<(), Error> {
     zval.set_string(text, false)
         .map_err(|e| Error::unsupported(e.to_string()))
 }

@@ -16,7 +16,7 @@
 //! - `min` and `increment` are 1 (C12); a Session idle for 60 s or more is
 //!   pinged on acquire and dropped if the ping fails.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -182,9 +182,26 @@ pub struct Lease {
     // Ended in Drop, before `permit` frees.
     session: Option<oracledb::Connection>,
     permit: Option<Permit>,
+    notes: Arc<SessionNotes>,
+}
+
+/// What the Extension learns about a Session while using it, kept with the
+/// Session across loans, as the crate keeps its type descriptions (spec #32
+/// §7: described on first use, cached per Session, never invalidated).
+#[derive(Default)]
+pub struct SessionNotes {
+    /// Packaged Collection types already checked, by canonical name:
+    /// whether each is indexed by strings (`INDEX BY VARCHAR2`), which the
+    /// crate cannot tell from a nested table.
+    pub string_indexed: Mutex<HashMap<String, bool>>,
 }
 
 impl Lease {
+    /// What the Extension learned about this Session so far.
+    pub fn notes(&self) -> &SessionNotes {
+        &self.notes
+    }
+
     pub fn session(&self) -> &oracledb::Connection {
         // Only Drop and discard() take it.
         self.session
@@ -254,6 +271,7 @@ fn connect_standalone(key: &PoolKey) -> Result<Lease, Error> {
     Ok(Lease {
         session: Some(session),
         permit: None,
+        notes: Arc::default(),
     })
 }
 
@@ -273,8 +291,9 @@ pub struct SharedPool {
     /// `connectTimeout`, in ms, for the error when it runs out.
     connect_timeout: i64,
     /// The Sessions already set up, by (SID, serial#) from the logon
-    /// handshake: a Session is set up once, when it is new.
-    set_up: Mutex<HashSet<(usize, usize)>>,
+    /// handshake: a Session is set up once, when it is new. Each keeps its
+    /// notes across loans.
+    set_up: Mutex<HashMap<(usize, usize), Arc<SessionNotes>>>,
     /// Broken Sessions the crate cannot drop (see [`Lease::discard`]), kept
     /// out of use until the Pool closes.
     discarded: Mutex<Vec<oracledb::Connection>>,
@@ -291,7 +310,7 @@ impl SharedPool {
             max_connections,
             acquire_timeout,
             connect_timeout: key.connect_timeout,
-            set_up: Mutex::new(HashSet::new()),
+            set_up: Mutex::new(HashMap::new()),
             discarded: Mutex::new(Vec::new()),
         })
     }
@@ -304,17 +323,22 @@ impl SharedPool {
             }
             _ => Error::connect(e),
         })?;
-        let lease = Lease {
+        let mut lease = Lease {
             session: Some(session),
             permit: Some(permit),
+            notes: Arc::default(),
         };
         let id = (
             lease.session().session_id().map_err(Error::connect)?,
             lease.session().serial_num().map_err(Error::connect)?,
         );
-        if !lock(&self.set_up).contains(&id) {
-            setup(lease.session())?;
-            lock(&self.set_up).insert(id);
+        let known = lock(&self.set_up).get(&id).cloned();
+        match known {
+            Some(notes) => lease.notes = notes,
+            None => {
+                setup(lease.session())?;
+                lock(&self.set_up).insert(id, Arc::clone(&lease.notes));
+            }
         }
         Ok(lease)
     }

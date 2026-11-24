@@ -17,6 +17,8 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod lob;
+mod object;
 mod options;
 mod pool;
 mod session;
@@ -30,6 +32,7 @@ pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<error::NativeException>()
         .class::<connection::NativeConnection>()
         .class::<cursor::NativeCursor>()
+        .class::<lob::NativeLob>()
         .shutdown_function(shutdown)
 }
 

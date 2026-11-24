@@ -7,6 +7,7 @@ namespace Rajska\Oracle;
 use Generator;
 use IteratorAggregate;
 use Rajska\Oracle\Driver\DriverCursor;
+use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
@@ -35,7 +36,8 @@ final class Cursor implements IteratorAggregate
     private bool $closed = false;
 
     /**
-     * The row keys of the nested `CURSOR()` columns, once known.
+     * The row keys of the handle columns (nested `CURSOR()`, CLOB, NCLOB,
+     * BLOB), once known.
      *
      * @var list<int|string>|null
      */
@@ -170,7 +172,8 @@ final class Cursor implements IteratorAggregate
 
     /**
      * The next batch, each nested `CURSOR()` cell wrapped as a Cursor nested
-     * in this one. The cells are located through `columns()`.
+     * in this one, and each LOB cell as a Lob (under `LobMode::Inline` it is
+     * a string already). The cells are located through `columns()`.
      *
      * @return list<array<int|string, mixed>>
      */
@@ -185,7 +188,7 @@ final class Cursor implements IteratorAggregate
             $keys = array_keys($rows[0]);
             $this->handles = [];
             foreach ($this->driver->columns() as $position => $column) {
-                if ($column['type'] === Type::Cursor->value) {
+                if (\in_array($column['type'], [Type::Cursor->value, Type::Clob->value, Type::NClob->value, Type::Blob->value], true)) {
                     $this->handles[] = $keys[$position];
                 }
             }
@@ -194,6 +197,8 @@ final class Cursor implements IteratorAggregate
             foreach ($rows as $index => $row) {
                 if ($row[$key] instanceof DriverCursor) {
                     $rows[$index][$key] = new self($row[$key], $this->connection, $this);
+                } elseif ($row[$key] instanceof DriverLob) {
+                    $rows[$index][$key] = new Lob($row[$key], $this->connection);
                 }
             }
         }

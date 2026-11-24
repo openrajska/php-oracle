@@ -7,10 +7,13 @@ namespace Rajska\Oracle\Tests\Api;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Rajska\Oracle\Bind\Collection;
+use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\ExecuteOptions;
+use Rajska\Oracle\KeyCase;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Exceptions\OracleException;
@@ -94,14 +97,8 @@ final class CallsTest extends TestCase
         $counter = RoundTripCounter::open();
         $function = $this->connection->function('fx_scalar.add_days', ['p_date' => null, 'p_days' => 1]);
         $terminals = [
-            'clob()' => $function->clob(...),
-            'nclob()' => $function->nclob(...),
-            'blob()' => $function->blob(...),
             'json()' => $function->json(...),
             'vector()' => $function->vector(...),
-            'struct()' => fn () => $function->struct('fx_point'),
-            'collection()' => fn () => $function->collection('fx_number_list'),
-            'indexed()' => fn () => $function->indexed('fx_object.t_number_map'),
         ];
 
         try {
@@ -148,6 +145,51 @@ final class CallsTest extends TestCase
     {
         self::assertSame($expected, $this->connection->function($function)->{$terminal}());
         self::assertNull($this->connection->function($function, ['p_null' => true])->{$terminal}());
+    }
+
+    /**
+     * Objects 7: `struct()`, `collection()` and `indexed()` return the
+     * Object, Collection or Associative array as a PHP array, following the
+     * value mapping; a NULL return gives null.
+     */
+    #[Test]
+    public function the_object_and_collection_terminals_return_arrays(): void
+    {
+        self::assertSame(
+            ['X' => '1.5', 'Y' => -2, 'LABEL' => 'p'],
+            $this->connection->function('fx_object.make_point', ['p_x' => Number::in('1.5'), 'p_y' => -2, 'p_label' => 'p'])->struct('fx_point'),
+        );
+        self::assertSame(
+            ['name' => 'tri', 'vertices' => [['x' => 1, 'y' => 0, 'label' => 'v1']]],
+            $this->connection->function('fx_object.make_polygon', ['p_name' => 'tri', 'p_sides' => 1], new ExecuteOptions(keyCase: KeyCase::Lower))->struct('FX_POLYGON'),
+        );
+        self::assertSame(['a', null, 'b'], $this->connection->function('fx_object.split_csv', ['p_csv' => 'a,,b'])->collection('fx_string_varray'));
+        self::assertSame([], $this->connection->function('fx_object.split_csv', ['p_csv' => null])->collection('fx_string_varray'));
+        self::assertSame([1, 3, 5], $this->connection->function('fx_kinds.sparse_numbers')->collection('fx_number_list'));
+        self::assertNull($this->connection->function('fx_kinds.echo_numbers', ['p_numbers' => Collection::in('fx_number_list', null)])->collection('fx_number_list'));
+        self::assertSame(
+            [-1 => 5, 3 => 6],
+            $this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', [3 => 6, -1 => 5])])->indexed('fx_object.t_number_map'),
+        );
+        // A PL/SQL Associative array is never NULL: a NULL comes in empty.
+        self::assertSame([], $this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', null)])->indexed('fx_object.t_number_map'));
+    }
+
+    /**
+     * Objects 8: an Object terminal of the wrong kind fails naming the
+     * class to use, with the Call's name.
+     */
+    #[Test]
+    public function an_object_terminal_of_the_wrong_kind_fails_naming_the_fix(): void
+    {
+        try {
+            $this->connection->function('fx_object.split_csv', ['p_csv' => 'a'])->struct('fx_string_varray');
+            self::fail('struct() read a Collection.');
+        } catch (UsageException $e) {
+            self::assertStringStartsWith('The return value of fx_object.split_csv: ', $e->getMessage());
+            self::assertStringEndsWith('.FX_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.', $e->getMessage());
+            self::assertSame('fx_object.split_csv', $e->call());
+        }
     }
 
     /**
