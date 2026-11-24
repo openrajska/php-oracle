@@ -32,6 +32,8 @@ prompt 11_transaction
 @@11_transaction.sql
 prompt 12_object_kinds
 @@12_object_kinds.sql
+prompt 13_json_vector
+@@13_json_vector.sql
 
 commit;
 
