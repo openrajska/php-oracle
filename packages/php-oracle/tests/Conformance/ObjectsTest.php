@@ -180,6 +180,7 @@ final class ObjectsTest extends ConformanceTestCase
                     'C_NUMBER' => '12.5',
                     'C_FLOAT' => 0.1,
                     'C_DOUBLE' => 0.1,
+                    'C_BOOLEAN' => true,
                     'C_DATE' => "+2026-03-01 10:00:00.000000 $zone",
                     'C_TS' => "+2026-03-01 10:00:00.123456 $zone",
                     'C_TSTZ' => '+2026-03-01 10:00:00.123456 +05:45',
@@ -188,7 +189,7 @@ final class ObjectsTest extends ConformanceTestCase
                     'C_IDS' => '+0Y0M3DT4H5M6S.789000',
                     'C_IYM' => '+2Y5M0DT0H0M0S.000000',
                 ],
-                self::shown(self::withoutBoolean($default[0]['VALUE'])),
+                self::shown(self::struct($default[0]['VALUE'])),
             );
             self::assertSame(array_fill_keys(array_keys(self::allScalars()), null), $default[1]['VALUE']);
 
@@ -209,26 +210,23 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 3, BOOLEAN: the server writes a BOOLEAN attribute of an
-     * Object built in SQL as `01 00 00 00`, and the crate reads only the
-     * last byte, so TRUE comes back FALSE. One built in PL/SQL
-     * (`00 00 00 01`) reads right.
+     * Objects 3, BOOLEAN: the server writes TRUE in a BOOLEAN attribute as
+     * `00 00 00 01` when PL/SQL builds the Object and as `01 00 00 00`
+     * when SQL builds it; both read TRUE (fork patch, #71).
      */
     #[Test]
     public function a_boolean_attribute_reads_as_stored(): void
     {
         $connection = $this->connect();
-        $built = 'fx_all_scalars(null, null, null, null, null, null, null, null, true, null, null, null, null, null, null)';
+        $built = static fn (string $flag): string => "fx_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
 
-        $plsql = $connection->execute("begin :o := $built; end;", ['o' => Struct::out('fx_all_scalars')], self::options());
-        self::assertTrue(self::struct($plsql->outValues()['o'][0])['C_BOOLEAN']);
+        foreach (['true' => true, 'false' => false, 'null' => null] as $flag => $expected) {
+            $plsql = $connection->execute("begin :o := {$built($flag)}; end;", ['o' => Struct::out('fx_all_scalars')], self::options());
+            self::assertSame($expected, self::struct($plsql->outValues()['o'][0])['C_BOOLEAN'], "PL/SQL $flag");
 
-        $sql = self::value($connection, "select $built from dual");
-        self::assertIsArray($sql);
-        if ($sql['C_BOOLEAN'] === false) {
-            self::markTestIncomplete('Needs the oracledb fork to read a BOOLEAN attribute of an Object built in SQL (#71).');
+            $sql = self::struct(self::value($connection, "select {$built($flag)} from dual"));
+            self::assertSame($expected, $sql['C_BOOLEAN'], "SQL $flag");
         }
-        self::assertTrue($sql['C_BOOLEAN']);
     }
 
     /**
@@ -970,20 +968,6 @@ final class ObjectsTest extends ConformanceTestCase
             ['C_CHAR', 'C_NCHAR', 'C_VARCHAR', 'C_NVARCHAR', 'C_RAW', 'C_NUMBER', 'C_FLOAT', 'C_DOUBLE', 'C_BOOLEAN', 'C_DATE', 'C_TS', 'C_TSTZ', 'C_TSLTZ', 'C_IDS', 'C_IYM'],
             null,
         );
-    }
-
-    /**
-     * @param mixed $value
-     *
-     * @return array<string, mixed>
-     */
-    private static function withoutBoolean(mixed $value): array
-    {
-        self::assertIsArray($value);
-        unset($value['C_BOOLEAN']);
-
-        /** @var array<string, mixed> $value */
-        return $value;
     }
 
     /**
