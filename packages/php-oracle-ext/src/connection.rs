@@ -70,6 +70,10 @@ struct Inner {
     lease: Option<Lease>,
     /// Set by the first error that lost the Session, for good.
     broken: Option<Broken>,
+    /// A call of this Connection failed: the server's report of its
+    /// transaction may not have reached the client (a break, a response the
+    /// crate could not read), so Release rolls back whatever it says.
+    failed: bool,
 }
 
 /// The error that made the Connection Broken.
@@ -84,6 +88,7 @@ impl ConnState {
             inner: Mutex::new(Inner {
                 lease: Some(lease),
                 broken: None,
+                failed: false,
             }),
             call_timeout,
             cursors: Mutex::new(Vec::new()),
@@ -182,8 +187,10 @@ impl ConnState {
     /// makes the Connection Broken.
     pub fn run<T>(&self, body: impl FnOnce() -> Result<T, Error>) -> PhpResult<T> {
         run_seeing(body, |e| {
+            let mut inner = self.inner();
+            inner.failed = true;
             if e.is_connection_lost() {
-                self.inner().broken.get_or_insert_with(|| Broken {
+                inner.broken.get_or_insert_with(|| Broken {
                     code: e.code(),
                     message: e.message().to_string(),
                 });
@@ -195,7 +202,9 @@ impl ConnState {
     /// 1. drops every native cursor and LOB, so their closes queue on the
     ///    Session;
     /// 2. rolls back (C14: here, outside the Pool's mutex), carrying those
-    ///    closes;
+    ///    closes, unless the server reported no transaction open at the end
+    ///    of the Session's last call (#78) and no call of this Connection
+    ///    failed: then the closes ride on the Session's next Round trip;
     /// 3. returns the Session to the Pool (or logs it off), or discards it
     ///    if the Connection is Broken or the rollback failed.
     ///
@@ -206,12 +215,12 @@ impl ConnState {
     }
 
     fn end_loan(&self) {
-        let (lease, broken) = {
+        let (lease, broken, failed) = {
             let mut inner = self.inner();
             let Some(lease) = inner.lease.take() else {
                 return;
             };
-            (lease, inner.broken.is_some())
+            (lease, inner.broken.is_some(), inner.failed)
         };
         let cursors = std::mem::take(&mut *lock(&self.cursors));
         for cursor in cursors.iter().filter_map(Weak::upgrade) {
@@ -224,7 +233,11 @@ impl ConnState {
             let _ = catch_unwind(AssertUnwindSafe(|| lock(&lob).take()));
         }
         // A Broken Session is rolled back too, then dropped from its Pool.
-        let rolled_back = lease.session().rollback().is_ok();
+        // Otherwise the server's own report decides (TTC end-of-call
+        // status), never Core's idea of the transaction.
+        let session = lease.session();
+        let open = broken || failed || session.transaction_in_progress().unwrap_or(true);
+        let rolled_back = !open || session.rollback().is_ok();
         if broken || !rolled_back {
             lease.discard();
         } else {
