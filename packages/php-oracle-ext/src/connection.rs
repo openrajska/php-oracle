@@ -70,6 +70,10 @@ struct Inner {
     lease: Option<Lease>,
     /// Set by the first error that lost the Session, for good.
     broken: Option<Broken>,
+    /// A call of this Connection failed: the server's report of its
+    /// transaction may not have reached the client (a break, a response the
+    /// crate could not read), so Release rolls back whatever it says.
+    failed: bool,
 }
 
 /// The error that made the Connection Broken.
@@ -84,6 +88,7 @@ impl ConnState {
             inner: Mutex::new(Inner {
                 lease: Some(lease),
                 broken: None,
+                failed: false,
             }),
             call_timeout,
             cursors: Mutex::new(Vec::new()),
@@ -182,8 +187,10 @@ impl ConnState {
     /// makes the Connection Broken.
     pub fn run<T>(&self, body: impl FnOnce() -> Result<T, Error>) -> PhpResult<T> {
         run_seeing(body, |e| {
+            let mut inner = self.inner();
+            inner.failed = true;
             if e.is_connection_lost() {
-                self.inner().broken.get_or_insert_with(|| Broken {
+                inner.broken.get_or_insert_with(|| Broken {
                     code: e.code(),
                     message: e.message().to_string(),
                 });
@@ -195,7 +202,9 @@ impl ConnState {
     /// 1. drops every native cursor and LOB, so their closes queue on the
     ///    Session;
     /// 2. rolls back (C14: here, outside the Pool's mutex), carrying those
-    ///    closes;
+    ///    closes, unless the server reported no transaction open at the end
+    ///    of the Session's last call (#78) and no call of this Connection
+    ///    failed: then the closes ride on the Session's next Round trip;
     /// 3. returns the Session to the Pool (or logs it off), or discards it
     ///    if the Connection is Broken or the rollback failed.
     ///
@@ -206,12 +215,12 @@ impl ConnState {
     }
 
     fn end_loan(&self) {
-        let (lease, broken) = {
+        let (lease, broken, failed) = {
             let mut inner = self.inner();
             let Some(lease) = inner.lease.take() else {
                 return;
             };
-            (lease, inner.broken.is_some())
+            (lease, inner.broken.is_some(), inner.failed)
         };
         let cursors = std::mem::take(&mut *lock(&self.cursors));
         for cursor in cursors.iter().filter_map(Weak::upgrade) {
@@ -224,7 +233,11 @@ impl ConnState {
             let _ = catch_unwind(AssertUnwindSafe(|| lock(&lob).take()));
         }
         // A Broken Session is rolled back too, then dropped from its Pool.
-        let rolled_back = lease.session().rollback().is_ok();
+        // Otherwise the server's own report decides (TTC end-of-call
+        // status), never Core's idea of the transaction.
+        let session = lease.session();
+        let open = broken || failed || session.transaction_in_progress().unwrap_or(true);
+        let rolled_back = !open || session.rollback().is_ok();
         if broken || !rolled_back {
             lease.discard();
         } else {
@@ -241,39 +254,50 @@ impl Drop for ConnState {
     }
 }
 
-/// Reads `$pool` into the Pool key.
-fn read_pool(pool: &ZendHashTable) -> Result<PoolKey, Error> {
+/// Reads `$pool` into the Pool key, borrowing its strings: the registry
+/// copies them only for a key other than its last one.
+fn read_pool<'a>(pool: &'a ZendHashTable, time_zone: &'a str) -> Result<PoolKey<&'a str>, Error> {
     let fields = Fields::new("$pool", pool, POOL_KEYS)?;
-    let optional = |key| -> Result<Option<String>, Error> {
-        Ok(fields.optional_string(key)?.map(str::to_string))
-    };
-    let key = PoolKey {
-        dsn: fields.string("dsn")?.to_string(),
-        user: fields.string("user")?.to_string(),
-        password: fields.string("password")?.to_string(),
-        proxy_user: optional("proxyUser")?,
-        wallet_location: optional("walletLocation")?,
-        wallet_password: optional("walletPassword")?,
-        config_dir: optional("configDir")?,
+    Ok(PoolKey {
+        dsn: fields.string("dsn")?,
+        user: fields.string("user")?,
+        password: fields.string("password")?,
+        proxy_user: fields.optional_string("proxyUser")?,
+        wallet_location: fields.optional_string("walletLocation")?,
+        wallet_password: fields.optional_string("walletPassword")?,
+        config_dir: fields.optional_string("configDir")?,
         connect_timeout: fields.int("connectTimeout")?,
-        drcp_connection_class: optional("drcpConnectionClass")?,
+        drcp_connection_class: fields.optional_string("drcpConnectionClass")?,
         max_connections: fields.int("maxConnections")?,
         acquire_timeout: fields.int("acquireTimeout")?,
         statement_cache_size: fields.int("statementCacheSize")?,
         standalone: fields.bool("standalone")?,
-        time_zone: default_time_zone()?,
-    };
-    Ok(key)
+        time_zone,
+    })
 }
 
-/// PHP's default time zone, by name (`date_default_timezone_get()`): the
-/// Session time zone (spec #32 §8, C20).
+/// PHP's default time zone, by name, as `date_default_timezone_get()` gives
+/// it: the Session time zone (spec #32 §8, C20). Read on every `connect()`
+/// (part of the Pool key), so straight from ext/date, without calling a PHP
+/// function by name.
 fn default_time_zone() -> Result<String, Error> {
-    let zone = ext_php_rs::zend::Function::try_from_function("date_default_timezone_get")
-        .and_then(|function| function.try_call(vec![]).ok())
-        .and_then(|zone| zone.str().map(str::to_string))
+    /// ext/date's `timelib_tzinfo`, whose first field is the zone's name.
+    #[repr(C)]
+    struct TzInfo {
+        name: *const std::ffi::c_char,
+    }
+    unsafe extern "C" {
+        /// `PHPAPI timelib_tzinfo *get_timezone_info(void)` (php_date.h):
+        /// what `date_default_timezone_get()` reads; NULL after throwing.
+        fn get_timezone_info() -> *const TzInfo;
+    }
+    // SAFETY: ext/date is always compiled in; the zone it returns is cached
+    // for the request, and its name is copied before anything else runs.
+    let name = unsafe { get_timezone_info().as_ref() }
+        .filter(|info| !info.name.is_null())
+        .and_then(|info| unsafe { std::ffi::CStr::from_ptr(info.name) }.to_str().ok())
         .ok_or_else(|| Error::unsupported("PHP's default time zone cannot be read."))?;
-    Ok(zone)
+    Ok(name.to_string())
 }
 
 #[php_class]
@@ -293,7 +317,8 @@ impl NativeConnection {
     #[php(sensitive(pool))]
     pub fn connect(pool: &ZendHashTable, session: &ZendHashTable) -> PhpResult<Self> {
         run(|| {
-            let key = read_pool(pool)?;
+            let time_zone = default_time_zone()?;
+            let key = read_pool(pool, &time_zone)?;
             let settings = Settings::read(session)?;
             let lease = pool::acquire(&key)?;
             // Overwrites what the Session's previous Connection left.

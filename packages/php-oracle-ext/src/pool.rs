@@ -17,7 +17,7 @@
 //!   pinged on acquire and dropped if the ping fails.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
 use crate::connect;
@@ -32,18 +32,19 @@ const PING_INTERVAL: Duration = Duration::from_secs(60);
 const SESSION_SETUP: &str = "alter session set error_message_details = off";
 
 /// The Pool key: exactly the fields of `$pool` (spec #32 §3). Durations are
-/// in milliseconds.
+/// in milliseconds. `connect()` reads it borrowing the strings of `$pool`
+/// (`PoolKey<&str>`); the registry keeps owned ones.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PoolKey {
-    pub dsn: String,
-    pub user: String,
-    pub password: String,
-    pub proxy_user: Option<String>,
-    pub wallet_location: Option<String>,
-    pub wallet_password: Option<String>,
-    pub config_dir: Option<String>,
+pub struct PoolKey<S = String> {
+    pub dsn: S,
+    pub user: S,
+    pub password: S,
+    pub proxy_user: Option<S>,
+    pub wallet_location: Option<S>,
+    pub wallet_password: Option<S>,
+    pub config_dir: Option<S>,
     pub connect_timeout: i64,
-    pub drcp_connection_class: Option<String>,
+    pub drcp_connection_class: Option<S>,
     pub max_connections: i64,
     pub acquire_timeout: i64,
     pub statement_cache_size: i64,
@@ -53,10 +54,73 @@ pub struct PoolKey {
     /// gets it as its Session time zone at logon (C20). Not in `$pool`: the
     /// Extension reads it itself. A later `date_default_timezone_set()`
     /// makes the next `connect()` use another Pool.
-    pub time_zone: String,
+    pub time_zone: S,
+}
+
+impl PoolKey<&str> {
+    /// The key with strings of its own.
+    fn owned(&self) -> PoolKey {
+        let owned = |value: Option<&str>| value.map(str::to_string);
+        PoolKey {
+            dsn: self.dsn.to_string(),
+            user: self.user.to_string(),
+            password: self.password.to_string(),
+            proxy_user: owned(self.proxy_user),
+            wallet_location: owned(self.wallet_location),
+            wallet_password: owned(self.wallet_password),
+            config_dir: owned(self.config_dir),
+            connect_timeout: self.connect_timeout,
+            drcp_connection_class: owned(self.drcp_connection_class),
+            max_connections: self.max_connections,
+            acquire_timeout: self.acquire_timeout,
+            statement_cache_size: self.statement_cache_size,
+            standalone: self.standalone,
+            time_zone: self.time_zone.to_string(),
+        }
+    }
+
+    /// Whether `key` is this key.
+    fn is(&self, key: &PoolKey) -> bool {
+        let same = |a: Option<&str>, b: &Option<String>| a == b.as_deref();
+        self.dsn == key.dsn
+            && self.user == key.user
+            && self.password == key.password
+            && same(self.proxy_user, &key.proxy_user)
+            && same(self.wallet_location, &key.wallet_location)
+            && same(self.wallet_password, &key.wallet_password)
+            && same(self.config_dir, &key.config_dir)
+            && self.connect_timeout == key.connect_timeout
+            && same(self.drcp_connection_class, &key.drcp_connection_class)
+            && self.max_connections == key.max_connections
+            && self.acquire_timeout == key.acquire_timeout
+            && self.statement_cache_size == key.statement_cache_size
+            && self.standalone == key.standalone
+            && self.time_zone == key.time_zone
+    }
 }
 
 impl PoolKey {
+    /// The key borrowing these strings.
+    #[cfg(test)]
+    fn view(&self) -> PoolKey<&str> {
+        PoolKey {
+            dsn: &self.dsn,
+            user: &self.user,
+            password: &self.password,
+            proxy_user: self.proxy_user.as_deref(),
+            wallet_location: self.wallet_location.as_deref(),
+            wallet_password: self.wallet_password.as_deref(),
+            config_dir: self.config_dir.as_deref(),
+            connect_timeout: self.connect_timeout,
+            drcp_connection_class: self.drcp_connection_class.as_deref(),
+            max_connections: self.max_connections,
+            acquire_timeout: self.acquire_timeout,
+            statement_cache_size: self.statement_cache_size,
+            standalone: self.standalone,
+            time_zone: &self.time_zone,
+        }
+    }
+
     fn max_connections(&self) -> Result<usize, Error> {
         usize::try_from(self.max_connections)
             .ok()
@@ -241,12 +305,11 @@ impl Drop for Lease {
 
 /// Gets a Session for `key`: from the process's Pool for it, or a new
 /// standalone one.
-pub fn acquire(key: &PoolKey) -> Result<Lease, Error> {
+pub fn acquire(key: &PoolKey<&str>) -> Result<Lease, Error> {
     if key.standalone {
-        connect_standalone(key)
-    } else {
-        REGISTRY.pool(key)?.acquire()
+        return connect_standalone(&key.owned());
     }
+    REGISTRY.pool(key)?.acquire()
 }
 
 /// Closes every Pool of this process (MSHUTDOWN).
@@ -405,13 +468,44 @@ struct Entry {
 #[derive(Default)]
 pub struct Registry {
     entries: Mutex<HashMap<PoolKey, Entry>>,
+    /// The Pool of the last lookup, so the next one for the same key (the
+    /// usual case: every `connect()` of an application) neither copies nor
+    /// hashes the key.
+    last: Mutex<Option<Last>>,
+}
+
+/// The Pool of the registry's last lookup. Weak: only `entries` keeps a
+/// Pool, so MSHUTDOWN can close it. The PID sends a forked child to
+/// `entries`, which replaces the Pool it inherited.
+struct Last {
+    key: PoolKey,
+    pool: Weak<SharedPool>,
+    pid: u32,
 }
 
 impl Registry {
     /// The Pool for `key`, created on first use; an inherited one (another
     /// PID) is forgotten, never closed, and replaced.
-    pub fn pool(&self, key: &PoolKey) -> Result<Arc<SharedPool>, Error> {
+    pub fn pool(&self, key: &PoolKey<&str>) -> Result<Arc<SharedPool>, Error> {
         let pid = std::process::id();
+        let last = lock(&self.last)
+            .as_ref()
+            .filter(|last| last.pid == pid && key.is(&last.key))
+            .and_then(|last| last.pool.upgrade());
+        if let Some(pool) = last {
+            return Ok(pool);
+        }
+        let key = key.owned();
+        let pool = self.entry(&key, pid)?;
+        *lock(&self.last) = Some(Last {
+            key,
+            pool: Arc::downgrade(&pool),
+            pid,
+        });
+        Ok(pool)
+    }
+
+    fn entry(&self, key: &PoolKey, pid: u32) -> Result<Arc<SharedPool>, Error> {
         let mut entries = lock(&self.entries);
         if let Some(entry) = entries.get(key) {
             if entry.pid == pid {
@@ -437,6 +531,7 @@ impl Registry {
     /// out) is reported to `log` and leaked.
     pub fn shutdown(&self, log: &mut dyn FnMut(String)) {
         let pid = std::process::id();
+        lock(&self.last).take();
         let entries = std::mem::take(&mut *lock(&self.entries));
         for (key, entry) in entries {
             if entry.pid != pid {
@@ -589,11 +684,11 @@ mod tests {
         let _one = one_at_a_time();
         let registry = Registry::default();
         let key = key();
-        let inherited = registry.pool(&key).unwrap();
+        let inherited = registry.pool(&key.view()).unwrap();
         let parent_session = id(&inherited.acquire().unwrap());
 
         assert!(in_child(|| {
-            let own = registry.pool(&key).unwrap();
+            let own = registry.pool(&key.view()).unwrap();
             let lease = own.acquire().unwrap();
             let fresh = !Arc::ptr_eq(&own, &inherited)
                 && lease.session().ping().is_ok()
@@ -606,7 +701,7 @@ mod tests {
             fresh && logged.is_empty()
         }));
 
-        let lease = registry.pool(&key).unwrap().acquire().unwrap();
+        let lease = registry.pool(&key.view()).unwrap().acquire().unwrap();
         assert_eq!(id(&lease), parent_session);
         lease.session().ping().unwrap();
     }
@@ -625,7 +720,7 @@ mod tests {
             let handles: Vec<_> = (0..THREADS)
                 .map(|_| {
                     scope.spawn(|| {
-                        let pool = registry.pool(&key).unwrap();
+                        let pool = registry.pool(&key.view()).unwrap();
                         let lease = pool.acquire().unwrap();
                         lease.session().ping().unwrap();
                         all_held.wait();
@@ -654,7 +749,7 @@ mod tests {
             let registry = Registry::default();
             let before = threads();
             for _ in 0..2 {
-                let lease = registry.pool(&key()).unwrap().acquire().unwrap();
+                let lease = registry.pool(&key().view()).unwrap().acquire().unwrap();
                 lease.session().ping().unwrap();
             }
             let with_pools = threads();
@@ -673,7 +768,7 @@ mod tests {
         assert!(in_child(|| {
             let registry = Registry::default();
             let before = threads();
-            let lease = registry.pool(&key()).unwrap().acquire().unwrap();
+            let lease = registry.pool(&key().view()).unwrap().acquire().unwrap();
             let mut logged = Vec::new();
             registry.shutdown(&mut |message| logged.push(message));
             let leaked = threads() == before + 1;

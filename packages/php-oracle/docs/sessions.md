@@ -23,7 +23,10 @@ to 320 Sessions. Size it, and the database's `processes` / `sessions`, together.
 
 A Connection's Session goes back to the Pool (its **Release**) on `close()`,
 or when the Connection object and every Cursor it produced are gone. A
-Release always rolls back an open transaction and never commits it.
+Release always rolls back an open transaction and never commits it. The
+server reports at the end of every call whether a transaction is open, so a
+Release with none open makes no Round trip: under Autocommit, the default,
+`connect()` and `close()` through the Pool cost none.
 
 ```php
 $connection->begin();

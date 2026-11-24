@@ -5,9 +5,10 @@
 //! - Tracing: the four attributes are all overwritten (empty where unset),
 //!   with no Round trip of their own: they ride on the Session's next one,
 //!   replacing anything still pending in the client.
-//! - Call timeout: the limit for each Round trip, reapplied on every
-//!   acquire. An execute's own `timeout` replaces it for that execute and
-//!   its Cursors (see `ConnState::timed`).
+//! - Call timeout: the limit for each Round trip, applied on every acquire
+//!   that has one (a Session always arrives with none). An execute's own
+//!   `timeout` replaces it for that execute and its Cursors (see
+//!   `ConnState::timed`).
 
 use std::time::Duration;
 
@@ -35,10 +36,15 @@ impl Settings {
         })
     }
 
-    /// Applies both to a Session just acquired, with no Round trip.
+    /// Applies both to a Session just acquired, with no Round trip. A
+    /// Session arrives with no Call timeout (the crate clears it when a
+    /// Session goes back to its Pool, and a new one has none), so no limit
+    /// costs nothing: setting one is two system calls.
     pub fn apply(&self, session: &oracledb::Connection) -> Result<(), Error> {
         self.tracing.apply(session)?;
-        session.set_call_timeout(self.call_timeout)?;
+        if self.call_timeout.is_some() {
+            session.set_call_timeout(self.call_timeout)?;
+        }
         Ok(())
     }
 }
