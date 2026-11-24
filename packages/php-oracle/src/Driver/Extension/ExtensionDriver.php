@@ -26,6 +26,9 @@ use Rajska\Oracle\Tracing;
  * answer. Nothing runs at autoload or class load.
  *
  * @internal
+ *
+ * @phpstan-type PoolFields array{dsn: string, user: string, password: string, proxyUser: ?string, walletLocation: ?string, walletPassword: ?string, configDir: ?string, connectTimeout: int, drcpConnectionClass: ?string, maxConnections: int, acquireTimeout: int, statementCacheSize: int, standalone: bool}
+ * @phpstan-type SessionFields array{tracing: array{module: ?string, action: ?string, clientIdentifier: ?string, clientInfo: ?string}, callTimeout: ?int}
  */
 final class ExtensionDriver implements Driver
 {
@@ -53,6 +56,16 @@ final class ExtensionDriver implements Driver
      */
     private static ?string $refusal = null;
 
+    /**
+     * The config of the last connect(), and the `$pool` and `$session`
+     * arrays built from it: a ConnectionConfig is immutable, and an
+     * application usually connects with the same one every time.
+     */
+    private static ?ConnectionConfig $last = null;
+
+    /** @var ?array{PoolFields, SessionFields} */
+    private static ?array $lastArrays = null;
+
     public function connect(ConnectionConfig $config): DriverConnection
     {
         self::$refusal ??= self::refusal();
@@ -60,7 +73,27 @@ final class ExtensionDriver implements Driver
             throw new ConfigurationException(self::$refusal);
         }
 
-        $pool = [
+        if ($config !== self::$last || self::$lastArrays === null) {
+            self::$lastArrays = [self::pool($config), self::session($config)];
+            self::$last = $config;
+        }
+        [$pool, $session] = self::$lastArrays;
+
+        try {
+            return new ExtensionConnection(NativeConnection::connect($pool, $session));
+        } catch (NativeException $e) {
+            throw ExceptionTranslator::translate($e);
+        }
+    }
+
+    /**
+     * The Pool-key fields of a config, as the Extension takes them.
+     *
+     * @return PoolFields
+     */
+    private static function pool(ConnectionConfig $config): array
+    {
+        return [
             'dsn' => $config->dsn,
             'user' => $config->user,
             'password' => $config->password,
@@ -75,16 +108,19 @@ final class ExtensionDriver implements Driver
             'statementCacheSize' => $config->statementCacheSize,
             'standalone' => $config->standalone,
         ];
-        $session = [
+    }
+
+    /**
+     * What every acquire applies to its Session, as the Extension takes it.
+     *
+     * @return SessionFields
+     */
+    private static function session(ConnectionConfig $config): array
+    {
+        return [
             'tracing' => self::tracing($config->tracing),
             'callTimeout' => self::optionalMilliseconds($config->callTimeout),
         ];
-
-        try {
-            return new ExtensionConnection(NativeConnection::connect($pool, $session));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
-        }
     }
 
     /**
