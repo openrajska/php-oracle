@@ -22,8 +22,14 @@
 //! offset 0: the correct Instant, in UTC. A TSLTZ with a named `DBTIMEZONE`
 //! fails in the crate (`NotImplemented`, mapped to `unsupported`).
 
+use std::cell::RefCell;
+use std::ffi::{CStr, c_char, c_int, c_void};
+use std::mem::offset_of;
+use std::ptr;
+
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
 use ext_php_rs::convert::{IntoZval, IntoZvalDyn};
+use ext_php_rs::ffi::zend_class_entry;
 use ext_php_rs::types::{ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, Function};
 use oracledb::{
@@ -112,22 +118,25 @@ pub fn timestamp_value(
     mode: TemporalMode,
 ) -> Result<Zval, Error> {
     let fields = Fields::of(value, temporal)?;
+    let mut text = Text::new();
     match (temporal, mode) {
-        (Temporal::Date | Temporal::Timestamp, TemporalMode::Object) => {
-            parse("!X-m-d H:i:s.u", &fields.text(Precision::Micro))
-        }
-        (Temporal::TimestampTz, TemporalMode::Object) => parse(
-            "!X-m-d H:i:s.u P",
-            &format!("{} {}", fields.text(Precision::Micro), fields.offset()),
-        ),
+        (Temporal::Date, TemporalMode::Object) => date_time(&fields, false, false),
+        (Temporal::Timestamp, TemporalMode::Object) => date_time(&fields, true, false),
+        (Temporal::TimestampTz, TemporalMode::Object) => date_time(&fields, true, true),
         (Temporal::TimestampLtz, TemporalMode::Object) => in_default_zone(&fields),
-        (Temporal::Date, TemporalMode::String) => string(&fields.text(Precision::Seconds)),
-        (Temporal::Timestamp, TemporalMode::String) => string(&fields.text(Precision::Nano)),
-        (Temporal::TimestampTz, TemporalMode::String) => string(&format!(
-            "{} {}",
-            fields.text(Precision::Nano),
-            fields.offset()
-        )),
+        (Temporal::Date, TemporalMode::String) => {
+            fields.write(&mut text, Precision::Seconds, true);
+            string(text.as_str())
+        }
+        (Temporal::Timestamp, TemporalMode::String) => {
+            fields.write(&mut text, Precision::Nano, true);
+            string(text.as_str())
+        }
+        (Temporal::TimestampTz, TemporalMode::String) => {
+            fields.write(&mut text, Precision::Nano, true);
+            fields.write_offset(&mut text, true);
+            string(text.as_str())
+        }
         (Temporal::TimestampLtz, TemporalMode::String) => {
             // The zone's offset at that Instant comes from PHP's zone rules.
             let object = in_default_zone(&fields)?;
@@ -224,63 +233,262 @@ impl Fields {
         })
     }
 
-    fn text(&self, precision: Precision) -> String {
+    /// `2026-03-01 10:00:00`, then `.123456` or `.123456789`; the year as
+    /// [`Text::year`] writes it. Without `separated`, the digits alone:
+    /// `20260301100000123456`.
+    fn write(&self, text: &mut Text, precision: Precision, separated: bool) {
         let c = &self.clock;
-        let clock = format!(
-            "{}-{:02}-{:02} {:02}:{:02}:{:02}",
-            year_text(c.year()),
-            c.month(),
-            c.day(),
-            c.hour(),
-            c.minute(),
-            c.second()
-        );
-        match precision {
-            Precision::Seconds => clock,
-            Precision::Micro => format!("{clock}.{:06}", self.nanoseconds / 1000),
-            Precision::Nano => format!("{clock}.{:09}", self.nanoseconds),
+        text.year(c.year());
+        for (separator, value) in [
+            (b'-', c.month()),
+            (b'-', c.day()),
+            (b' ', c.hour()),
+            (b':', c.minute()),
+            (b':', c.second()),
+        ] {
+            if separated {
+                text.push(separator);
+            }
+            text.number(value, 2);
         }
+        let (fraction, digits) = match precision {
+            Precision::Seconds => return,
+            Precision::Micro => (self.nanoseconds / 1000, 6),
+            Precision::Nano => (self.nanoseconds, 9),
+        };
+        if separated {
+            text.push(b'.');
+        }
+        text.number(fraction, digits);
     }
 
-    /// `+05:45`, `-03:00`, `+00:00`.
-    fn offset(&self) -> String {
-        let sign = if self.offset_minutes < 0 { '-' } else { '+' };
+    /// `+05:45`, `-03:00`, `+00:00`; after a space if `separated`.
+    fn write_offset(&self, text: &mut Text, separated: bool) {
         let minutes = self.offset_minutes.unsigned_abs();
-        format!("{sign}{:02}:{:02}", minutes / 60, minutes % 60)
+        if separated {
+            text.push(b' ');
+        }
+        text.push(if self.offset_minutes < 0 { b'-' } else { b'+' });
+        text.number(minutes / 60, 2);
+        text.push(b':');
+        text.number(minutes % 60, 2);
     }
 }
 
-/// At least four digits, `-` before a year BC (ISO 8601's numbering).
-fn year_text(year: i32) -> String {
-    if year < 0 {
-        format!("-{:04}", year.unsigned_abs())
-    } else {
-        format!("{year:04}")
+/// The text of one value, on the stack, with no allocation: at most
+/// `-4711-01-01 00:00:00.000000000 -15:59` or `10000-01-01 …` (37 bytes).
+struct Text {
+    bytes: [u8; 48],
+    len: usize,
+}
+
+impl Text {
+    fn new() -> Self {
+        Self {
+            bytes: [0; 48],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, byte: u8) {
+        self.bytes[self.len] = byte;
+        self.len += 1;
+    }
+
+    /// `value` in decimal, zero-padded to at least `width` digits.
+    fn number(&mut self, mut value: u32, width: usize) {
+        let mut digits = [b'0'; 10];
+        let mut count = 0;
+        while value > 0 || count < width {
+            digits[count] = b'0' + (value % 10) as u8;
+            value /= 10;
+            count += 1;
+        }
+        for &digit in digits[..count].iter().rev() {
+            self.push(digit);
+        }
+    }
+
+    /// At least four digits, `-` before a year BC (ISO 8601's numbering).
+    fn year(&mut self, year: i32) {
+        if year < 0 {
+            self.push(b'-');
+        }
+        self.number(year.unsigned_abs(), 4);
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+
+    fn as_str(&self) -> &str {
+        // Only ASCII digits and separators are pushed.
+        std::str::from_utf8(self.as_bytes()).unwrap_or_default()
     }
 }
 
 /// The UTC Instant of `fields` as a `DateTimeImmutable` in PHP's default
-/// zone, as it is now.
+/// zone, as it is now (or as it was at the start of the [`Batch`]).
 fn in_default_zone(fields: &Fields) -> Result<Zval, Error> {
-    let utc = parse(
-        "!X-m-d H:i:s.u P",
-        &format!("{} +00:00", fields.text(Precision::Micro)),
-    )?;
-    let name = call("date_default_timezone_get", vec![])?;
-    let zone = call("timezone_open", vec![&name])?;
-    call_method(&utc, "setTimezone", vec![&zone])
+    // TSLTZ fields are UTC: their offset is 0.
+    let utc = date_time(fields, true, true)?;
+    call_method(&utc, "setTimezone", vec![&default_zone()?])
 }
 
-/// `date_create_immutable_from_format($format, $text)`, in PHP's default
-/// zone unless the text has an offset.
-fn parse(format: &str, text: &str) -> Result<Zval, Error> {
-    let value = call("date_create_immutable_from_format", vec![&format, &text])?;
-    if value.object().is_none() {
+/// `timezone_open(date_default_timezone_get())`; once per [`Batch`].
+fn default_zone() -> Result<Zval, Error> {
+    if let Some(zone) = ZONE.with_borrow(|cache| cache.zone.as_ref().map(Zval::shallow_clone)) {
+        return Ok(zone);
+    }
+    let name = call("date_default_timezone_get", vec![])?;
+    let zone = call("timezone_open", vec![&name])?;
+    ZONE.with_borrow_mut(|cache| {
+        if cache.batches > 0 {
+            cache.zone = Some(zone.shallow_clone());
+        }
+    });
+    Ok(zone)
+}
+
+thread_local! {
+    static ZONE: RefCell<ZoneCache> = const {
+        RefCell::new(ZoneCache {
+            batches: 0,
+            zone: None,
+        })
+    };
+}
+
+/// PHP's default zone as a `DateTimeZone`, kept while a [`Batch`] lives.
+struct ZoneCache {
+    batches: usize,
+    zone: Option<Zval>,
+}
+
+/// While it lives, the TSLTZ values converted on this thread share one
+/// `DateTimeZone` of PHP's default zone, read at the first of them, instead
+/// of opening it for each value. Converting a batch of rows runs no PHP
+/// code that could change the default zone. Dropped before the native call
+/// returns, so the object never outlives the request.
+pub struct Batch(());
+
+impl Batch {
+    pub fn start() -> Self {
+        ZONE.with_borrow_mut(|cache| cache.batches += 1);
+        Self(())
+    }
+}
+
+impl Drop for Batch {
+    fn drop(&mut self) {
+        let zone = ZONE.with_borrow_mut(|cache| {
+            cache.batches -= 1;
+            if cache.batches == 0 {
+                cache.zone.take()
+            } else {
+                None
+            }
+        });
+        // Released outside the borrow.
+        drop(zone);
+    }
+}
+
+/// `fields` as a `DateTimeImmutable`, with µs if `micro`: at their offset
+/// if `offset`, else in PHP's default zone.
+///
+/// PHP reads a format faster the fewer characters it has, so the years 0
+/// to 9999 go as digits alone (`Y` reads four); the others (BC, and 10000
+/// at a TSTZ offset) as ISO text with `X`, which reads a sign.
+fn date_time(fields: &Fields, micro: bool, offset: bool) -> Result<Zval, Error> {
+    let separated = !(0..=9999).contains(&fields.clock.year());
+    let precision = if micro {
+        Precision::Micro
+    } else {
+        Precision::Seconds
+    };
+    let mut text = Text::new();
+    fields.write(&mut text, precision, separated);
+    if offset {
+        fields.write_offset(&mut text, separated);
+    }
+    let format = match (separated, micro, offset) {
+        (false, false, false) => c"!YmdHis",
+        (false, false, true) => c"!YmdHisP",
+        (false, true, false) => c"!YmdHisu",
+        (false, true, true) => c"!YmdHisuP",
+        (true, false, false) => c"!X-m-d H:i:s",
+        (true, false, true) => c"!X-m-d H:i:s P",
+        (true, true, false) => c"!X-m-d H:i:s.u",
+        (true, true, true) => c"!X-m-d H:i:s.u P",
+    };
+    parse(format, &text)
+}
+
+/// What `date_create_immutable_from_format($format, $text)` returns, in
+/// PHP's default zone unless the text has an offset, without a userland
+/// call: the date extension's own functions behind it.
+fn parse(format: &CStr, text: &Text) -> Result<Zval, Error> {
+    let mut value = Zval::new();
+    // SAFETY: ext/date is always compiled into PHP and registers its
+    // classes at startup. php_date_instantiate() makes `value` own a new
+    // object of the class, whose zend_object is the `std` member of a
+    // php_date_obj (php_date.h, the same layout since PHP 7.0). `format` is
+    // NUL-terminated, `text` is read up to its length only, and a NULL zone
+    // means PHP's default zone, as date_create_immutable_from_format()
+    // calls it with PHP_DATE_INIT_FORMAT.
+    let initialized = unsafe {
+        php_date_instantiate(php_date_get_immutable_ce(), &raw mut value);
+        let object: *mut ZendObject = value
+            .object_mut()
+            .ok_or_else(|| Error::unsupported("The DateTimeImmutable class cannot be created."))?;
+        let date = object
+            .cast::<u8>()
+            .sub(offset_of!(PhpDateObj, std))
+            .cast::<PhpDateObj>();
+        php_date_initialize(
+            date,
+            text.as_bytes().as_ptr().cast::<c_char>(),
+            text.len,
+            format.as_ptr(),
+            ptr::null_mut(),
+            PHP_DATE_INIT_FORMAT,
+        )
+    };
+    if !initialized {
+        // `value` releases the half-built object.
         return Err(Error::unsupported(format!(
-            "The temporal value {text} cannot be a DateTimeImmutable."
+            "The temporal value {} cannot be a DateTimeImmutable.",
+            text.as_str()
         )));
     }
     Ok(value)
+}
+
+/// `struct _php_date_obj` (php_date.h): a `DateTime` or `DateTimeImmutable`.
+#[repr(C)]
+struct PhpDateObj {
+    time: *mut c_void,
+    std: ZendObject,
+}
+
+/// `PHP_DATE_INIT_FORMAT` (php_date.h): the text is read with a format.
+const PHP_DATE_INIT_FORMAT: c_int = 0x02;
+
+unsafe extern "C" {
+    /// `DateTimeImmutable`'s class entry.
+    fn php_date_get_immutable_ce() -> *mut zend_class_entry;
+    /// `object_init_ex(object, ce)`.
+    fn php_date_instantiate(ce: *mut zend_class_entry, object: *mut Zval) -> *mut Zval;
+    /// What `DateTime(Immutable)::__construct()` and `createFromFormat()` run.
+    fn php_date_initialize(
+        date: *mut PhpDateObj,
+        text: *const c_char,
+        text_len: usize,
+        format: *const c_char,
+        zone: *mut Zval,
+        flags: c_int,
+    ) -> bool;
 }
 
 /// `new DateInterval($spec)`, with µs and `invert` set.

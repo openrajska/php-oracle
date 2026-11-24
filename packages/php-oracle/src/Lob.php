@@ -75,12 +75,14 @@ final class Lob
      */
     public function contents(): string
     {
-        $contents = '';
+        // Joined once at the end: appending each chunk would copy what came
+        // before it again, and a value of one chunk is returned as it came.
+        $chunks = [];
         while (($chunk = $this->chunk()) !== '') {
-            $contents .= $chunk;
+            $chunks[] = $chunk;
         }
 
-        return $contents;
+        return implode('', $chunks);
     }
 
     /**
