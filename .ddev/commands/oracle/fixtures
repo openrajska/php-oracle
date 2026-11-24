@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-## Description: Instala (ou reinstala) o schema de fixtures de fixtures/sql no usuário de app
+## Description: Instala (ou reinstala) o schema de fixtures de fixtures/sql no usuário de app, com os grants das suítes
 ## Usage: fixtures
 ## Example: "ddev fixtures"
 
 set -euo pipefail
 cd /fixtures/sql
+sqlplus -s -l "sys/${ORACLE_PASSWORD}@//localhost/FREEPDB1" as sysdba @grants.sql "${APP_USER}"
 exec sqlplus -s -l "${APP_USER}/${APP_USER_PASSWORD}@//localhost/FREEPDB1" @install.sql
