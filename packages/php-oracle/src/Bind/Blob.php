@@ -7,16 +7,15 @@ namespace Rajska\Oracle\Bind;
 use Rajska\Oracle\Type;
 
 /**
- * BLOB: bytes, read back as a `Lob` (the bytes under `LobMode::Inline`).
+ * BLOB: bytes, from a string or a stream, read back as a `Lob` (the bytes
+ * under `LobMode::Inline`).
  */
 final readonly class Blob extends Bind
 {
-    /**
-     * The server sends back a locator: for a value PL/SQL built, a
-     * temporary LOB, valid until the Connection's Release.
-     */
-    public static function out(): self
+    use LobBind;
+
+    private static function type(): Type
     {
-        return new self(Type::Blob, Direction::Out, null);
+        return Type::Blob;
     }
 }

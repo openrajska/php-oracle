@@ -7,17 +7,16 @@ namespace Rajska\Oracle\Bind;
 use Rajska\Oracle\Type;
 
 /**
- * NCLOB: text in the national character set, read back as a `Lob` (the
- * whole text, in UTF-8, under `LobMode::Inline`).
+ * NCLOB: text in the national character set, written from UTF-8 (a string
+ * or a stream), read back as a `Lob` (the whole text, in UTF-8, under
+ * `LobMode::Inline`).
  */
 final readonly class NClob extends Bind
 {
-    /**
-     * The server sends back a locator: for a value PL/SQL built, a
-     * temporary LOB, valid until the Connection's Release.
-     */
-    public static function out(): self
+    use LobBind;
+
+    private static function type(): Type
     {
-        return new self(Type::NClob, Direction::Out, null);
+        return Type::NClob;
     }
 }
