@@ -17,6 +17,7 @@ mod cursor;
 mod error;
 mod input;
 mod lob;
+mod object;
 mod options;
 mod pool;
 mod session;

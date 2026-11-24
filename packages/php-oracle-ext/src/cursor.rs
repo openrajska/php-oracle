@@ -22,6 +22,7 @@ use oracledb::{
 use crate::connection::{ConnState, CursorSlot};
 use crate::error::{Error, run};
 use crate::lob;
+use crate::object;
 use crate::options::{KeyCase, NumberMode, Options, RowShape, TemporalMode};
 use crate::pool::lock;
 use crate::temporal::{self, Temporal};
@@ -47,6 +48,8 @@ enum Mapping {
     /// CLOB, NCLOB, BLOB: a native Lob, or the whole value under
     /// `LobMode::Inline`.
     Lob,
+    /// An Object or Collection: a PHP array (see [`object`]).
+    Object,
     /// A type whose values cannot be fetched yet; describing it is fine.
     Unsupported(String),
 }
@@ -231,6 +234,8 @@ impl Column {
             Mapping::Cursor
         } else if lob::lob_type(db_type).is_some() {
             Mapping::Lob
+        } else if db_type == DB_TYPE_OBJECT {
+            Mapping::Object
         } else if let Some(temporal) = Temporal::of(db_type) {
             Mapping::Temporal(temporal, options.temporals)
         } else if db_type == DB_TYPE_INTERVAL_DS {
@@ -256,9 +261,9 @@ impl Column {
     fn value(&self, row: &Row, index: usize) -> Result<Zval, Error> {
         let mut zval = Zval::new();
         match &self.mapping {
-            Mapping::Cursor | Mapping::Lob => {
+            Mapping::Cursor | Mapping::Lob | Mapping::Object => {
                 return Err(Error::unsupported(format!(
-                    "Column {}: a handle is not a scalar value.",
+                    "Column {}: not a scalar value.",
                     self.name
                 )));
             }
@@ -411,6 +416,10 @@ impl NativeCursor {
                     &self.options,
                     &format!("Column {}", column.name),
                 )?,
+                Mapping::Object => {
+                    let what = format!("Column {}", column.name);
+                    object::cell(row, index, &self.options, &object::Path::Root(&what))?
+                }
                 _ => column.value(row, index)?,
             };
             match self.options.row_shape {

@@ -90,6 +90,20 @@ final class OutValue
     }
 
     /**
+     * An Object (keyed by attribute name), a Collection (a `list`) or an
+     * Associative array (`int` keys, in key order). Atomically NULL gives
+     * `null`.
+     *
+     * @return array<mixed>|null
+     */
+    public function array(): ?array
+    {
+        $value = $this->one('array()');
+
+        return $value === null || \is_array($value) ? $value : throw $this->wrongType($value, 'an array');
+    }
+
+    /**
      * A REF CURSOR, as a lazy Cursor with the Execution's options; never
      * null. One the block never opened fails on its first read
      * (ORA-01001). The same Cursor on every call.
@@ -149,6 +163,7 @@ final class OutValue
             \is_bool($value) => ' Read it with bool().',
             $value instanceof Cursor => ' Read it with cursor().',
             $value instanceof Lob => ' Read it with lob().',
+            \is_array($value) => ' Read it with array().',
             default => ' Read it with value().',
         };
 

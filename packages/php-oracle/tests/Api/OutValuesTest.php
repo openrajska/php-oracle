@@ -8,10 +8,13 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\Date;
+use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\IntervalDs;
 use Rajska\Oracle\Bind\IntervalYm;
 use Rajska\Oracle\Bind\Number;
+use Rajska\Oracle\Bind\Struct;
 use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Connection;
@@ -124,6 +127,34 @@ final class OutValuesTest extends TestCase
         $string = $this->connection->run($sql, $binds, new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String)));
         self::assertSame('2026-03-01 00:00:00', $string->out('d')->string());
         self::assertFails(fn () => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
+    }
+
+    /**
+     * Objects 7: `array()` reads an Object, a Collection or an Associative
+     * array, NULL included; it fails on a scalar, and a scalar getter on an
+     * array names `array()`.
+     */
+    #[Test]
+    public function array_reads_objects_and_collections_and_fails_on_a_scalar(): void
+    {
+        $execution = $this->connection->run(
+            'begin :point := fx_point(1, 2, :label); :tags := :tags; :map := :map; :none := null; :n := 1; end;',
+            [
+                'label' => 'p',
+                'point' => Struct::out('fx_point'),
+                'tags' => Collection::inOut('fx_string_varray', ['a', null]),
+                'map' => Indexed::inOut('fx_object.t_number_map', [-1 => 1]),
+                'none' => Struct::out('fx_point'),
+                'n' => Number::out(),
+            ],
+        );
+
+        self::assertSame(['X' => 1, 'Y' => 2, 'LABEL' => 'p'], $execution->out('point')->array());
+        self::assertSame(['a', null], $execution->out('tags')->array());
+        self::assertSame([-1 => 1], $execution->out('map')->array());
+        self::assertNull($execution->out('none')->array());
+        self::assertFails(fn () => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
+        self::assertFails(fn () => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
     }
 
     /**

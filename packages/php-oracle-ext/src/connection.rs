@@ -11,12 +11,14 @@ use ext_php_rs::exception::PhpResult;
 use ext_php_rs::flags::ClassFlags;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{ZendClassObject, ZendHashTable};
+use oracledb::DbObjectType;
 
 use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
 use crate::lob::LobSlot;
+use crate::object::{self, Path};
 use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey, lock};
 use crate::session::{Settings, Tracing};
@@ -105,6 +107,14 @@ impl ConnState {
             Some(broken) => Err(Error::broken(broken.code, &broken.message)),
             None => Ok(lease),
         }
+    }
+
+    /// Describes an Object or Collection type on the Session, which keeps
+    /// the description (see [`object::describe`]).
+    pub fn describe(&self, what: &Path<'_>, lookup: &str) -> Result<Arc<DbObjectType>, Error> {
+        let inner = self.inner();
+        let lease = Self::lease(&inner)?;
+        object::describe(lease.session(), lease.notes(), what, lookup)
     }
 
     /// Fails if the Connection is released or Broken.
@@ -306,7 +316,9 @@ impl NativeConnection {
     ) -> PhpResult<ZBox<ZendHashTable>> {
         self.state.run(|| {
             let options = Options::read(options)?;
-            let mut binds = Binds::read(binds)?;
+            // Types are described here, outside the Session's lock: reading
+            // the binds may run PHP code.
+            let mut binds = Binds::read(binds, &|what, lookup| self.state.describe(what, lookup))?;
             let mut implicit = Vec::new();
             let prepare = |session: &oracledb::Connection| {
                 #[cfg(debug_assertions)]
@@ -404,6 +416,7 @@ impl NativeConnection {
                     binds.matched(statement.bind_names())?;
                     if !statement.is_query() && !statement.is_plsql() {
                         binds.refuse_returned_lobs()?;
+                        binds.refuse_returned_objects()?;
                     }
                     binds.write_lobs(&self.state)?;
                     self.state

@@ -9,11 +9,13 @@
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use oracledb::{
     BindValue, DB_TYPE_BLOB, DB_TYPE_CHAR, DB_TYPE_CLOB, DB_TYPE_CURSOR, DB_TYPE_NCHAR,
-    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
+    DB_TYPE_NCLOB, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType,
+    OracleNumber, ToDbValue,
 };
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
 use crate::error::Error;
+use crate::object::{self, Describe};
 use crate::temp_lob::TempLob;
 use crate::temporal::{self, Temporal};
 
@@ -71,10 +73,17 @@ impl Typed {
     pub fn is_lob(&self) -> bool {
         self.lob
     }
+
+    /// Whether it is an Object or a Collection (`Struct`, `Collection`,
+    /// `Indexed`).
+    pub fn is_object(&self) -> bool {
+        self.value.db_type() == DB_TYPE_OBJECT
+    }
 }
 
-/// Reads a typed bind.
-pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
+/// Reads a typed bind. `describe` describes the type a `Struct`,
+/// `Collection` or `Indexed` bind names.
+pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<Typed, Error> {
     let properties = object
         .get_properties()
         .map_err(|e| Error::unsupported(format!("Bind '{name}': {e}.")))?;
@@ -138,6 +147,15 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
         )?,
         "intervalDs" => temporal::interval_ds_bind(name, value)?,
         "intervalYm" => temporal::interval_ym_bind(name, value)?,
+        "object" | "collection" | "associativeArray" => {
+            let kind =
+                object::Kind::of_bind(&type_name).unwrap_or_else(|| unreachable!("matched above"));
+            let type_name = properties
+                .get("typeName")
+                .and_then(Zval::str)
+                .ok_or_else(|| Error::usage(format!("Bind '{name}': its typeName is not set.")))?;
+            object::bind(name, kind, type_name, value, describe)?
+        }
         other => {
             return Err(Error::unsupported(format!(
                 "Bind '{name}': {} binds are not implemented yet.",
