@@ -1,0 +1,120 @@
+# Builds the Extension (rajska_oracle) for PHP 8.4 NTS and ZTS, starts Oracle
+# AI Database 26ai Free, installs the fixtures and runs both suites: the
+# Extension's (cargo) and Core's (PHPUnit, with the Extension loaded).
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Same toolchain as ddev (.ddev/web-build/Dockerfile.rust).
+  RUST_TOOLCHAIN: "1.100.0"
+
+jobs:
+  test:
+    name: PHP 8.4 ${{ matrix.ts }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        ts: [nts, zts]
+    services:
+      oracle:
+        # Same image as ddev (.ddev/docker-compose.oracle.yaml).
+        image: gvenzl/oracle-free:23.26.3-faststart
+        env:
+          ORACLE_PASSWORD: oracle
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-start-period 30s
+          --health-retries 30
+    env:
+      ORACLE_CONNECT_STRING: localhost:1521/FREEPDB1
+      ORACLE_USER: rajska
+      ORACLE_PASSWORD: rajska
+      EXTENSION: ${{ github.workspace }}/packages/php-oracle-ext/target/debug/librajska_oracle.so
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up PHP 8.4 ${{ matrix.ts }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          # oci8 only for the test harness's IndependentSession, never a Backend.
+          extensions: oci8
+          tools: composer
+          coverage: none
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Check thread safety
+        run: |
+          php -v
+          php -r 'exit(PHP_ZTS === ("${{ matrix.ts }}" === "zts" ? 1 : 0) ? 0 : 1);'
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt
+          rustup default "$RUST_TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/php-oracle-ext
+          key: ${{ matrix.ts }}
+
+      - name: Build the Extension
+        working-directory: packages/php-oracle-ext
+        run: |
+          cargo build --locked
+          php -d extension="$EXTENSION" --ri rajska_oracle
+
+      - name: Extension suite
+        working-directory: packages/php-oracle-ext
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Install the fixtures
+        run: |
+          oracle="${{ job.services.oracle.id }}"
+          docker cp fixtures/sql "$oracle:/tmp/fixtures"
+          docker exec -i "$oracle" bash -euo pipefail <<EOF
+          cd /tmp/fixtures
+          sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba <<'SQL'
+          whenever sqlerror exit failure
+          create user $ORACLE_USER identified by "$ORACLE_PASSWORD"
+            default tablespace users quota unlimited on users;
+          grant db_developer_role to $ORACLE_USER;
+          exit
+          SQL
+          sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba @grants.sql $ORACLE_USER
+          sqlplus -s -l $ORACLE_USER/$ORACLE_PASSWORD@//localhost/FREEPDB1 @install.sql
+          EOF
+
+      - name: Install Core's dependencies
+        working-directory: packages/php-oracle
+        run: composer install --no-interaction --no-progress
+
+      - name: Static analysis
+        working-directory: packages/php-oracle
+        run: composer analyse
+
+      - name: Core suite
+        working-directory: packages/php-oracle
+        run: php -d extension="$EXTENSION" vendor/bin/phpunit
