@@ -1,0 +1,23 @@
+[package]
+name = "rajska_oracle"
+# The Extension's semver is the contract version Core checks (spec #32 §15).
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "The PHP extension that hosts the Rust thin Backend of openrajska/php-oracle"
+repository = "https://github.com/openrajska/php-oracle"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ext-php-rs = "0.16"
+# Our fork of the crate, pinned to an exact commit (ADR 0002, C17; see
+# CONTRIBUTING.md, "The oracledb fork").
+oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "50a7aa974d29e072c59e5a10bcb3025ecebfc446", version = "=26.0.0-beta.6" }
+
+[profile.release]
+strip = "debuginfo"
+lto = "fat"
+codegen-units = 1
