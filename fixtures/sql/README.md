@@ -39,6 +39,15 @@ SYSDBA with the user as the argument; `ddev fixtures` runs it before
 sqlplus -s -l sys/password@//host:1521/service as sysdba @grants.sql user
 ```
 
+CI raises the instance's process limit before anything else with
+`processes.sql`, which restarts the instance (so `ddev fixtures` does not run
+it on the shared ddev database; see CONTRIBUTING.md), as SYSDBA through OS
+authentication inside the oracle container:
+
+```bash
+sqlplus -s -l / as sysdba @processes.sql 400
+```
+
 The DRCP tests need DRCP started. `drcp.sql` starts it (idempotent), as SYSDBA
 in the CDB root; `ddev fixtures` runs it too, together with the TCPS listeners
 of [`../tls`](../tls/README.md):
