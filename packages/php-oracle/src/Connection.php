@@ -12,6 +12,8 @@ use Rajska\Oracle\Driver\DriverOptions;
  */
 final class Connection
 {
+    private readonly ConnectionState $state;
+
     /**
      * @internal use Oracle::connect()
      */
@@ -19,6 +21,7 @@ final class Connection
         private readonly DriverConnection $driver,
         private readonly ConnectionConfig $config,
     ) {
+        $this->state = new ConnectionState();
     }
 
     /**
@@ -28,7 +31,7 @@ final class Connection
      */
     public function run(string $sql, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
     {
-        return new Execution($this->driver->execute($sql, $binds, $this->resolve($options)), $sql);
+        return new Execution($this->driver->execute($sql, $binds, $this->resolve($options)), $sql, $this->state);
     }
 
     /**
@@ -42,10 +45,16 @@ final class Connection
     }
 
     /**
-     * Ends the Session. Idempotent.
+     * Releases the Session now: an open transaction rolls back (never
+     * commits), the Session goes back to the Pool, and every later call on
+     * this Connection or its Cursors fails. Idempotent.
+     *
+     * Without it, the Release happens when the Connection and all its
+     * Cursors are gone.
      */
     public function close(): void
     {
+        $this->state->released = true;
         $this->driver->close();
     }
 

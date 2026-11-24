@@ -18,7 +18,11 @@ final class Execution
     /**
      * @internal use Connection::run()
      */
-    public function __construct(private readonly DriverExecution $driver, private readonly string $sql)
+    public function __construct(
+        private readonly DriverExecution $driver,
+        private readonly string $sql,
+        private readonly ConnectionState $connection,
+    )
     {
     }
 
@@ -46,7 +50,7 @@ final class Execution
             $this->sql,
         );
 
-        return $this->rows = new Cursor($cursor);
+        return $this->rows = new Cursor($cursor, $this->connection);
     }
 
     /**
