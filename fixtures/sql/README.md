@@ -29,11 +29,22 @@ The scripts need `CREATE TABLE`, `CREATE PROCEDURE` and `CREATE TYPE`, plus
 enough tablespace quota for about 70 MB of LOB segments.
 
 The test suites also read V$ views (`V$SESSTAT` for Round-trip counts,
-`V$SESSION`, `V$SQL`). `grants.sql` grants them, run as SYSDBA with the user
-as the argument; `ddev fixtures` runs it before `install.sql`:
+`V$SESSION`, `V$SQL`, `V$CPOOL_CC_STATS`) and connect through a proxy client.
+`grants.sql` grants the views and creates the proxy client `<user>_CLIENT`
+(schema only, no password) that the user may connect through. Run it as
+SYSDBA with the user as the argument; `ddev fixtures` runs it before
+`install.sql`:
 
 ```bash
 sqlplus -s -l sys/password@//host:1521/service as sysdba @grants.sql user
+```
+
+The DRCP tests need DRCP started. `drcp.sql` starts it (idempotent), as SYSDBA
+in the CDB root; `ddev fixtures` runs it too, together with the TCPS listeners
+of [`../tls`](../tls/README.md):
+
+```bash
+sqlplus -s -l sys/password@//host:1521/FREE as sysdba @drcp.sql
 ``` They avoid
 23ai-only syntax (no `DROP ... IF EXISTS`), so they should also run on 19c.
 Non-ASCII seed data is written with `UNISTR`, so the files stay ASCII and the
