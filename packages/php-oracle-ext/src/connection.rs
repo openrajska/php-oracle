@@ -259,6 +259,7 @@ impl NativeConnection {
         self.state.run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
+            let mut implicit = Vec::new();
             let (row_count, cursor, warning, out_values) = self.state.with(|session| {
                 #[cfg(debug_assertions)]
                 if sql.starts_with(PANIC_HOOK) {
@@ -309,6 +310,17 @@ impl NativeConnection {
                         &self.state,
                         &options,
                     )?;
+                    // Each DBMS_SQL.RETURN_RESULT, in production order,
+                    // described in this Round trip; rows come on first fetch.
+                    // Registered like any Cursor, so Release drops them.
+                    for result in result.implicit_results() {
+                        implicit.push(NativeCursor::new(
+                            Arc::clone(&self.state),
+                            result,
+                            &options,
+                            Vec::new(),
+                        )?);
+                    }
                     (count, None, out_values)
                 };
                 let warning = session
@@ -329,9 +341,11 @@ impl NativeConnection {
                 None => result.insert("cursor", ()).map_err(put)?,
             }
             result.insert("outValues", out_values).map_err(put)?;
-            result
-                .insert("implicitResults", ZendHashTable::new())
-                .map_err(put)?;
+            let mut results = ZendHashTable::new();
+            for cursor in implicit {
+                results.push(ZendClassObject::new(cursor)).map_err(put)?;
+            }
+            result.insert("implicitResults", results).map_err(put)?;
             result.insert("warning", warning.as_deref()).map_err(put)?;
             Ok(result)
         })
