@@ -59,6 +59,19 @@ create or replace package fx_cursor as
   -- Two Implicit results through DBMS_SQL.RETURN_RESULT: items with
   -- id <= p_limit (id, name, price), then all categories (id, name).
   procedure implicit_results(p_limit in number);
+
+  -- IN, IN OUT, two REF CURSOR OUTs, a scalar OUT and an IN OUT REF CURSOR
+  -- in one Call, with no DATE column: items with id <= p_limit (id, name,
+  -- price), all categories (id, name), the item count, and the names of
+  -- categories 1 and 2. io_label gains a '!'.
+  procedure report(
+    p_limit      in     number,
+    io_label     in out varchar2,
+    o_items      out    sys_refcursor,
+    o_categories out    sys_refcursor,
+    o_total      out    number,
+    io_names     in out sys_refcursor
+  );
 end fx_cursor;
 /
 
@@ -139,5 +152,36 @@ create or replace package body fx_cursor as
        order by id;
     dbms_sql.return_result(l_categories);
   end implicit_results;
+
+  procedure report(
+    p_limit      in     number,
+    io_label     in out varchar2,
+    o_items      out    sys_refcursor,
+    o_categories out    sys_refcursor,
+    o_total      out    number,
+    io_names     in out sys_refcursor
+  ) is
+  begin
+    io_label := io_label || '!';
+
+    open o_items for
+      select id, name, price
+        from fx_items
+       where id <= p_limit
+       order by id;
+
+    open o_categories for
+      select id, name
+        from fx_categories
+       order by id;
+
+    select count(*) into o_total from fx_items;
+
+    open io_names for
+      select name
+        from fx_categories
+       where id <= 2
+       order by id;
+  end report;
 end fx_cursor;
 /
