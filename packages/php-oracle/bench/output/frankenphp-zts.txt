@@ -1,0 +1,52 @@
+oci8: 3 up
+core: 3 up
+core-held: 3 up
+# FrankenPHP worker mode, 8 worker threads; wrk 10s per point after a 2 s warm-up
+round=1 workload=scalar conc=1 driver=oci8 rps=4874.62 p50=189.00us p99=2.54ms 
+round=1 workload=scalar conc=1 driver=core rps=3484.37 p50=242.00us p99=4.20ms 
+round=1 workload=scalar conc=1 driver=core-held rps=4301.96 p50=209.00us p99=8.39ms 
+round=1 workload=scalar conc=8 driver=oci8 rps=9314.00 p50=769.00us p99=4.79ms 
+round=1 workload=scalar conc=8 driver=core rps=8816.07 p50=809.00us p99=4.13ms 
+round=1 workload=scalar conc=8 driver=core-held rps=8688.00 p50=814.00us p99=7.85ms 
+round=1 workload=scalar-txn conc=1 driver=oci8 rps=418.79 p50=2.35ms p99=28.16ms 
+round=1 workload=scalar-txn conc=1 driver=core rps=356.37 p50=2.63ms p99=23.82ms 
+round=1 workload=scalar-txn conc=1 driver=core-held rps=488.64 p50=1.97ms p99=10.61ms 
+round=1 workload=scalar-txn conc=8 driver=oci8 rps=1129.15 p50=1.63ms p99=32.76ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=1 workload=scalar-txn conc=8 driver=core rps=990.33 p50=2.41ms p99=1.57s 
+round=1 workload=scalar-txn conc=8 driver=core-held rps=981.54 p50=1.85ms p99=5.45ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=1 workload=cursor conc=1 driver=oci8 rps=503.96 p50=1.84ms p99=7.89ms 
+round=1 workload=cursor conc=1 driver=core rps=508.56 p50=1.85ms p99=3.48ms 
+round=1 workload=cursor conc=1 driver=core-held rps=545.79 p50=1.75ms p99=4.05ms 
+round=1 workload=cursor conc=8 driver=oci8 rps=1334.32 p50=5.54ms p99=30.06ms 
+round=1 workload=cursor conc=8 driver=core rps=1480.75 p50=4.86ms p99=16.98ms 
+round=1 workload=cursor conc=8 driver=core-held rps=1205.07 p50=6.10ms p99=42.26ms 
+round=1 workload=fetch conc=1 driver=oci8 rps=26.33 p50=36.42ms p99=57.29ms 
+round=1 workload=fetch conc=1 driver=core rps=36.69 p50=26.44ms p99=43.18ms 
+round=1 workload=fetch conc=1 driver=core-held rps=35.34 p50=25.42ms p99=69.80ms 
+round=1 workload=fetch conc=8 driver=oci8 rps=69.93 p50=103.47ms p99=359.59ms 
+round=1 workload=fetch conc=8 driver=core rps=97.40 p50=74.06ms p99=232.53ms 
+round=1 workload=fetch conc=8 driver=core-held rps=100.75 p50=73.83ms p99=146.29ms 
+round=2 workload=scalar conc=1 driver=core-held rps=4778.14 p50=198.00us p99=2.00ms 
+round=2 workload=scalar conc=1 driver=core rps=3852.46 p50=229.00us p99=2.77ms 
+round=2 workload=scalar conc=1 driver=oci8 rps=4379.12 p50=216.00us p99=2.34ms 
+round=2 workload=scalar conc=8 driver=core-held rps=8261.54 p50=0.85ms p99=5.40ms 
+round=2 workload=scalar conc=8 driver=core rps=7480.69 p50=0.94ms p99=4.05ms 
+round=2 workload=scalar conc=8 driver=oci8 rps=8915.44 p50=799.00us p99=4.11ms 
+round=2 workload=scalar-txn conc=1 driver=core-held rps=536.99 p50=1.74ms p99=26.23ms 
+round=2 workload=scalar-txn conc=1 driver=core rps=346.01 p50=2.53ms p99=100.80ms 
+round=2 workload=scalar-txn conc=1 driver=oci8 rps=478.43 p50=2.00ms p99=15.34ms 
+round=2 workload=scalar-txn conc=8 driver=core-held rps=1322.67 p50=3.21ms p99=45.59ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=scalar-txn conc=8 driver=core rps=722.28 p50=1.24ms p99=2.88ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=scalar-txn conc=8 driver=oci8 rps=756.44 p50=1.89ms p99=5.75ms   Socket errors: connect 0, read 0, write 0, timeout 8 
+round=2 workload=cursor conc=1 driver=core-held rps=361.05 p50=2.32ms p99=11.79ms 
+round=2 workload=cursor conc=1 driver=core rps=391.92 p50=2.26ms p99=11.47ms 
+round=2 workload=cursor conc=1 driver=oci8 rps=431.45 p50=2.14ms p99=5.18ms 
+round=2 workload=cursor conc=8 driver=core-held rps=1183.49 p50=6.47ms p99=14.33ms 
+round=2 workload=cursor conc=8 driver=core rps=1158.71 p50=6.11ms p99=58.24ms 
+round=2 workload=cursor conc=8 driver=oci8 rps=1132.25 p50=6.56ms p99=27.12ms 
+round=2 workload=fetch conc=1 driver=core-held rps=35.38 p50=25.60ms p99=55.30ms 
+round=2 workload=fetch conc=1 driver=core rps=37.21 p50=25.90ms p99=39.05ms 
+round=2 workload=fetch conc=1 driver=oci8 rps=27.21 p50=34.75ms p99=65.17ms 
+round=2 workload=fetch conc=8 driver=core-held rps=96.82 p50=74.31ms p99=183.44ms 
+round=2 workload=fetch conc=8 driver=core rps=99.20 p50=74.97ms p99=156.80ms 
+round=2 workload=fetch conc=8 driver=oci8 rps=73.70 p50=98.64ms p99=227.83ms 
