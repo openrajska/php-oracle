@@ -2,6 +2,7 @@
 //! Cursor born of that execute keeps them for its whole life.
 
 use ext_php_rs::types::ZendHashTable;
+use oracledb::StatementBuilder;
 
 use crate::error::Error;
 use crate::input::Fields;
@@ -42,6 +43,8 @@ pub enum KeyCase {
 
 /// The options of one execute, read from `$options`.
 pub struct Options {
+    /// Commit with the execute: Core sets it outside an Explicit transaction.
+    pub autocommit: bool,
     pub fetch_size: u32,
     pub numbers: NumberMode,
     pub row_shape: RowShape,
@@ -51,7 +54,7 @@ pub struct Options {
 impl Options {
     pub fn read(options: &ZendHashTable) -> Result<Self, Error> {
         let fields = Fields::new("$options", options, OPTION_KEYS)?;
-        fields.bool("autocommit")?;
+        let autocommit = fields.bool("autocommit")?;
         fields.optional_int("timeout")?;
         fields.choice("temporals", &["object", "string"])?;
         fields.choice("lobs", &["locator", "inline"])?;
@@ -73,10 +76,22 @@ impl Options {
             .filter(|n| *n >= 1)
             .ok_or_else(|| Error::usage("'fetchSize' in $options must be at least 1."))?;
         Ok(Self {
+            autocommit,
             fetch_size,
             numbers,
             row_shape,
             key_case,
         })
+    }
+
+    /// Under Autocommit, the statement commits in the execute's own Round
+    /// trip (C21), and a failed execute commits nothing. Every statement an
+    /// execute or an executeMany builds goes through it.
+    pub fn commit<'sql>(&self, builder: StatementBuilder<'sql>) -> StatementBuilder<'sql> {
+        if self.autocommit {
+            builder.autocommit()
+        } else {
+            builder
+        }
     }
 }
