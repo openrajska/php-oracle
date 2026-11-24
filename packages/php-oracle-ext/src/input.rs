@@ -5,43 +5,100 @@
 
 use std::time::Duration;
 
-use ext_php_rs::types::{ArrayKey, ZendHashTable, Zval};
+use ext_php_rs::flags::DataType;
+use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendStr, Zval};
 
 use crate::error::Error;
+
+/// `HASH_FLAG_PACKED` (Zend/zend_hash.h): a list, stored as bare zvals
+/// keyed by position.
+const HASH_FLAG_PACKED: u32 = 1 << 2;
+
+/// Every entry of a PHP array, in order, with its key borrowed from the
+/// array. ext-php-rs's own iterator copies every string key into a `String`
+/// first; this one reads the buckets, as `ZEND_HASH_FOREACH` does, and gives
+/// a UTF-8 key as [`ArrayKey::Str`] (other bytes as
+/// [`ArrayKey::ZendString`], integer keys as [`ArrayKey::Long`]).
+pub fn entries(table: &ZendHashTable) -> impl Iterator<Item = (ArrayKey<'_>, &Zval)> {
+    // SAFETY: reading the flags of a live array.
+    let packed = unsafe { table.u.flags } & HASH_FLAG_PACKED != 0;
+    let used = table.nNumUsed as usize;
+    (0..used).filter_map(move |index| {
+        // SAFETY: the first `nNumUsed` slots of a live array are
+        // initialised (a removed one is IS_UNDEF), as zvals when packed and
+        // as buckets otherwise; the array outlives the borrow, and PHP code
+        // run meanwhile cannot change it (it is shared, so a write copies).
+        let (key, value) = unsafe {
+            if packed {
+                let value = &*table.__bindgen_anon_1.arPacked.add(index);
+                (ArrayKey::Long(index as i64), value)
+            } else {
+                let bucket = &*table.__bindgen_anon_1.arData.add(index);
+                let key = match bucket.key.as_ref() {
+                    #[allow(clippy::cast_possible_wrap)]
+                    None => ArrayKey::Long(bucket.h as i64),
+                    Some(key) => {
+                        let key: &ZendStr = key;
+                        match key.as_str() {
+                            Ok(key) => ArrayKey::Str(key),
+                            Err(_) => ArrayKey::ZendString(key),
+                        }
+                    }
+                };
+                (key, &bucket.val)
+            }
+        };
+        (!matches!(value.get_type(), DataType::Undef)).then_some((key, value))
+    })
+}
 
 /// A strict view of one array: every key known, every known key present.
 pub struct Fields<'a> {
     what: &'static str,
-    table: &'a ZendHashTable,
+    keys: &'a [&'a str],
+    /// The value of each of `keys`, read in one pass over the array.
+    values: Vec<&'a Zval>,
 }
 
 impl<'a> Fields<'a> {
-    pub fn new(what: &'static str, table: &'a ZendHashTable, keys: &[&str]) -> Result<Self, Error> {
-        for (key, _) in table {
-            let known = match &key {
-                ArrayKey::String(k) => keys.contains(&k.as_str()),
-                ArrayKey::Str(k) => keys.contains(k),
-                ArrayKey::ZendString(k) => k.as_str().is_ok_and(|k| keys.contains(&k)),
-                ArrayKey::Long(_) => false,
+    pub fn new(
+        what: &'static str,
+        table: &'a ZendHashTable,
+        keys: &'a [&'a str],
+    ) -> Result<Self, Error> {
+        let mut values: Vec<Option<&'a Zval>> = vec![None; keys.len()];
+        for (key, value) in entries(table) {
+            let index = match &key {
+                ArrayKey::String(k) => keys.iter().position(|known| *known == k.as_str()),
+                ArrayKey::Str(k) => keys.iter().position(|known| known == k),
+                ArrayKey::ZendString(k) => k
+                    .as_str()
+                    .ok()
+                    .and_then(|k| keys.iter().position(|known| *known == k)),
+                ArrayKey::Long(_) => None,
             };
-            if !known {
+            let Some(index) = index else {
                 return Err(Error::usage(format!(
                     "Unknown key '{key}' in {what}; the keys are: {}.",
                     keys.join(", ")
                 )));
-            }
+            };
+            values[index] = Some(value);
         }
-        for key in keys {
-            if table.get(*key).is_none() {
-                return Err(Error::usage(format!("Missing key '{key}' in {what}.")));
-            }
-        }
-        Ok(Self { what, table })
+        let values = values
+            .into_iter()
+            .zip(keys)
+            .map(|(value, key)| {
+                value.ok_or_else(|| Error::usage(format!("Missing key '{key}' in {what}.")))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self { what, keys, values })
     }
 
     fn value(&self, key: &str) -> &'a Zval {
         // Every known key is present: checked in new().
-        self.table.get(key).expect("key checked in Fields::new")
+        let index = self.keys.iter().position(|known| *known == key);
+        self.values[index.expect("key checked in Fields::new")]
     }
 
     fn wrong(&self, key: &str, expected: &str) -> Error {

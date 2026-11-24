@@ -14,7 +14,7 @@ use ext_php_rs::types::{ZendClassObject, ZendHashTable};
 use oracledb::DbObjectType;
 
 use crate::batch;
-use crate::bind::{Binds, put};
+use crate::bind::{Binds, Matched, put};
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
@@ -142,16 +142,26 @@ impl ConnState {
     /// puts the Connection's own back (spec #32 §10). A Round trip over it
     /// fails as `timeout`; when the server ignored the break, the Session is
     /// lost too, and the Connection becomes Broken.
+    ///
+    /// Between calls the Session holds the Connection's own timeout (the
+    /// crate clears it when the Pool gets the Session back, and `connect()`
+    /// sets a configured one), so a `limit` equal to it changes nothing: the
+    /// usual case, no limit at all, costs no syscall.
     pub fn timed<T>(
         &self,
         limit: Option<Duration>,
         f: impl FnOnce() -> Result<T, Error>,
     ) -> Result<T, Error> {
-        self.with(|session| Ok(session.set_call_timeout(limit)?))?;
+        let own = limit == self.call_timeout;
+        if !own {
+            self.with(|session| Ok(session.set_call_timeout(limit)?))?;
+        }
         let started = Instant::now();
         let result = f();
-        // Fails only once the Session is gone: nothing left to restore.
-        let _ = self.with(|session| Ok(session.set_call_timeout(self.call_timeout)?));
+        if !own {
+            // Fails only once the Session is gone: nothing left to restore.
+            let _ = self.with(|session| Ok(session.set_call_timeout(self.call_timeout)?));
+        }
         result.map_err(|e| match limit {
             Some(limit) if e.kind() == Kind::Timeout => Error::timeout(limit, false),
             // The crate tells an ignored break only as "unable to recover":
@@ -383,12 +393,26 @@ impl NativeConnection {
             };
             let mut execute = |session: &oracledb::Connection,
                                mut statement: oracledb::Statement,
-                               binds: &mut Binds| {
+                               binds: &mut Binds,
+                               matched: Matched| {
                 let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
                 let (query, mut result) = {
-                    let matched = binds.matched(statement.bind_names())?;
-                    let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
-                    if statement.is_query() {
+                    // A block names each placeholder once: its values go in
+                    // their order, with none of the crate's name matching.
+                    let positional = if is_plsql {
+                        binds.in_order(&matched)
+                    } else {
+                        None
+                    };
+                    let named = if positional.is_none() {
+                        binds.named(&matched, statement.bind_names())
+                    } else {
+                        Vec::new()
+                    };
+                    let params: Vec<_> = named.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+                    if let Some(values) = positional {
+                        (None, Some(statement.execute(&values)?))
+                    } else if statement.is_query() {
                         let cursor = match statement.query_named(&params) {
                             // The prefetched rows hold a value of a type the
                             // crate cannot read (XMLTYPE): the whole response
@@ -473,10 +497,10 @@ impl NativeConnection {
                     let statement = self.state.with(prepare)?;
                     // Every check that needs no Round trip, before the LOB
                     // writes, which do.
-                    binds.matched(statement.bind_names())?;
+                    let matched = binds.matched(statement.bind_names())?;
                     binds.write_lobs(&self.state)?;
                     self.state
-                        .with(|session| execute(session, statement, &mut binds))
+                        .with(|session| execute(session, statement, &mut binds, matched))
                 })?;
 
             let mut result = ZendHashTable::with_capacity(5);

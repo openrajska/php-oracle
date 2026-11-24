@@ -21,6 +21,7 @@
 //! execute, such as a PL/SQL block failing at a row: the rows before it ran.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ext_php_rs::boxed::ZBox;
@@ -29,9 +30,10 @@ use oracledb::{
     DB_TYPE_BOOLEAN, DB_TYPE_CLOB, DB_TYPE_NUMBER, ErrorKind, ExecBatchResult, Row, ToDbValue,
 };
 
-use crate::bind::{Binds, Value, out_list, put};
+use crate::bind::{Binds, Classes, Name, Value, out_list, put, same_name};
 use crate::connection::ConnState;
 use crate::error::{Error, Kind, RowFailure};
+use crate::input::entries;
 use crate::object::Describe;
 use crate::options::Options;
 use crate::temp_lob::{TempLob, Written};
@@ -91,11 +93,7 @@ pub fn execute(
         // Under the Session's lock, as every Round trip.
         let executed = state.with(|_| {
             let placeholders = statement.bind_names().to_vec();
-            let values: Vec<Vec<&dyn ToDbValue>> = rows
-                .0
-                .iter()
-                .map(|binds| binds.positional(&placeholders))
-                .collect();
+            let values = rows.positional(&placeholders);
             let params: Vec<&[&dyn ToDbValue]> = values.iter().map(Vec::as_slice).collect();
             statement
                 .execute_batch(params.as_slice().into())
@@ -213,7 +211,7 @@ impl Column {
             Value::Text(_) => Some(Self::Text),
             Value::Clob(_) => Some(Self::Clob),
             Value::Bool(_) => Some(Self::Bool),
-            Value::Typed(typed) => Some(Self::Typed(typed.signature().to_string())),
+            Value::Typed(typed) => Some(Self::Typed(typed.signature())),
         }
     }
 
@@ -236,7 +234,7 @@ fn described(value: &Value) -> String {
         Value::Number(_) => "a float".to_string(),
         Value::Text(_) | Value::Clob(_) => "a string".to_string(),
         Value::Bool(_) => "a bool".to_string(),
-        Value::Typed(typed) => typed.signature().to_string(),
+        Value::Typed(typed) => typed.signature(),
     }
 }
 
@@ -244,14 +242,15 @@ impl Rows {
     /// Reads every row, then checks and unifies the columns.
     fn read(rows: &ZendHashTable, describe: &Describe<'_>) -> Result<Self, Error> {
         let mut read = Vec::with_capacity(rows.len());
-        for (index, (_, row)) in rows.iter().enumerate() {
+        let classes = Classes::default();
+        for (index, (_, row)) in entries(rows).enumerate() {
             let Some(row) = row.dereference().array() else {
                 return Err(Error::usage(format!(
                     "Row {index} is not an array; each row is an array of binds keyed by placeholder name."
                 )));
             };
-            let binds =
-                Binds::read(row, describe).map_err(|e| e.prefixed(format!("Row {index}")))?;
+            let binds = Binds::read_with(row, describe, &classes, read.first())
+                .map_err(|e| e.prefixed(format!("Row {index}")))?;
             read.push(binds);
         }
         let mut rows = Self(read);
@@ -264,20 +263,59 @@ impl Rows {
         &self.0[0]
     }
 
+    /// Whether `binds` has the first row's keys, written the same and in
+    /// the same order: then each column is at the same position. The usual
+    /// case, checked without comparing names case-insensitively.
+    fn like_first(&self, binds: &Binds) -> bool {
+        let first = self.first();
+        binds.0.len() == first.0.len()
+            && binds.0.iter().zip(&first.0).all(|((a, _), (b, _))| a == b)
+    }
+
+    /// Each row's values in the order of the statement's placeholders, for
+    /// a positional execute (see [`Binds::positional`]).
+    fn positional(&self, placeholders: &[String]) -> Vec<Vec<&dyn ToDbValue>> {
+        let first = self.first();
+        // Where each placeholder's value is in the first row.
+        let order: Vec<usize> = placeholders
+            .iter()
+            .filter_map(|placeholder| {
+                first
+                    .0
+                    .iter()
+                    .position(|(name, _)| same_name(name, placeholder))
+            })
+            .collect();
+        self.0
+            .iter()
+            .map(|binds| {
+                if self.like_first(binds) {
+                    order.iter().map(|&i| binds.0[i].1.as_db_value()).collect()
+                } else {
+                    binds.positional(placeholders)
+                }
+            })
+            .collect()
+    }
+
     /// Every row has the keys of the first, ignoring case and order.
     fn check_keys(&self) -> Result<(), Error> {
         let Some(first) = self.0.first() else {
             return Ok(());
         };
-        let keys = |binds: &Binds| -> HashMap<String, String> {
+        let keys = |binds: &Binds| -> HashMap<String, Name> {
             binds
                 .0
                 .iter()
                 .map(|(name, _)| (name.to_uppercase(), name.clone()))
                 .collect()
         };
-        let expected = keys(first);
+        let mut expected = None;
         for (index, binds) in self.0.iter().enumerate().skip(1) {
+            if self.like_first(binds) {
+                continue;
+            }
+            let expected = expected.get_or_insert_with(|| keys(first));
             let given = keys(binds);
             if let Some((_, name)) = expected.iter().find(|(key, _)| !given.contains_key(*key)) {
                 return Err(Error::usage(format!(
@@ -299,18 +337,17 @@ impl Rows {
         let Some(first) = self.0.first() else {
             return Ok(());
         };
-        let names: Vec<String> = first
-            .0
-            .iter()
-            .map(|(name, _)| name.to_uppercase())
-            .collect();
-        for name in names {
-            let cell = |binds: &Binds| binds.0.iter().position(|(n, _)| n.to_uppercase() == name);
+        let names: Vec<Name> = first.0.iter().map(|(name, _)| Rc::clone(name)).collect();
+        for (column_index, name) in names.iter().enumerate() {
+            let cell = |binds: &Binds| match binds.0.get(column_index) {
+                Some((n, _)) if n == name => Some(column_index),
+                _ => binds.0.iter().position(|(n, _)| same_name(n, name)),
+            };
             // The column's type and the row that set it, and the first
             // plain null.
             let mut column: Option<(Column, usize)> = None;
             let mut first_null = None;
-            let mut bind = String::new();
+            let mut bind = Name::from("");
             for (index, binds) in self.0.iter().enumerate() {
                 let Some(position) = cell(binds) else {
                     continue;
@@ -429,7 +466,7 @@ impl Rows {
                     .push(out_list(returned, name, value, state, options)?)
                     .map_err(put)?;
             }
-            out.insert(name.as_str(), lists).map_err(put)?;
+            out.insert(&**name, lists).map_err(put)?;
         }
         Ok(out)
     }

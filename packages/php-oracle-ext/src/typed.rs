@@ -35,9 +35,10 @@ pub struct Typed {
     /// The value of a CLOB, NCLOB or BLOB IN or IN OUT bind, which binds
     /// once written into a temporary LOB.
     temp: Option<TempLob>,
-    /// The bind as the user wrote it, without its value:
-    /// `Varchar::in()`, `Struct::out('HR.POINT')`.
-    signature: String,
+    /// The `Type` backing value, and the Object type named, for
+    /// [`Typed::signature`].
+    type_name: String,
+    object_type: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -79,8 +80,17 @@ impl Typed {
     /// The bind as the user wrote it, without its value:
     /// `Varchar::in()`, `Struct::out('HR.POINT')`. Two binds of the same
     /// signature bind as the same type.
-    pub fn signature(&self) -> &str {
-        &self.signature
+    pub fn signature(&self) -> String {
+        let method = match self.direction {
+            Direction::In => "in",
+            Direction::Out => "out",
+            Direction::InOut => "inOut",
+        };
+        let class = class_name(&self.type_name);
+        match &self.object_type {
+            Some(object_type) => format!("{class}::{method}('{object_type}')"),
+            None => format!("{class}::{method}()"),
+        }
     }
 }
 
@@ -91,7 +101,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         .get_properties()
         .map_err(|e| Error::unsupported(format!("Bind '{name}': {e}.")))?;
     let type_name = backing(name, properties, "type")?;
-    let direction = match backing(name, properties, "direction")?.as_str() {
+    let direction = match backing(name, properties, "direction")? {
         "in" => Direction::In,
         "out" => Direction::Out,
         "inOut" => Direction::InOut,
@@ -112,7 +122,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     // The PHP value itself, for a LOB: `value` becomes what the crate binds.
     let given = value;
     let mut object_type = None;
-    let value: Box<dyn ToDbValue> = match type_name.as_str() {
+    let value: Box<dyn ToDbValue> = match type_name {
         "varchar" | "rowid" => text(name, DB_TYPE_VARCHAR, value, direction)?,
         // Fixed-length only on the way in: a CHAR OUT bind is a CHAR(32767)
         // variable, so every value would come back blank-padded to 32767
@@ -147,7 +157,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         "date" | "timestamp" | "timestampTz" | "timestampLtz" => temporal::timestamp_bind(
             name,
             value,
-            Temporal::of_bind(&type_name).unwrap_or(Temporal::Timestamp),
+            Temporal::of_bind(type_name).unwrap_or(Temporal::Timestamp),
         )?,
         "intervalDs" => temporal::interval_ds_bind(name, value)?,
         "intervalYm" => temporal::interval_ym_bind(name, value)?,
@@ -156,7 +166,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         "vector" => vector::bind(name, value, properties.get("typeName").and_then(Zval::str))?,
         "object" | "collection" | "associativeArray" => {
             let kind =
-                object::Kind::of_bind(&type_name).unwrap_or_else(|| unreachable!("matched above"));
+                object::Kind::of_bind(type_name).unwrap_or_else(|| unreachable!("matched above"));
             let type_name = properties
                 .get("typeName")
                 .and_then(Zval::str)
@@ -171,40 +181,35 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
             )));
         }
     };
-    let lob = matches!(type_name.as_str(), "clob" | "nClob" | "blob");
+    let lob = matches!(type_name, "clob" | "nClob" | "blob");
     let temp = if lob {
         // NULL (and OUT) binds as `value`, NULL of the LOB type.
         TempLob::read(name, value.db_type(), given)?
     } else {
         None
     };
-    let method = match direction {
-        Direction::In => "in",
-        Direction::Out => "out",
-        Direction::InOut => "inOut",
-    };
-    let signature = match object_type {
-        Some(object_type) => format!("{}::{method}('{object_type}')", class_name(&type_name)),
-        None => format!("{}::{method}()", class_name(&type_name)),
-    };
     Ok(Typed {
         value,
         direction,
-        reads_as: Temporal::of_bind(&type_name),
+        reads_as: Temporal::of_bind(type_name),
         temp,
-        signature,
+        type_name: type_name.to_string(),
+        object_type,
     })
 }
 
 /// The backing value of an enum property (`type`, `direction`).
-fn backing(name: &str, properties: &ZendHashTable, property: &str) -> Result<String, Error> {
+fn backing<'a>(
+    name: &str,
+    properties: &'a ZendHashTable,
+    property: &str,
+) -> Result<&'a str, Error> {
     properties
         .get(property)
         .and_then(Zval::object)
         .and_then(|e| e.get_properties().ok())
         .and_then(|p| p.get("value"))
         .and_then(Zval::str)
-        .map(str::to_string)
         .ok_or_else(|| Error::usage(format!("Bind '{name}': its {property} is not set.")))
 }
 

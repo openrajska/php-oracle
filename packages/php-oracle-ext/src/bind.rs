@@ -25,7 +25,9 @@
 //! [`Binds::write_lobs`], after every check that needs no Round trip (see
 //! [`crate::temp_lob`]).
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ext_php_rs::boxed::ZBox;
@@ -35,6 +37,7 @@ use oracledb::{DB_TYPE_CLOB, DbType, ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::connection::ConnState;
 use crate::error::Error;
+use crate::input::entries;
 use crate::object::Describe;
 use crate::options::Options;
 use crate::temp_lob::{TempLob, Written};
@@ -65,7 +68,7 @@ pub enum Value {
 }
 
 impl Value {
-    fn as_db_value(&self) -> &dyn ToDbValue {
+    pub fn as_db_value(&self) -> &dyn ToDbValue {
         match self {
             Value::Null(v) => v,
             Value::NullOf(v) => v,
@@ -94,56 +97,145 @@ impl Value {
 
 /// Owned bind values, alive for the whole execute, each under the name the
 /// user wrote.
-pub struct Binds(pub Vec<(String, Value)>);
+pub struct Binds(pub Vec<(Name, Value)>);
+
+/// A bind's name, shared by the rows of a batch that write it the same.
+pub type Name = Rc<str>;
+
+/// Up to this many binds, names are compared by a scan instead of a map.
+const FEW: usize = 16;
+
+/// Whether two names are the same ignoring case, as their uppercase forms
+/// compare, without building them.
+pub fn same_name(a: &str, b: &str) -> bool {
+    if a.is_ascii() && b.is_ascii() {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a.chars()
+            .flat_map(char::to_uppercase)
+            .eq(b.chars().flat_map(char::to_uppercase))
+    }
+}
+
+/// Which placeholder each bind matched, in the order of the binds.
+pub struct Matched {
+    placeholders: usize,
+    found: Vec<usize>,
+}
 
 impl Binds {
     /// Reads every bind: its name, then its value by inference. `describe`
     /// describes the type an Object or Collection bind names.
     pub fn read(binds: &ZendHashTable, describe: &Describe<'_>) -> Result<Self, Error> {
-        let mut values = Vec::with_capacity(binds.len());
-        let mut seen: HashMap<String, String> = HashMap::with_capacity(binds.len());
-        for (key, zval) in binds {
-            let name = name(&key)?;
-            if let Some(other) = seen.insert(name.to_uppercase(), name.clone()) {
+        Self::read_with(binds, describe, &Classes::default(), None)
+    }
+
+    /// [`Binds::read`], with the class entries already looked up and the
+    /// binds of an earlier row, `like` (the rows of a batch share both):
+    /// a name written as `like` writes it at the same position is shared,
+    /// and checked already.
+    pub fn read_with(
+        binds: &ZendHashTable,
+        describe: &Describe<'_>,
+        classes: &Classes,
+        like: Option<&Binds>,
+    ) -> Result<Self, Error> {
+        let mut values: Vec<(Name, Value)> = Vec::with_capacity(binds.len());
+        // Few binds: a scan, with no allocation; many: a map.
+        let mut seen: Option<HashMap<String, usize>> =
+            (binds.len() > FEW).then(|| HashMap::with_capacity(binds.len()));
+        // Every name so far was `like`'s: none differs only in case.
+        let mut as_like = true;
+        for (position, (key, zval)) in entries(binds).enumerate() {
+            let shared = like
+                .and_then(|like| like.0.get(position))
+                .filter(|(name, _)| matches!(key, ArrayKey::Str(key) if key == &**name))
+                .map(|(name, _)| Rc::clone(name));
+            as_like &= shared.is_some();
+            let name = match shared {
+                Some(name) => name,
+                None => Name::from(self::name(&key)?),
+            };
+            let other = match &mut seen {
+                Some(seen) => seen.insert(name.to_uppercase(), values.len()),
+                None if as_like => None,
+                None => values.iter().position(|(other, _)| same_name(other, &name)),
+            };
+            if let Some(other) = other {
+                let other = &values[other].0;
                 return Err(Error::usage(format!(
                     "Binds '{other}' and '{name}' differ only in case; placeholder names are case-insensitive, so keep one of them."
                 )));
             }
-            let value = infer(&name, zval, describe)?;
+            let value = infer(&name, zval, describe, classes)?;
             values.push((name, value));
         }
         Ok(Self(values))
     }
 
-    /// The binds as the crate takes them, matched to the statement's
-    /// placeholders (`Statement::bind_names()`). An extra or a missing bind
-    /// fails here, before any Round trip.
-    pub fn matched(&self, placeholders: &[String]) -> Result<Vec<(String, &dyn ToDbValue)>, Error> {
-        let by_name: HashMap<String, &str> = placeholders
-            .iter()
-            .map(|p| (p.to_uppercase(), p.as_str()))
-            .collect();
-        let mut params = Vec::with_capacity(self.0.len());
-        for (name, value) in &self.0 {
-            let Some(placeholder) = by_name.get(&name.to_uppercase()) else {
+    /// Matches the binds to the statement's placeholders
+    /// (`Statement::bind_names()`), ignoring case. An extra or a missing
+    /// bind fails here, before any Round trip.
+    pub fn matched(&self, placeholders: &[String]) -> Result<Matched, Error> {
+        let mut found = Vec::with_capacity(self.0.len());
+        for (name, _) in &self.0 {
+            // The last of placeholders that differ only in case, as a map
+            // keyed by the uppercase name would keep.
+            let Some(placeholder) = placeholders.iter().rposition(|p| same_name(p, name)) else {
                 return Err(Error::usage(extra(name, placeholders)));
             };
-            // Quoted, the crate takes the name exactly as the SQL wrote it.
-            params.push((format!("\"{placeholder}\""), value.as_db_value()));
+            found.push(placeholder);
         }
-        if params.len() < placeholders.len() {
-            let given: Vec<String> = self.0.iter().map(|(n, _)| n.to_uppercase()).collect();
-            if let Some(missing) = placeholders
+        if found.len() < placeholders.len()
+            && let Some(missing) = placeholders
                 .iter()
-                .find(|p| !given.contains(&p.to_uppercase()))
-            {
-                return Err(Error::usage(format!(
-                    "Placeholder :{missing} has no bind; add it to the binds, keyed '{}'.",
-                    missing.to_lowercase()
-                )));
-            }
+                .find(|p| !self.0.iter().any(|(name, _)| same_name(name, p)))
+        {
+            return Err(Error::usage(format!(
+                "Placeholder :{missing} has no bind; add it to the binds, keyed '{}'.",
+                missing.to_lowercase()
+            )));
         }
-        Ok(params)
+        Ok(Matched {
+            placeholders: placeholders.len(),
+            found,
+        })
+    }
+
+    /// The values by name, as the crate's named execute takes them: each
+    /// under its placeholder's name, quoted so that the crate takes it
+    /// exactly as the SQL wrote it.
+    pub fn named(
+        &self,
+        matched: &Matched,
+        placeholders: &[String],
+    ) -> Vec<(String, &dyn ToDbValue)> {
+        self.0
+            .iter()
+            .zip(&matched.found)
+            .map(|((_, value), &placeholder)| {
+                (
+                    format!("\"{}\"", placeholders[placeholder]),
+                    value.as_db_value(),
+                )
+            })
+            .collect()
+    }
+
+    /// The values in the order of the statement's placeholders, as the
+    /// crate's positional execute takes them, when every placeholder has a
+    /// bind of its own (a PL/SQL block names each placeholder once): what
+    /// the crate's named execute would bind, without its matching.
+    pub fn in_order(&self, matched: &Matched) -> Option<Vec<&dyn ToDbValue>> {
+        let count = matched.placeholders;
+        if self.0.len() != count {
+            return None;
+        }
+        let mut values: Vec<Option<&dyn ToDbValue>> = vec![None; count];
+        for ((_, value), &placeholder) in self.0.iter().zip(&matched.found) {
+            values[placeholder] = Some(value.as_db_value());
+        }
+        values.into_iter().collect()
     }
 
     /// The values in the order of the statement's placeholders
@@ -153,10 +245,9 @@ impl Binds {
         placeholders
             .iter()
             .filter_map(|placeholder| {
-                let placeholder = placeholder.to_uppercase();
                 self.0
                     .iter()
-                    .find(|(name, _)| name.to_uppercase() == placeholder)
+                    .find(|(name, _)| same_name(name, placeholder))
                     .map(|(_, value)| value.as_db_value())
             })
             .collect()
@@ -222,7 +313,7 @@ impl Binds {
         };
         for (name, value) in self.0.iter().filter(|(_, value)| value.is_out()) {
             let values = out_list(&mut rows, name, value, state, options)?;
-            out.insert(name.as_str(), values).map_err(put)?;
+            out.insert(&**name, values).map_err(put)?;
         }
         Ok(out)
     }
@@ -250,7 +341,7 @@ pub fn out_list(
     let index = rows.first().and_then(|row| {
         row.columns()
             .iter()
-            .position(|column| column.name().to_uppercase() == name.to_uppercase())
+            .position(|column| same_name(column.name(), name))
     });
     let mut values = ZendHashTable::with_capacity(u32::try_from(rows.len()).unwrap_or(0));
     for row in rows {
@@ -271,7 +362,10 @@ fn name(key: &ArrayKey<'_>) -> Result<String, Error> {
             "Bind keys are placeholder names, but key {index} is an integer (is the array a list?); key every value by its placeholder name without ':'. Positional and '?' placeholders are not accepted."
         )));
     }
-    let name = key.to_string();
+    let name = match key {
+        ArrayKey::Str(key) => (*key).to_owned(),
+        key => key.to_string(),
+    };
     if let Some(bare) = name.strip_prefix(':') {
         return Err(Error::usage(format!(
             "Bind ':{bare}': write the key without ':', as '{bare}'."
@@ -294,8 +388,30 @@ fn extra(name: &str, placeholders: &[String]) -> String {
     }
 }
 
+/// The class a bind's object is checked against first, looked up by name
+/// once per read of the binds rather than once per object: a lookup
+/// lowercases and hashes the name. Only a class found is kept.
+#[derive(Default)]
+pub struct Classes {
+    bind: Cell<Option<&'static ClassEntry>>,
+}
+
+impl Classes {
+    fn bind(&self) -> Option<&'static ClassEntry> {
+        if self.bind.get().is_none() {
+            self.bind.set(ClassEntry::try_find(typed::BIND_CLASS));
+        }
+        self.bind.get()
+    }
+}
+
 /// Infers how a plain PHP value binds (spec #32 §7).
-fn infer(name: &str, zval: &Zval, describe: &Describe<'_>) -> Result<Value, Error> {
+fn infer(
+    name: &str,
+    zval: &Zval,
+    describe: &Describe<'_>,
+    classes: &Classes,
+) -> Result<Value, Error> {
     let zval = zval.dereference();
     if zval.is_null() {
         Ok(Value::Null(None))
@@ -308,7 +424,7 @@ fn infer(name: &str, zval: &Zval, describe: &Describe<'_>) -> Result<Value, Erro
     } else if zval.is_string() {
         text(name, zval)
     } else if let Some(object) = zval.object() {
-        object_value(name, object, describe)
+        object_value(name, object, describe, classes)
     } else if zval.is_array() {
         Err(Error::usage(format!(
             "Bind '{name}': an array does not bind by itself; use Json::in() or a typed bind."
@@ -374,9 +490,14 @@ fn out_of_number_range(name: &str) -> Error {
 
 /// An object: a `BackedEnum` or a `Stringable`. `DateTimeInterface` is
 /// checked first, as Carbon is `Stringable` too.
-fn object_value(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<Value, Error> {
+fn object_value(
+    name: &str,
+    object: &ZendObject,
+    describe: &Describe<'_>,
+    classes: &Classes,
+) -> Result<Value, Error> {
     let is = |class: &str| ClassEntry::try_find(class).is_some_and(|ce| object.instance_of(ce));
-    if is(typed::BIND_CLASS) {
+    if classes.bind().is_some_and(|ce| object.instance_of(ce)) {
         return typed::read(name, object, describe).map(Value::Typed);
     }
     if is(CORE_CURSOR_CLASS) || is(NATIVE_CURSOR_CLASS) {
@@ -397,7 +518,7 @@ fn object_value(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Res
             .ok_or_else(|| {
                 Error::usage(format!("Bind '{name}': the enum has no backing value."))
             })?;
-        return infer(name, backing, describe);
+        return infer(name, backing, describe, classes);
     }
     if is("JsonSerializable") {
         return Err(Error::usage(format!(
