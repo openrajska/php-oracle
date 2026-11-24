@@ -24,6 +24,8 @@ abstract class ConformanceTestCase extends TestCase
     /** @var list<DriverConnection> */
     private array $connections = [];
 
+    private static int $pools = 0;
+
     protected function tearDown(): void
     {
         foreach ($this->connections as $connection) {
@@ -43,6 +45,18 @@ abstract class ConformanceTestCase extends TestCase
         $this->connections[] = $connection;
 
         return $connection;
+    }
+
+    /**
+     * Config fields that give a test a Pool of its own: a Pool lives as long
+     * as the process, so one test's Sessions would otherwise be another's.
+     * Only `connectTimeout` changes, by a millisecond per call.
+     *
+     * @return array{connectTimeout: float}
+     */
+    protected static function ownPool(): array
+    {
+        return ['connectTimeout' => 30 + ++self::$pools / 1000];
     }
 
     protected static function options(int $fetchSize = 100, bool $autocommit = true): DriverOptions

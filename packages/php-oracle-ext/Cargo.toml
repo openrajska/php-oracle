@@ -17,6 +17,10 @@ ext-php-rs = "0.16"
 # CONTRIBUTING.md, "The oracledb fork").
 oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "50a7aa974d29e072c59e5a10bcb3025ecebfc446", version = "=26.0.0-beta.6" }
 
+[dev-dependencies]
+# fork() and waitpid() for the Pool registry's tests.
+libc = "0.2"
+
 [profile.release]
 strip = "debuginfo"
 lto = "fat"

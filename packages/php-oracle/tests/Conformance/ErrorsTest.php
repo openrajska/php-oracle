@@ -74,6 +74,50 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
+     * Errors 5, the amendment to #32: on 26ai, ORA-00001 adds an ORA-03301
+     * line with the row's values unless the Session turns
+     * `error_message_details` off, which the Backend does when it creates
+     * the Session.
+     */
+    #[Test]
+    public function a_unique_violation_on_a_fresh_connection_carries_no_ora_03301_line_and_no_bound_value(): void
+    {
+        $connection = $this->connect(...self::ownPool());
+        $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)';
+        $connection->execute($insert, ['id' => 39001, 'code' => 'zq39secret'], self::options(autocommit: false));
+
+        try {
+            $connection->execute($insert, ['id' => 39002, 'code' => 'zq39secret'], self::options(autocommit: false));
+            self::fail('The duplicate was inserted.');
+        } catch (UniqueViolationException $e) {
+            self::assertStringStartsWith('ORA-00001', $e->getMessage());
+            self::assertStringNotContainsString('ORA-03301', $e->getMessage());
+            self::assertStringNotContainsString('zq39secret', $e->getMessage());
+        } finally {
+            $connection->rollback();
+        }
+    }
+
+    /**
+     * Errors 9, the Pool-exhausted part.
+     */
+    #[Test]
+    public function the_pool_at_its_ceiling_gives_pool_exhausted_exception(): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.1];
+        $this->connect(...$fields);
+
+        try {
+            $this->connect(...$fields);
+            self::fail('A second Session came out of a Pool of one.');
+        } catch (PoolExhaustedException $e) {
+            self::assertSame(0, $e->getCode());
+            self::assertStringContainsString('acquireTimeout', $e->getMessage());
+            self::assertNull($e->sql());
+        }
+    }
+
+    /**
      * Errors 3. The expected offsets are the ones oci8 reports for the same
      * statements.
      */
