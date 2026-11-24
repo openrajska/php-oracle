@@ -18,6 +18,8 @@ mod error;
 mod input;
 mod options;
 mod pool;
+mod typed;
+mod value;
 
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {

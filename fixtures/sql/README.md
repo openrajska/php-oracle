@@ -57,6 +57,7 @@ client `NLS_LANG` does not matter.
 | Collection bound into `TABLE(:ids)` | `fx_number_list` bound against `fx_items` (query below) | `03_object.sql`, `02_cursor.sql` |
 | Large LOB for streaming | `fx_lobs` row 4: 16 MiB CLOB and 16 MiB BLOB with deterministic content; rows 1–3: small, empty, NULL; `fx_lob.generate`, `text_line`, `text_length`, `binary_length` | `05_lob.sql` |
 | `execute_batch` with per-row errors | `fx_batch_rows` (empty; PK, UNIQUE, NOT NULL and CHECK constraints) | `06_batch.sql` |
+| `INSERT ... RETURNING ... INTO` | `fx_bind_rows` (global temporary table, rows gone at commit or rollback) | `09_bind.sql` |
 | One Pool shared across threads | `fx_pool.session_id`, `fx_pool.sleep`, `fx_pool.bump_counter` | `07_pool.sql` |
 | Fetch benchmark (10k rows, mixed columns) | `fx_bench_rows` | `08_bench.sql` |
 
