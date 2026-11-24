@@ -49,6 +49,7 @@ client `NLS_LANG` does not matter.
 | REF CURSOR as a function return value; strongly typed REF CURSOR | `fx_cursor.items`, `fx_cursor.typed_cursor` (`fx_cursor.item_cursor`) | `02_cursor.sql` |
 | `CURSOR()` column | `fx_cursor.categories_with_items` (a REF CURSOR whose rows hold a nested `CURSOR()`), or the query below | `02_cursor.sql` |
 | Implicit results (`DBMS_SQL.RETURN_RESULT`) | `fx_cursor.implicit_results` (2 results with different columns) | `02_cursor.sql` |
+| IN, OUT, IN OUT and REF CURSORs (two OUT, one IN OUT) in one Call, with no DATE column | `fx_cursor.report` | `02_cursor.sql` |
 | Object types as IN / OUT / IN OUT / return | `fx_point`, `fx_polygon` (object with a Collection attribute); `fx_object.make_point`, `move_point`, `make_polygon`, `count_vertices` | `03_object.sql` |
 | Collections (nested table, VARRAY) as IN / OUT / IN OUT / return | `fx_number_list`, `fx_point_list` (nested tables), `fx_string_varray` (VARRAY(10)); `fx_object.sum_numbers`, `reverse_numbers`, `split_csv`, `append_tag` | `03_object.sql` |
 | Associative arrays (`INDEX BY`) as IN / OUT | `fx_object.t_number_map` (`index by pls_integer`); `fx_object.sum_map`, `fill_map` (sparse keys) | `03_object.sql` |

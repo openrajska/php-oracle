@@ -42,8 +42,9 @@ const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientI
 #[cfg(debug_assertions)]
 const PANIC_HOOK: &str = "/* rajska_oracle: panic */";
 
-/// Where a native cursor lives: shared by its `Cursor` object and, weakly,
-/// by its Connection, which empties it on Release.
+/// Where a native cursor lives: shared by its `Cursor` object and the
+/// Cursors nested in it and, weakly, by its Connection, which empties it on
+/// Release. A query, a REF CURSOR and a nested `CURSOR()` each have one.
 pub type CursorSlot = Mutex<Option<oracledb::Cursor>>;
 
 /// What a Connection and its Cursors share: the Session, on loan until
@@ -258,6 +259,7 @@ impl NativeConnection {
         self.state.run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
+            let mut implicit = Vec::new();
             let (row_count, cursor, warning, out_values) = self.state.with(|session| {
                 #[cfg(debug_assertions)]
                 if sql.starts_with(PANIC_HOOK) {
@@ -287,11 +289,12 @@ impl NativeConnection {
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
                 let (row_count, cursor, out_values) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;
-                    let cursor = NativeCursor::new(Arc::clone(&self.state), cursor, &options)?;
+                    let cursor =
+                        NativeCursor::new(Arc::clone(&self.state), cursor, &options, Vec::new())?;
                     (
                         0,
                         Some(cursor),
-                        binds.out_values(None, false, options.numbers)?,
+                        binds.out_values(None, false, &self.state, &options)?,
                     )
                 } else {
                     let mut result = statement.execute_named(&params)?;
@@ -304,8 +307,20 @@ impl NativeConnection {
                     let out_values = binds.out_values(
                         Some(&mut result),
                         statement.is_plsql(),
-                        options.numbers,
+                        &self.state,
+                        &options,
                     )?;
+                    // Each DBMS_SQL.RETURN_RESULT, in production order,
+                    // described in this Round trip; rows come on first fetch.
+                    // Registered like any Cursor, so Release drops them.
+                    for result in result.implicit_results() {
+                        implicit.push(NativeCursor::new(
+                            Arc::clone(&self.state),
+                            result,
+                            &options,
+                            Vec::new(),
+                        )?);
+                    }
                     (count, None, out_values)
                 };
                 let warning = session
@@ -326,9 +341,11 @@ impl NativeConnection {
                 None => result.insert("cursor", ()).map_err(put)?,
             }
             result.insert("outValues", out_values).map_err(put)?;
-            result
-                .insert("implicitResults", ZendHashTable::new())
-                .map_err(put)?;
+            let mut results = ZendHashTable::new();
+            for cursor in implicit {
+                results.push(ZendClassObject::new(cursor)).map_err(put)?;
+            }
+            result.insert("implicitResults", results).map_err(put)?;
             result.insert("warning", warning.as_deref()).map_err(put)?;
             Ok(result)
         })

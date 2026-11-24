@@ -35,9 +35,12 @@ final class Connection
     public static function connect(#[\SensitiveParameter] array $pool, array $session): Connection {}
 
     /**
+     * Each OUT value list holds the values a bind produced; a REF CURSOR is
+     * a Cursor there.
+     *
      * @param array<string, mixed> $binds
      * @param array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string} $options
-     * @return array{rowCount: int, cursor: ?Cursor, outValues: array<string, mixed>, implicitResults: list<Cursor>, warning: ?string}
+     * @return array{rowCount: int, cursor: ?Cursor, outValues: array<string, list<mixed>>, implicitResults: list<Cursor>, warning: ?string}
      *
      * @throws Exception
      */
@@ -81,7 +84,9 @@ final class Connection
 }
 
 /**
- * The rows of one query.
+ * The rows of one query, a REF CURSOR or a nested `CURSOR()`. A nested
+ * `CURSOR()` cell of a row is a Cursor too: it holds the Cursor it was
+ * read from, and closing that one closes it.
  *
  * @internal Core reaches it only through its Extension adapter.
  */

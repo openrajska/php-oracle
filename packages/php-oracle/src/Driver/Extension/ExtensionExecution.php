@@ -13,7 +13,7 @@ use Rajska\Oracle\Driver\DriverExecution;
 final readonly class ExtensionExecution implements DriverExecution
 {
     /**
-     * @param array<string, mixed> $outValues
+     * @param array<string, list<mixed>> $outValues
      * @param list<DriverCursor> $implicitResults
      */
     public function __construct(

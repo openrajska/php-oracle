@@ -8,8 +8,8 @@
 
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use oracledb::{
-    BindValue, DB_TYPE_CHAR, DB_TYPE_NCHAR, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_VARCHAR, DbType,
-    OracleNumber, ToDbValue,
+    BindValue, DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_NCHAR, DB_TYPE_NVARCHAR, DB_TYPE_RAW,
+    DB_TYPE_VARCHAR, DbType, OracleNumber, ToDbValue,
 };
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
@@ -92,6 +92,9 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
         ),
         "binaryDouble" => Box::new(scalar(name, value, "an int or a float", float)?),
         "boolean" => Box::new(scalar(name, value, "a bool", Zval::bool)?),
+        // A REF CURSOR goes as NULL, and the server opens it.
+        "cursor" if value.is_null() => Box::new(DB_TYPE_CURSOR),
+        "cursor" => return Err(cursor_in(name)),
         other => {
             return Err(Error::unsupported(format!(
                 "Bind '{name}': {} binds are not implemented yet.",
@@ -227,6 +230,13 @@ fn size(direction: Direction) -> usize {
     } else {
         OUT_SIZE
     }
+}
+
+/// A Cursor passed back to the server: later (spec #32 §1).
+pub fn cursor_in(name: &str) -> Error {
+    Error::unsupported(format!(
+        "Bind '{name}': passing a Cursor back to the server is not supported yet; bind a REF CURSOR with Cursor::out() or Cursor::inOut() and let the server open it."
+    ))
 }
 
 fn wrong(name: &str, expected: &str) -> Error {

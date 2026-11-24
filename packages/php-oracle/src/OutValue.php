@@ -58,6 +58,18 @@ final class OutValue
     }
 
     /**
+     * A REF CURSOR, as a lazy Cursor with the Execution's options; never
+     * null. One the block never opened fails on its first read
+     * (ORA-01001). The same Cursor on every call.
+     */
+    public function cursor(): Cursor
+    {
+        $value = $this->one('cursor()');
+
+        return $value instanceof Cursor ? $value : throw $this->wrongType($value, 'a Cursor');
+    }
+
+    /**
      * Every value the bind produced: one per returned row for `RETURNING …
      * INTO` (`[]` when no row matched), one for a PL/SQL OUT.
      *
@@ -99,6 +111,7 @@ final class OutValue
             \is_float($value) => ' Read it with float().',
             \is_string($value) => ' Read it with string().',
             \is_bool($value) => ' Read it with bool().',
+            $value instanceof Cursor => ' Read it with cursor().',
             default => ' Read it with value().',
         };
 

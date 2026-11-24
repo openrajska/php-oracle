@@ -32,13 +32,46 @@ final class Cursor implements IteratorAggregate
     /** The 0-based position of the next row. */
     private int $position = 0;
 
+    private bool $closed = false;
+
     /**
-     * @internal use Connection::select() or Execution::rows()
+     * The row keys of the nested `CURSOR()` columns, once known.
+     *
+     * @var list<int|string>|null
+     */
+    private ?array $handles = null;
+
+    /**
+     * @internal use Connection::select(), Execution::rows() or OutValue::cursor()
+     *
+     * @param ?Cursor $parent the Cursor a nested `CURSOR()` was read from
      */
     public function __construct(
         private readonly DriverCursor $driver,
         private readonly ConnectionState $connection,
+        private readonly ?Cursor $parent = null,
     ) {
+    }
+
+    /**
+     * Values with each Backend Cursor handle (a REF CURSOR) wrapped as a
+     * Cursor of the Connection.
+     *
+     * @internal
+     *
+     * @param list<mixed> $values
+     *
+     * @return list<mixed>
+     */
+    public static function wrap(array $values, ConnectionState $connection): array
+    {
+        foreach ($values as $index => $value) {
+            if ($value instanceof DriverCursor) {
+                $values[$index] = new self($value, $connection);
+            }
+        }
+
+        return $values;
     }
 
     /**
@@ -62,7 +95,7 @@ final class Cursor implements IteratorAggregate
     {
         $this->ensureOpen();
         $rows = $this->next === 0 ? $this->batch : \array_slice($this->batch, $this->next);
-        while (($batch = $this->driver->fetchBatch()) !== []) {
+        while (($batch = $this->fetch()) !== []) {
             array_push($rows, ...$batch);
         }
         $this->position += \count($rows);
@@ -111,6 +144,7 @@ final class Cursor implements IteratorAggregate
      */
     public function close(): void
     {
+        $this->closed = true;
         $this->batch = [];
         $this->next = 0;
         $this->driver->close();
@@ -123,7 +157,7 @@ final class Cursor implements IteratorAggregate
     {
         $this->ensureOpen();
         if (!isset($this->batch[$this->next])) {
-            $this->batch = $this->driver->fetchBatch();
+            $this->batch = $this->fetch();
             $this->next = 0;
             if ($this->batch === []) {
                 return null;
@@ -135,13 +169,51 @@ final class Cursor implements IteratorAggregate
     }
 
     /**
-     * Rows of the last batch are still here after the Connection's Release:
-     * they must not be served either.
+     * The next batch, each nested `CURSOR()` cell wrapped as a Cursor nested
+     * in this one. The cells are located through `columns()`.
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    private function fetch(): array
+    {
+        $rows = $this->driver->fetchBatch();
+        if ($rows === []) {
+            return $rows;
+        }
+        if ($this->handles === null) {
+            // Every row has the same keys, in column order.
+            $keys = array_keys($rows[0]);
+            $this->handles = [];
+            foreach ($this->driver->columns() as $position => $column) {
+                if ($column['type'] === Type::Cursor->value) {
+                    $this->handles[] = $keys[$position];
+                }
+            }
+        }
+        foreach ($this->handles as $key) {
+            foreach ($rows as $index => $row) {
+                if ($row[$key] instanceof DriverCursor) {
+                    $rows[$index][$key] = new self($row[$key], $this->connection, $this);
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Rows of the last batch are still here after the Connection's Release
+     * or a parent's `close()`: they must not be served either.
      */
     private function ensureOpen(): void
     {
         if ($this->connection->released) {
             throw new UsageException('The Connection is closed.');
+        }
+        for ($parent = $this->parent; $parent !== null; $parent = $parent->parent) {
+            if ($parent->closed) {
+                throw new UsageException('The Cursor this one is nested in is closed, which closed this one too.');
+            }
         }
     }
 }
