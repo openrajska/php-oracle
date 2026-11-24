@@ -17,7 +17,8 @@ final class Execution
     private ?Cursor $rows = null;
 
     /**
-     * The OUT values, each REF CURSOR wrapped once as a Cursor.
+     * The OUT values, each REF CURSOR wrapped once as a Cursor and each LOB
+     * as a Lob.
      *
      * @var array<string, list<mixed>>|null
      */
@@ -61,7 +62,7 @@ final class Execution
     public function out(string $name): OutValue
     {
         $values = $this->outValues ??= array_map(
-            fn (array $values): array => Cursor::wrap($values, $this->connection),
+            fn (array $values): array => Lob::wrap(Cursor::wrap($values, $this->connection), $this->connection),
             $this->driver->outValues(),
         );
         $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));

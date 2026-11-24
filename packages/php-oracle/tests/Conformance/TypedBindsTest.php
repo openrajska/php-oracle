@@ -11,6 +11,7 @@ use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\Date;
 use Rajska\Oracle\Bind\IntervalDs;
 use Rajska\Oracle\Bind\IntervalYm;
@@ -24,6 +25,7 @@ use Rajska\Oracle\Bind\Timestamp;
 use Rajska\Oracle\Bind\TimestampLtz;
 use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -610,6 +612,7 @@ final class TypedBindsTest extends ConformanceTestCase
                            :ltz := cast(timestamp '2026-03-01 13:00:00 +00:00' as timestamp with local time zone);
                            :d_io := :d_io + 1; :ltz_io := :ltz_io;
                            :ds := interval '1 02:03:04.5' day to second; :ym := interval '1-2' year to month;
+                           :lob := to_clob('a');
                          end;",
                         [
                             'fraction' => Number::out(), 'integral' => Number::out(), 'huge' => Number::out(),
@@ -618,6 +621,7 @@ final class TypedBindsTest extends ConformanceTestCase
                             'io' => Number::inOut(1),
                             'd' => Date::out(), 'ts' => Timestamp::out(), 'tz' => TimestampTz::out(),
                             'ltz' => TimestampLtz::out(), 'ds' => IntervalDs::out(), 'ym' => IntervalYm::out(),
+                            'lob' => Clob::out(),
                             // These travel as TIMESTAMP and TSTZ, and come back
                             // as the type declared.
                             'd_io' => Date::inOut(new \DateTimeImmutable('2026-03-01 10:00:00.5')),
@@ -628,6 +632,14 @@ final class TypedBindsTest extends ConformanceTestCase
                     $float = $numbers === NumberMode::Float;
                     $string = $temporals === TemporalMode::String;
                     $outValues = $execution->outValues();
+                    $lob = $outValues['lob'][0];
+                    unset($outValues['lob']);
+                    if ($lobs === LobMode::Inline) {
+                        self::assertSame('a', $lob, $lobs->value);
+                    } else {
+                        self::assertInstanceOf(DriverLob::class, $lob, $lobs->value);
+                        self::assertSame('a', $lob->readChunk());
+                    }
                     $temporal = [];
                     foreach (['d', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym'] as $name) {
                         $temporal[$name] = array_map(Temporals::shown(...), $outValues[$name]);
