@@ -2,7 +2,10 @@
 <!--
   Suite-wide rules (spec #32, Testing Decisions):
   - any E_WARNING / E_NOTICE / E_DEPRECATED fails the run (failOn*);
-  - exceptions keep their arguments (zend.exception_ignore_args=Off).
+  - exceptions keep their arguments (zend.exception_ignore_args=Off), and
+    their traces show string arguments whole, so a test can see a bound
+    value leak (production php.ini hides them with
+    zend.exception_string_param_max_len=0).
   Run with the Extension loaded:
     php -d extension=/path/to/librajska_oracle.so vendor/bin/phpunit
 -->
@@ -47,5 +50,6 @@
     <php>
         <ini name="error_reporting" value="-1"/>
         <ini name="zend.exception_ignore_args" value="0"/>
+        <ini name="zend.exception_string_param_max_len" value="1000000"/>
     </php>
 </phpunit>

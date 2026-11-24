@@ -24,7 +24,7 @@ final readonly class Cursor extends Bind
      * Cursor back to the server is later, so a `$cursor` fails with
      * `UnsupportedException` when the statement runs.
      */
-    public static function inOut(?Rows $cursor = null): self
+    public static function inOut(#[\SensitiveParameter] ?Rows $cursor = null): self
     {
         return new self(Type::Cursor, Direction::InOut, $cursor);
     }

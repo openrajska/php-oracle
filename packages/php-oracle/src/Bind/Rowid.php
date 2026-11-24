@@ -11,7 +11,7 @@ use Rajska\Oracle\Type;
  */
 final readonly class Rowid extends Bind
 {
-    public static function in(?string $rowid): self
+    public static function in(#[\SensitiveParameter] ?string $rowid): self
     {
         return new self(Type::Rowid, Direction::In, $rowid);
     }
@@ -21,7 +21,7 @@ final readonly class Rowid extends Bind
         return new self(Type::Rowid, Direction::Out, null);
     }
 
-    public static function inOut(?string $rowid): self
+    public static function inOut(#[\SensitiveParameter] ?string $rowid): self
     {
         return new self(Type::Rowid, Direction::InOut, $rowid);
     }

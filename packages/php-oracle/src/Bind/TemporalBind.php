@@ -17,7 +17,7 @@ trait TemporalBind
 {
     abstract private static function type(): Type;
 
-    public static function in(?\DateTimeInterface $value): self
+    public static function in(#[\SensitiveParameter] ?\DateTimeInterface $value): self
     {
         return new self(self::type(), Direction::In, self::frozen($value));
     }
@@ -27,12 +27,12 @@ trait TemporalBind
         return new self(self::type(), Direction::Out, null);
     }
 
-    public static function inOut(?\DateTimeInterface $value): self
+    public static function inOut(#[\SensitiveParameter] ?\DateTimeInterface $value): self
     {
         return new self(self::type(), Direction::InOut, self::frozen($value));
     }
 
-    private static function frozen(?\DateTimeInterface $value): ?\DateTimeImmutable
+    private static function frozen(#[\SensitiveParameter] ?\DateTimeInterface $value): ?\DateTimeImmutable
     {
         return $value === null ? null : \DateTimeImmutable::createFromInterface($value);
     }

@@ -11,7 +11,7 @@ use Rajska\Oracle\Type;
  */
 final readonly class PlsInteger extends Bind
 {
-    public static function in(?int $value): self
+    public static function in(#[\SensitiveParameter] ?int $value): self
     {
         return new self(Type::PlsInteger, Direction::In, $value);
     }
@@ -21,7 +21,7 @@ final readonly class PlsInteger extends Bind
         return new self(Type::PlsInteger, Direction::Out, null);
     }
 
-    public static function inOut(?int $value): self
+    public static function inOut(#[\SensitiveParameter] ?int $value): self
     {
         return new self(Type::PlsInteger, Direction::InOut, $value);
     }

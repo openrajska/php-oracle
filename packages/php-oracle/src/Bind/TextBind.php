@@ -15,7 +15,7 @@ trait TextBind
 {
     abstract private static function type(): Type;
 
-    public static function in(string|\Stringable|null $value): self
+    public static function in(#[\SensitiveParameter] string|\Stringable|null $value): self
     {
         return new self(self::type(), Direction::In, self::text($value));
     }
@@ -31,12 +31,12 @@ trait TextBind
     /**
      * Declares the largest buffer: 32767 bytes in PL/SQL.
      */
-    public static function inOut(string|\Stringable|null $value): self
+    public static function inOut(#[\SensitiveParameter] string|\Stringable|null $value): self
     {
         return new self(self::type(), Direction::InOut, self::text($value));
     }
 
-    private static function text(string|\Stringable|null $value): ?string
+    private static function text(#[\SensitiveParameter] string|\Stringable|null $value): ?string
     {
         return $value instanceof \Stringable ? (string) $value : $value;
     }

@@ -11,7 +11,7 @@ use Rajska\Oracle\Type;
  */
 final readonly class BinaryFloat extends Bind
 {
-    public static function in(int|float|null $value): self
+    public static function in(#[\SensitiveParameter] int|float|null $value): self
     {
         return new self(Type::BinaryFloat, Direction::In, $value === null ? null : (float) $value);
     }
@@ -21,7 +21,7 @@ final readonly class BinaryFloat extends Bind
         return new self(Type::BinaryFloat, Direction::Out, null);
     }
 
-    public static function inOut(int|float|null $value): self
+    public static function inOut(#[\SensitiveParameter] int|float|null $value): self
     {
         return new self(Type::BinaryFloat, Direction::InOut, $value === null ? null : (float) $value);
     }
