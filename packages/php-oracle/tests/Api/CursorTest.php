@@ -353,6 +353,36 @@ final class CursorTest extends TestCase
         }
     }
 
+    /**
+     * Seam and rows 12, through the public API: closing the Connection
+     * invalidates its Cursors, even one with rows of its last batch still
+     * in hand.
+     */
+    #[Test]
+    public function after_the_connection_closes_its_cursor_fails_even_with_rows_left_in_its_batch(): void
+    {
+        $cursor = $this->connection->select(self::FIVE_ROWS);
+        foreach ($cursor as $row) {
+            self::assertSame(['N' => 1], $row);
+            break;
+        }
+
+        $this->connection->close();
+
+        $served = [];
+        try {
+            foreach ($cursor as $row) {
+                $served[] = $row;
+            }
+            self::fail('foreach after the Connection closed succeeded.');
+        } catch (UsageException $e) {
+            self::assertSame('The Connection is closed.', $e->getMessage());
+        }
+        self::assertSame([], $served, 'No row of the batch is served after the Connection closed.');
+        $this->assertClosed($cursor);
+        $cursor->close();
+    }
+
     private function assertClosed(Cursor $cursor): void
     {
         foreach ([

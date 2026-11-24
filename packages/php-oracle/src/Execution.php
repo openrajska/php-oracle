@@ -24,6 +24,7 @@ final class Execution
     public function __construct(
         private readonly DriverExecution $driver,
         private readonly string $sql,
+        private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
         private readonly ?string $call = null,
     ) {
@@ -79,7 +80,7 @@ final class Execution
             $this->call,
         );
 
-        return $this->rows = new Cursor($cursor);
+        return $this->rows = new Cursor($cursor, $this->connection);
     }
 
     /**

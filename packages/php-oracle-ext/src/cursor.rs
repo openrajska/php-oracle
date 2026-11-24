@@ -1,6 +1,7 @@
 //! `Rajska\Oracle\Extension\Cursor`: the rows of one query, read in batches
 //! of `fetchSize` rows, each batch at most one Round trip (spec #32 §6, §14).
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use ext_php_rs::boxed::ZBox;
@@ -18,9 +19,10 @@ use oracledb::{
     VectorStorageFormat,
 };
 
-use crate::connection::ConnState;
+use crate::connection::{ConnState, CursorSlot};
 use crate::error::{Error, run};
 use crate::options::{KeyCase, NumberMode, Options, RowShape};
+use crate::pool::lock;
 
 /// How a column's values become PHP values.
 enum Mapping {
@@ -272,8 +274,9 @@ fn put(e: ext_php_rs::error::Error) -> Error {
 #[php(name = "Rajska\\Oracle\\Extension\\Cursor")]
 #[php(flags = ClassFlags::Final)]
 pub struct NativeCursor {
-    // Declared before `state`, so it drops first, while the Session lives.
-    cursor: Option<oracledb::Cursor>,
+    /// Emptied by `close()` and by the Connection's Release. Declared
+    /// before `state`, so it drops first, while the Session is still held.
+    cursor: Arc<CursorSlot>,
     exhausted: bool,
     columns: Vec<Column>,
     row_shape: RowShape,
@@ -306,7 +309,7 @@ impl NativeCursor {
             }
         }
         Ok(Self {
-            cursor: Some(cursor),
+            cursor: state.register(cursor),
             exhausted: false,
             columns,
             row_shape: options.row_shape,
@@ -334,9 +337,9 @@ impl NativeCursor {
     /// One array per column with exactly `Column`'s keys, enums as their
     /// backing values. Available before the first row; no Round trip.
     pub fn columns(&self) -> PhpResult<ZBox<ZendHashTable>> {
-        run(|| {
-            self.state.ensure_open()?;
-            if self.cursor.is_none() {
+        self.state.run(|| {
+            self.state.ensure_usable()?;
+            if lock(&self.cursor).is_none() {
                 return Err(Error::usage("The Cursor is closed."));
             }
             let mut columns =
@@ -350,10 +353,11 @@ impl NativeCursor {
 
     /// Up to `fetchSize` rows; `[]` at the end and on every later call.
     pub fn fetch_batch(&mut self) -> PhpResult<ZBox<ZendHashTable>> {
-        run(|| {
-            self.state.ensure_open()?;
-            let cursor = self
-                .cursor
+        let state = Arc::clone(&self.state);
+        state.run(|| {
+            state.ensure_usable()?;
+            let mut slot = lock(&self.cursor);
+            let cursor = slot
                 .as_mut()
                 .ok_or_else(|| Error::usage("The Cursor is closed."))?;
             let mut rows =
@@ -378,11 +382,20 @@ impl NativeCursor {
         })
     }
 
-    /// Closes the server cursor. Idempotent.
+    /// Closes the server cursor: the close rides on the Session's next Round
+    /// trip. Idempotent.
     pub fn close(&mut self) -> PhpResult<()> {
         run(|| {
-            self.cursor = None;
+            lock(&self.cursor).take();
             Ok(())
         })
+    }
+}
+
+impl Drop for NativeCursor {
+    /// Closes the server cursor before `state` goes (perhaps Releasing the
+    /// Connection). A panic must not cross into PHP's free handler.
+    fn drop(&mut self) {
+        let _ = catch_unwind(AssertUnwindSafe(|| lock(&self.cursor).take()));
     }
 }

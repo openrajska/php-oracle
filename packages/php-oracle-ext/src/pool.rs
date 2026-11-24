@@ -120,10 +120,40 @@ pub struct Lease {
 
 impl Lease {
     pub fn session(&self) -> &oracledb::Connection {
-        // Only Drop takes it.
+        // Only Drop and discard() take it.
         self.session
             .as_ref()
             .expect("a Lease holds its Session until dropped")
+    }
+
+    /// Ends the loan of a Session that must never be used again (Broken).
+    ///
+    /// A standalone Session logs off (or is simply gone). A pooled one goes
+    /// back to the crate's Pool only when its transport is closed, which
+    /// makes the crate drop it. The crate has no way to drop a Session whose
+    /// transport is still open (a panic, ORA-00028 from a kill without
+    /// `immediate`, ORA-00600): it would hand it out again. Such a Session
+    /// is set aside with its permit until the Pool closes, and the Pool is
+    /// one Session smaller meanwhile (logged). A fork patch to drop it
+    /// instead is #68.
+    pub fn discard(mut self) {
+        let Some(mut session) = self.session.take() else {
+            return;
+        };
+        match &self.permit {
+            Some(permit) if session.call_timeout().is_ok() => {
+                log(
+                    "rajska_oracle: a Broken Session cannot be dropped from its Pool; it is held out of use until the Pool closes, and the Pool is one Session smaller until then".to_string(),
+                );
+                lock(&permit.pool.discarded).push(session);
+                if let Some(permit) = self.permit.as_mut() {
+                    permit.retired = true;
+                }
+            }
+            _ => {
+                let _ = session.close();
+            }
+        }
     }
 }
 
@@ -177,6 +207,9 @@ pub struct SharedPool {
     /// The Sessions already set up, by (SID, serial#) from the logon
     /// handshake: a Session is set up once, when it is new.
     set_up: Mutex<HashSet<(usize, usize)>>,
+    /// Broken Sessions the crate cannot drop (see [`Lease::discard`]), kept
+    /// out of use until the Pool closes.
+    discarded: Mutex<Vec<oracledb::Connection>>,
 }
 
 impl SharedPool {
@@ -190,6 +223,7 @@ impl SharedPool {
             max_connections,
             acquire_timeout,
             set_up: Mutex::new(HashSet::new()),
+            discarded: Mutex::new(Vec::new()),
         })
     }
 
@@ -237,6 +271,7 @@ impl SharedPool {
         *free -= 1;
         Ok(Permit {
             pool: Arc::clone(self),
+            retired: false,
         })
     }
 }
@@ -256,20 +291,24 @@ impl Gate {
     }
 }
 
-/// The right to hold one Session of a Pool, returned on drop.
+/// The right to hold one Session of a Pool, returned on drop unless retired
+/// with a discarded Session.
 struct Permit {
     pool: Arc<SharedPool>,
+    retired: bool,
 }
 
 impl Drop for Permit {
     fn drop(&mut self) {
-        *lock(&self.pool.gate.free) += 1;
-        self.pool.gate.freed.notify_one();
+        if !self.retired {
+            *lock(&self.pool.gate.free) += 1;
+            self.pool.gate.freed.notify_one();
+        }
     }
 }
 
 /// A lock that a panic elsewhere does not make unusable.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -326,6 +365,8 @@ impl Registry {
                 std::mem::forget(entry);
                 continue;
             }
+            // Discarded Sessions go back now, so the Pool can close them.
+            lock(&entry.pool.discarded).clear();
             match Arc::try_unwrap(entry.pool) {
                 Ok(mut shared) => {
                     if let Err(e) = shared.pool.close() {
