@@ -68,6 +68,11 @@ impl Value {
         matches!(self, Value::Typed(typed) if typed.is_out())
     }
 
+    /// Whether it is a LOB OUT or IN OUT bind.
+    fn is_lob_out(&self) -> bool {
+        matches!(self, Value::Typed(typed) if typed.is_out() && typed.is_lob())
+    }
+
     /// The timestamp type a typed bind declared.
     fn reads_as(&self) -> Option<Temporal> {
         match self {
@@ -128,6 +133,17 @@ impl Binds {
             }
         }
         Ok(params)
+    }
+
+    /// Fails for a LOB OUT bind of SQL `RETURNING … INTO`, before any Round
+    /// trip: the crate cannot read LOBs back from it yet (it panics).
+    pub fn refuse_returned_lobs(&self) -> Result<(), Error> {
+        match self.0.iter().find(|(_, value)| value.is_lob_out()) {
+            Some((name, _)) => Err(Error::unsupported(format!(
+                "OUT bind '{name}': a LOB cannot be read back from RETURNING … INTO yet; wrap the statement in a PL/SQL block (begin … returning … into :{name}; end;), or select the LOB afterwards."
+            ))),
+            None => Ok(()),
+        }
     }
 
     /// The OUT and IN OUT values, keyed by the name the user wrote. Each is

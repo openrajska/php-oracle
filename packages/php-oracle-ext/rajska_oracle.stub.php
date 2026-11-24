@@ -36,7 +36,8 @@ final class Connection
 
     /**
      * Each OUT value list holds the values a bind produced; a REF CURSOR is
-     * a Cursor there.
+     * a Cursor there, and a CLOB, NCLOB or BLOB a Lob (a string under
+     * `lobs: inline`).
      *
      * @param array<string, mixed> $binds
      * @param array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string} $options
@@ -86,7 +87,9 @@ final class Connection
 /**
  * The rows of one query, a REF CURSOR or a nested `CURSOR()`. A nested
  * `CURSOR()` cell of a row is a Cursor too: it holds the Cursor it was
- * read from, and closing that one closes it.
+ * read from, and closing that one closes it. A CLOB, NCLOB or BLOB cell is
+ * a Lob, or under `lobs: inline` the whole value as a string (one Round
+ * trip per non-empty LOB).
  *
  * @internal Core reaches it only through its Extension adapter.
  */
@@ -109,6 +112,46 @@ final class Cursor
     public function fetchBatch(): array {}
 
     /** @throws Exception */
+    public function close(): void {}
+}
+
+/**
+ * A CLOB, NCLOB or BLOB locator, read chunk by chunk. It holds its
+ * Connection weakly: it does not keep the Session, and after the Release
+ * every call fails with `kind: usage`.
+ *
+ * @internal Core reaches it only through its Extension adapter.
+ */
+final class Lob
+{
+    /**
+     * clob, nClob or blob.
+     *
+     * @throws Exception
+     */
+    public function type(): string {}
+
+    /**
+     * In UCS-2 code units for CLOB / NCLOB, in bytes for BLOB; no Round
+     * trip.
+     *
+     * @throws Exception
+     */
+    public function size(): int {}
+
+    /**
+     * The next chunk, UTF-8 for CLOB / NCLOB: '' at the end. At most one
+     * Round trip.
+     *
+     * @throws Exception
+     */
+    public function readChunk(): string {}
+
+    /**
+     * Frees the locator. Idempotent.
+     *
+     * @throws Exception
+     */
     public function close(): void {}
 }
 

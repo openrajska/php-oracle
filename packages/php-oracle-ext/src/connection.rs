@@ -16,6 +16,7 @@ use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, Kind, run, run_seeing};
 use crate::input::Fields;
+use crate::lob::LobSlot;
 use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey, lock};
 use crate::session::{Settings, Tracing};
@@ -57,6 +58,8 @@ pub struct ConnState {
     /// Every native cursor opened on this Connection and still alive. A
     /// lock of its own: a cursor registers while the Session is in use.
     cursors: Mutex<Vec<Weak<CursorSlot>>>,
+    /// Every native LOB read from this Connection and still alive.
+    lobs: Mutex<Vec<Weak<LobSlot>>>,
 }
 
 struct Inner {
@@ -81,6 +84,7 @@ impl ConnState {
             }),
             call_timeout,
             cursors: Mutex::new(Vec::new()),
+            lobs: Mutex::new(Vec::new()),
         }
     }
 
@@ -152,8 +156,18 @@ impl ConnState {
         slot
     }
 
+    /// Registers a native LOB of this Connection, so Release can drop it:
+    /// its locator must not outlive the loan of the Session.
+    pub fn register_lob(&self, lob: oracledb::Lob) -> Arc<LobSlot> {
+        let slot = Arc::new(Mutex::new(Some(lob)));
+        let mut lobs = lock(&self.lobs);
+        lobs.retain(|lob| lob.strong_count() > 0);
+        lobs.push(Arc::downgrade(&slot));
+        slot
+    }
+
     /// Runs a native method body of this Connection or of one of its
-    /// Cursors (see [`run`]). An error that lost the Session, or a panic,
+    /// Cursors or Lobs (see [`run`]). An error that lost the Session, or a panic,
     /// makes the Connection Broken.
     pub fn run<T>(&self, body: impl FnOnce() -> Result<T, Error>) -> PhpResult<T> {
         run_seeing(body, |e| {
@@ -167,7 +181,8 @@ impl ConnState {
     }
 
     /// Release (spec #32 §11), once; it never fails and never commits:
-    /// 1. drops every native cursor, so their closes queue on the Session;
+    /// 1. drops every native cursor and LOB, so their closes queue on the
+    ///    Session;
     /// 2. rolls back (C14: here, outside the Pool's mutex), carrying those
     ///    closes;
     /// 3. returns the Session to the Pool (or logs it off), or discards it
@@ -192,6 +207,10 @@ impl ConnState {
             // The crate's statement drop panics on a poisoned lock: that
             // must not stop the Release.
             let _ = catch_unwind(AssertUnwindSafe(|| lock(&cursor).take()));
+        }
+        let lobs = std::mem::take(&mut *lock(&self.lobs));
+        for lob in lobs.iter().filter_map(Weak::upgrade) {
+            let _ = catch_unwind(AssertUnwindSafe(|| lock(&lob).take()));
         }
         // A Broken Session is rolled back too: on a lost transport the
         // attempt closes it, which lets the Pool drop it.
@@ -326,6 +345,9 @@ impl NativeConnection {
                         binds.out_values(None, false, &self.state, &options)?,
                     )
                 } else {
+                    if !statement.is_plsql() {
+                        binds.refuse_returned_lobs()?;
+                    }
                     let mut result = statement.execute_named(&params)?;
                     // The server counts 1 for a PL/SQL block; only DML counts.
                     let count = if statement.is_dml() {

@@ -16,6 +16,7 @@ use oracledb::{
 use crate::connection::{ConnState, CursorSlot};
 use crate::cursor::NativeCursor;
 use crate::error::Error;
+use crate::lob;
 use crate::options::{NumberMode, Options};
 use crate::temporal::{self, Temporal};
 
@@ -42,6 +43,9 @@ pub fn cell(
     let db_type = metadata.db_type();
     if db_type == DB_TYPE_CURSOR {
         return cursor(row, index, state, options, Vec::new());
+    }
+    if lob::lob_type(db_type).is_some() {
+        return lob::cell(row, index, state, options, what);
     }
     if let Some(temporal) = Temporal::of(db_type) {
         return match row.get::<Option<OracleTimestamp>>(index)? {
