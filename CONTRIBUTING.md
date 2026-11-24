@@ -159,9 +159,11 @@ public API). The Extension's stub, `packages/php-oracle-ext/rajska_oracle.stub.p
 has a copy in `packages/php-oracle/stubs/` for PHPStan; change both together.
 
 Core's suite fails on any PHP warning, notice or deprecation and runs with
-`zend.exception_ignore_args=Off` (`phpunit.xml.dist`). It reaches Oracle through
-`ORACLE_CONNECT_STRING`, `ORACLE_USER` and `ORACLE_PASSWORD`, which ddev sets.
-CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and ZTS.
+`zend.exception_ignore_args=Off` (`phpunit.xml.dist`). Both suites reach Oracle
+through `ORACLE_CONNECT_STRING`, `ORACLE_USER` and `ORACLE_PASSWORD`, which ddev
+sets. One Core test waits 61 s for the Pool's idle ping; `--exclude-group slow`
+skips it. CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and
+ZTS.
 
 ### The `oracledb` fork
 
