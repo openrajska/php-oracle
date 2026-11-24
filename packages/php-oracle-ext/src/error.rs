@@ -366,6 +366,9 @@ fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
         | E::CannotStoreDbObjectValue(..)
         | E::MissingDbObjectType(_) => Kind::Usage,
         E::CallTimeoutExceeded => Kind::Timeout,
+        // A value of an Object type altered (ALTER TYPE) after this Session
+        // described it: the description is never refreshed (spec #32 §7).
+        E::DbObjectTypeChanged(_) => Kind::Database,
         _ => Kind::Database,
     }
 }
@@ -550,6 +553,7 @@ mod tests {
             ErrorKind::NoDataFound,
             ErrorKind::LockPoisoned,
             ErrorKind::InvalidColumnIndex(3),
+            ErrorKind::DbObjectTypeChanged("HR.POINT".to_string()),
         ] {
             assert_eq!(kind_of(&kind), Kind::Database, "{kind:?}");
         }
