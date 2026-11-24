@@ -8,10 +8,6 @@ server error, unless this page says otherwise.
 
 These are being fixed in the oracledb fork for v1; until then:
 
-- **BOOLEAN attributes of Objects built in SQL read as `false`: wrong data.**
-  A TRUE BOOLEAN attribute (or Collection element) of an Object built by
-  SQL, or stored in a table, comes back `false`. Objects built in PL/SQL read
-  correctly, and writing is correct.
 - After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
   read in any Session (`UnsupportedException`).
 - `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
