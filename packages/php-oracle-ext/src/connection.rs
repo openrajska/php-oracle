@@ -352,7 +352,9 @@ impl NativeConnection {
                 }
                 build(session, true)
             };
-            let mut execute = |mut statement: oracledb::Statement, binds: &mut Binds| {
+            let mut execute = |session: &oracledb::Connection,
+                               mut statement: oracledb::Statement,
+                               binds: &mut Binds| {
                 let (is_plsql, is_dml) = (statement.is_plsql(), statement.is_dml());
                 let (query, mut result) = {
                     let matched = binds.matched(statement.bind_names())?;
@@ -448,7 +450,8 @@ impl NativeConnection {
                         binds.refuse_returned_objects()?;
                     }
                     binds.write_lobs(&self.state)?;
-                    self.state.with(|_| execute(statement, &mut binds))
+                    self.state
+                        .with(|session| execute(session, statement, &mut binds))
                 })?;
 
             let mut result = ZendHashTable::with_capacity(5);
