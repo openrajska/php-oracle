@@ -28,6 +28,8 @@ prompt 09_bind
 @@09_bind.sql
 prompt 10_call
 @@10_call.sql
+prompt 11_transaction
+@@11_transaction.sql
 
 commit;
 

@@ -272,8 +272,8 @@ impl NativeConnection {
                 // missed the second time: that needs a per-execute warning
                 // in the fork.
                 let before = session.last_warning()?;
-                let mut statement = session
-                    .statement(sql)?
+                let mut statement = options
+                    .commit(session.statement(sql)?)
                     .fetch_array_size(options.fetch_size)
                     // One row more than a batch: the server reports the end
                     // of the rows only when asked for more than there are,
