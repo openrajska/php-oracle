@@ -1,8 +1,6 @@
-//! `Rajska\Oracle\Extension\Connection`: one Session, and the statements run
+//! `Rajska\Oracle\Extension\Connection`: one Session on loan from the
+//! process's Pool for its key (or a Standalone one), and the statements run
 //! on it (spec #32 §14).
-//!
-//! For now every `connect()` opens a standalone Session that ends with the
-//! Connection; the Pool comes later.
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -16,7 +14,8 @@ use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, run};
 use crate::input::Fields;
-use crate::value::Numbers;
+use crate::options::Options;
+use crate::pool::{self, Lease, PoolKey};
 
 /// The keys of `$pool`: the Pool-key fields of `ConnectionConfig`.
 const POOL_KEYS: &[&str] = &[
@@ -36,24 +35,15 @@ const POOL_KEYS: &[&str] = &[
 ];
 const SESSION_KEYS: &[&str] = &["tracing", "callTimeout"];
 const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientInfo"];
-const OPTION_KEYS: &[&str] = &[
-    "autocommit",
-    "timeout",
-    "fetchSize",
-    "numbers",
-    "temporals",
-    "lobs",
-    "rowShape",
-    "keyCase",
-];
 
-/// What a Connection and its Cursors share: the Session.
+/// What a Connection and its Cursors share: the Session, on loan until the
+/// Connection is closed or the last of them goes.
 pub struct ConnState {
-    session: Mutex<Option<oracledb::Connection>>,
+    session: Mutex<Option<Lease>>,
 }
 
 impl ConnState {
-    fn session(&self) -> MutexGuard<'_, Option<oracledb::Connection>> {
+    fn session(&self) -> MutexGuard<'_, Option<Lease>> {
         // A panic while holding the lock leaves the Session as it was.
         self.session
             .lock()
@@ -71,47 +61,9 @@ impl ConnState {
         f: impl FnOnce(&oracledb::Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
         match self.session().as_ref() {
-            Some(session) => f(session),
+            Some(lease) => f(lease.session()),
             None => Err(Error::usage("The Connection is closed.")),
         }
-    }
-}
-
-impl Drop for ConnState {
-    /// The Session ends when the Connection and every Cursor of it are gone.
-    fn drop(&mut self) {
-        if let Some(mut session) = self.session().take() {
-            // A Session that fails to log off is gone either way.
-            let _ = session.close();
-        }
-    }
-}
-
-/// The options of one execute, read from `$options`.
-pub struct Options {
-    pub fetch_size: u32,
-    pub numbers: Numbers,
-}
-
-impl Options {
-    fn read(options: &ZendHashTable) -> Result<Self, Error> {
-        let fields = Fields::new("$options", options, OPTION_KEYS)?;
-        fields.bool("autocommit")?;
-        fields.optional_int("timeout")?;
-        let numbers = Numbers::from_option(fields.choice("numbers", &["exact", "float"])?);
-        fields.choice("temporals", &["object", "string"])?;
-        fields.choice("lobs", &["locator", "inline"])?;
-        fields.choice("rowShape", &["assoc", "list"])?;
-        fields.choice("keyCase", &["native", "lower"])?;
-        let fetch_size = fields.int("fetchSize")?;
-        let fetch_size = u32::try_from(fetch_size)
-            .ok()
-            .filter(|n| *n >= 1)
-            .ok_or_else(|| Error::usage("'fetchSize' in $options must be at least 1."))?;
-        Ok(Self {
-            fetch_size,
-            numbers,
-        })
     }
 }
 
@@ -129,38 +81,29 @@ fn read_session(session: &ZendHashTable) -> Result<(), Error> {
     Ok(())
 }
 
-fn open(pool: &ZendHashTable, session: &ZendHashTable) -> Result<oracledb::Connection, Error> {
+/// Reads `$pool` into the Pool key, and checks `$session`.
+fn read_pool(pool: &ZendHashTable, session: &ZendHashTable) -> Result<PoolKey, Error> {
     let fields = Fields::new("$pool", pool, POOL_KEYS)?;
-    let (dsn, user, password) = (
-        fields.string("dsn")?,
-        fields.string("user")?,
-        fields.string("password")?,
-    );
-    for key in [
-        "proxyUser",
-        "walletLocation",
-        "walletPassword",
-        "configDir",
-        "drcpConnectionClass",
-    ] {
-        fields.optional_string(key)?;
-    }
-    for key in [
-        "connectTimeout",
-        "maxConnections",
-        "acquireTimeout",
-        "statementCacheSize",
-    ] {
-        fields.int(key)?;
-    }
-    fields.bool("standalone")?;
+    let optional = |key| -> Result<Option<String>, Error> {
+        Ok(fields.optional_string(key)?.map(str::to_string))
+    };
+    let key = PoolKey {
+        dsn: fields.string("dsn")?.to_string(),
+        user: fields.string("user")?.to_string(),
+        password: fields.string("password")?.to_string(),
+        proxy_user: optional("proxyUser")?,
+        wallet_location: optional("walletLocation")?,
+        wallet_password: optional("walletPassword")?,
+        config_dir: optional("configDir")?,
+        connect_timeout: fields.int("connectTimeout")?,
+        drcp_connection_class: optional("drcpConnectionClass")?,
+        max_connections: fields.int("maxConnections")?,
+        acquire_timeout: fields.int("acquireTimeout")?,
+        statement_cache_size: fields.int("statementCacheSize")?,
+        standalone: fields.bool("standalone")?,
+    };
     read_session(session)?;
-
-    let config = oracledb::Config::default()
-        .set_credentials(user, password)
-        .set_connect_string(dsn)
-        .map_err(Error::connect)?;
-    oracledb::connect(config).map_err(Error::connect)
+    Ok(key)
 }
 
 #[php_class]
@@ -172,13 +115,15 @@ pub struct NativeConnection {
 
 #[php_impl]
 impl NativeConnection {
-    /// Opens a Session. `$pool` holds the Pool-key fields of
+    /// Gets a Session from the process's Pool for `$pool`, the whole array
+    /// being the Pool key (created on first use), or opens a Standalone one
+    /// when `standalone` is true. `$pool` holds the Pool-key fields of
     /// `ConnectionConfig` (durations in ms); `$session` holds `tracing` and
     /// `callTimeout`.
     #[php(sensitive(pool))]
     pub fn connect(pool: &ZendHashTable, session: &ZendHashTable) -> PhpResult<Self> {
         run(|| {
-            let session = open(pool, session)?;
+            let session = pool::acquire(&read_pool(pool, session)?)?;
             Ok(Self {
                 state: Arc::new(ConnState {
                     session: Mutex::new(Some(session)),
@@ -200,31 +145,56 @@ impl NativeConnection {
         run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
-            let (row_count, cursor, out_values) = self.state.with(|session| {
+            let (row_count, cursor, warning, out_values) = self.state.with(|session| {
+                // The crate keeps the Session's last warning for the
+                // Session's whole life, across pooled Connections, so a
+                // warning belongs to this execute only if it changed during
+                // it. The same text twice in a row is
+                // missed the second time: that needs a per-execute warning
+                // in the fork.
+                let before = session.last_warning()?;
                 let mut statement = session
                     .statement(sql)?
                     .fetch_array_size(options.fetch_size)
-                    .prefetch_rows(options.fetch_size)
+                    // One row more than a batch: the server reports the end
+                    // of the rows only when asked for more than there are,
+                    // so a query of up to fetchSize rows costs one Round
+                    // trip. Every batch after it is still one Round trip.
+                    .prefetch_rows(options.fetch_size.saturating_add(1))
+                    // LOB columns as locators: otherwise the crate redefines
+                    // them as LONG / LONG RAW and the describe loses the type.
+                    .fetch_lobs()
                     .build()?;
                 // Building parses the SQL on the client: no Round trip yet.
                 let matched = binds.matched(statement.bind_names())?;
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
-                if statement.is_query() {
+                let (row_count, cursor, out_values) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;
-                    Ok((
+                    let cursor = NativeCursor::new(Arc::clone(&self.state), cursor, &options)?;
+                    (
                         0,
-                        Some(NativeCursor::new(Arc::clone(&self.state), cursor, &options)),
+                        Some(cursor),
                         binds.out_values(None, false, options.numbers)?,
-                    ))
+                    )
                 } else {
                     let mut result = statement.execute_named(&params)?;
+                    // The server counts 1 for a PL/SQL block; only DML counts.
+                    let count = if statement.is_dml() {
+                        result.rows_affected()
+                    } else {
+                        0
+                    };
                     let out_values = binds.out_values(
                         Some(&mut result),
                         statement.is_plsql(),
                         options.numbers,
                     )?;
-                    Ok((result.rows_affected(), None, out_values))
-                }
+                    (count, None, out_values)
+                };
+                let warning = session
+                    .last_warning()?
+                    .filter(|w| before.as_ref() != Some(w));
+                Ok((row_count, cursor, warning, out_values))
             })?;
 
             let mut result = ZendHashTable::with_capacity(5);
@@ -242,7 +212,7 @@ impl NativeConnection {
             result
                 .insert("implicitResults", ZendHashTable::new())
                 .map_err(put)?;
-            result.insert("warning", ()).map_err(put)?;
+            result.insert("warning", warning.as_deref()).map_err(put)?;
             Ok(result)
         })
     }
@@ -291,13 +261,10 @@ impl NativeConnection {
         })
     }
 
-    /// Ends the Session. Idempotent.
+    /// Ends the loan of the Session. Idempotent.
     pub fn close(&self) -> PhpResult<()> {
         run(|| {
-            if let Some(mut session) = self.state.session().take() {
-                // A Session that fails to log off is gone either way.
-                let _ = session.close();
-            }
+            self.state.session().take();
             Ok(())
         })
     }

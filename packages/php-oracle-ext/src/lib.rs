@@ -16,6 +16,8 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod options;
+mod pool;
 mod typed;
 mod value;
 
@@ -25,4 +27,13 @@ pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
         .class::<error::NativeException>()
         .class::<connection::NativeConnection>()
         .class::<cursor::NativeCursor>()
+        .shutdown_function(shutdown)
+}
+
+/// MSHUTDOWN: closes every Pool of this process, joining its manager thread,
+/// before PHP unloads the library.
+extern "C" fn shutdown(_type: i32, _module_number: i32) -> i32 {
+    // A panic must not cross into PHP; the Pools are then leaked.
+    let _ = std::panic::catch_unwind(pool::shutdown);
+    0
 }

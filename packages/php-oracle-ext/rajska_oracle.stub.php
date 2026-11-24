@@ -14,13 +14,19 @@
 namespace Rajska\Oracle\Extension;
 
 /**
- * One Session.
+ * One Session, on loan from the process's Pool for its `$pool` key (or a
+ * Standalone one) until close() or the last of its Cursors goes.
  *
  * @internal Core reaches it only through its Extension adapter.
  */
 final class Connection
 {
     /**
+     * The whole `$pool` array is the Pool key: one Pool per process per key,
+     * created on first use. At `maxConnections` it waits up to
+     * `acquireTimeout`, then throws with `kind: pool_exhausted`. With
+     * `standalone: true`, a new Session logs on and off with the Connection.
+     *
      * @param array{dsn: string, user: string, password: string, proxyUser: ?string, walletLocation: ?string, walletPassword: ?string, configDir: ?string, connectTimeout: int, drcpConnectionClass: ?string, maxConnections: int, acquireTimeout: int, statementCacheSize: int, standalone: bool} $pool
      * @param array{tracing: array{module: ?string, action: ?string, clientIdentifier: ?string, clientInfo: ?string}, callTimeout: ?int} $session
      *
@@ -78,7 +84,9 @@ final class Connection
 final class Cursor
 {
     /**
-     * @return list<array<string, mixed>>
+     * Exactly Column's fields; `type` and `vectorFormat` as backing values.
+     *
+     * @return list<array{name: string, type: string, nullable: bool, precision: ?int, scale: ?int, maxSize: ?int, objectType: ?string, vectorDimensions: ?int, vectorFormat: ?string, sparse: bool}>
      *
      * @throws Exception
      */

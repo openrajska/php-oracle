@@ -9,31 +9,11 @@ use oracledb::{
 };
 
 use crate::error::Error;
-
-/// How a non-integral NUMBER reaches PHP (`ValueMapping::$numbers`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Numbers {
-    /// The exact canonical string.
-    #[default]
-    Exact,
-    /// A `float`.
-    Float,
-}
-
-impl Numbers {
-    /// From its backing value in `$options`.
-    pub fn from_option(value: &str) -> Self {
-        if value == "float" {
-            Numbers::Float
-        } else {
-            Numbers::Exact
-        }
-    }
-}
+use crate::options::NumberMode;
 
 /// The value at `index` of a row, as PHP sees it. `what` names the value in
-/// an error ("OUT bind 'x'", "Column NAME").
-pub fn cell(row: &Row, index: usize, numbers: Numbers, what: &str) -> Result<Zval, Error> {
+/// an error ("OUT bind 'x'").
+pub fn cell(row: &Row, index: usize, numbers: NumberMode, what: &str) -> Result<Zval, Error> {
     let metadata = row
         .columns()
         .get(index)
@@ -94,13 +74,13 @@ pub fn cell(row: &Row, index: usize, numbers: Numbers, what: &str) -> Result<Zva
 }
 
 /// NUMBER: `int` when integral and within 64 bits, else the exact canonical
-/// string, or a `float` under `Numbers::Float` when it is not integral.
-fn number_value(zval: &mut Zval, number: OracleNumber, numbers: Numbers) -> Result<(), Error> {
+/// string, or a `float` under `NumberMode::Float` when it is not integral.
+fn number_value(zval: &mut Zval, number: OracleNumber, numbers: NumberMode) -> Result<(), Error> {
     // Display gives the exact decimal text, never an exponent.
     let text = number.to_string();
     if let Ok(int) = text.parse::<i64>() {
         zval.set_long(int);
-    } else if numbers == Numbers::Float
+    } else if numbers == NumberMode::Float
         && text.contains('.')
         && let Ok(float) = text.parse::<f64>()
     {

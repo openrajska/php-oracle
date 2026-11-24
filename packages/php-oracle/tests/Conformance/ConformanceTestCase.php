@@ -24,6 +24,8 @@ abstract class ConformanceTestCase extends TestCase
     /** @var list<DriverConnection> */
     private array $connections = [];
 
+    private static int $pools = 0;
+
     protected function tearDown(): void
     {
         foreach ($this->connections as $connection) {
@@ -45,16 +47,55 @@ abstract class ConformanceTestCase extends TestCase
         return $connection;
     }
 
-    protected static function options(int $fetchSize = 100, bool $autocommit = true): DriverOptions
+    /**
+     * Config fields that give a test a Pool of its own: a Pool lives as long
+     * as the process, so one test's Sessions would otherwise be another's.
+     * Only `connectTimeout` changes, by a millisecond per call.
+     *
+     * @return array{connectTimeout: float}
+     */
+    protected static function ownPool(): array
     {
+        return ['connectTimeout' => 30 + ++self::$pools / 1000];
+    }
+
+    protected static function options(
+        int $fetchSize = 100,
+        bool $autocommit = true,
+        ValueMapping $values = new ValueMapping(),
+        RowShape $rowShape = RowShape::Assoc,
+        KeyCase $keyCase = KeyCase::Native,
+    ): DriverOptions {
         return new DriverOptions(
             autocommit: $autocommit,
             timeout: null,
             fetchSize: $fetchSize,
-            values: new ValueMapping(),
-            rowShape: RowShape::Assoc,
-            keyCase: KeyCase::Native,
+            values: $values,
+            rowShape: $rowShape,
+            keyCase: $keyCase,
         );
+    }
+
+    /**
+     * Every row of a query, read through the Driver contract.
+     *
+     * @param array<string, mixed> $binds
+     *
+     * @return list<array<int|string, mixed>>
+     *
+     * @phpstan-impure
+     */
+    protected static function rows(DriverConnection $connection, string $sql, array $binds = [], ?DriverOptions $options = null): array
+    {
+        $cursor = $connection->execute($sql, $binds, $options ?? self::options())->cursor();
+        self::assertNotNull($cursor, "Not a query: $sql");
+        $rows = [];
+        while (($batch = $cursor->fetchBatch()) !== []) {
+            array_push($rows, ...$batch);
+        }
+        $cursor->close();
+
+        return $rows;
     }
 
     /**

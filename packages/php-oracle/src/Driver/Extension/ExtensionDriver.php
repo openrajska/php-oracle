@@ -66,11 +66,13 @@ final class ExtensionDriver implements Driver
     }
 
     /**
-     * Seconds, as the public API takes them, to the Extension's milliseconds.
+     * Seconds, as the public API takes them (validated positive), to the
+     * Extension's milliseconds. A sub-millisecond duration becomes 1 ms,
+     * never 0.
      */
     public static function milliseconds(int|float $seconds): int
     {
-        return (int) round($seconds * 1000);
+        return max(1, (int) round($seconds * 1000));
     }
 
     public static function optionalMilliseconds(int|float|null $seconds): ?int

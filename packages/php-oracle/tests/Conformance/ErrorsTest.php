@@ -74,6 +74,100 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
+     * Errors 13: a compilation error is success with info, not a throw; the
+     * warning belongs to that one Execution.
+     */
+    #[Test]
+    public function a_compilation_error_gives_a_warning_and_a_valid_unit_gives_null(): void
+    {
+        // A pooled Session keeps its last warning: start from a fresh one.
+        $connection = $this->connect(...self::ownPool());
+        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
+        $valid = "create or replace procedure $procedure is begin null; end;";
+
+        try {
+            $warning = $connection->execute($invalid, [], self::options())->warning();
+            self::assertNotNull($warning);
+            self::assertStringContainsString('compilation errors', $warning);
+
+            self::assertNull($connection->execute('select 1 from dual', [], self::options())->warning(), 'a later query');
+            self::assertNull($connection->execute($valid, [], self::options())->warning(), 'a valid unit');
+        } finally {
+            $connection->execute("drop procedure $procedure", [], self::options());
+        }
+    }
+
+    /**
+     * Errors 5, the amendment to #32: on 26ai, ORA-00001 adds an ORA-03301
+     * line with the row's values unless the Session turns
+     * `error_message_details` off, which the Backend does when it creates
+     * the Session.
+     */
+    #[Test]
+    public function a_unique_violation_on_a_fresh_connection_carries_no_ora_03301_line_and_no_bound_value(): void
+    {
+        $connection = $this->connect(...self::ownPool());
+        $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)';
+        $connection->execute($insert, ['id' => 39001, 'code' => 'zq39secret'], self::options(autocommit: false));
+
+        try {
+            $connection->execute($insert, ['id' => 39002, 'code' => 'zq39secret'], self::options(autocommit: false));
+            self::fail('The duplicate was inserted.');
+        } catch (UniqueViolationException $e) {
+            self::assertStringStartsWith('ORA-00001', $e->getMessage());
+            self::assertStringNotContainsString('ORA-03301', $e->getMessage());
+            self::assertStringNotContainsString('zq39secret', $e->getMessage());
+        } finally {
+            $connection->rollback();
+        }
+    }
+
+    /**
+     * Errors 13, the gap: the crate keeps only the Session's last warning, so
+     * the Extension cannot tell a repeated warning from the stale one.
+     */
+    #[Test]
+    public function the_same_compilation_error_twice_in_a_row_gives_a_warning_each_time(): void
+    {
+        $connection = $this->connect(...self::ownPool());
+        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
+
+        try {
+            $first = $connection->execute($invalid, [], self::options());
+            self::assertNotNull($first->warning());
+            $again = $connection->execute($invalid, [], self::options());
+        } finally {
+            $connection->execute("drop procedure $procedure", [], self::options());
+        }
+
+        if ($again->warning() === null) {
+            self::markTestIncomplete('Needs a per-execute warning in the oracledb fork (#37 hand-off).');
+        }
+        self::assertStringContainsString('compilation errors', $again->warning());
+    }
+
+    /**
+     * Errors 9, the Pool-exhausted part.
+     */
+    #[Test]
+    public function the_pool_at_its_ceiling_gives_pool_exhausted_exception(): void
+    {
+        $fields = self::ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.1];
+        $this->connect(...$fields);
+
+        try {
+            $this->connect(...$fields);
+            self::fail('A second Session came out of a Pool of one.');
+        } catch (PoolExhaustedException $e) {
+            self::assertSame(0, $e->getCode());
+            self::assertStringContainsString('acquireTimeout', $e->getMessage());
+            self::assertNull($e->sql());
+        }
+    }
+
+    /**
      * Errors 3. The expected offsets are the ones oci8 reports for the same
      * statements.
      */

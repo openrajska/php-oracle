@@ -28,8 +28,9 @@ use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
 use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
 
 use crate::error::Error;
+use crate::options::NumberMode;
 use crate::typed::{self, Typed};
-use crate::value::{Numbers, cell};
+use crate::value::cell;
 
 /// The longest string that binds as VARCHAR2 (PL/SQL's limit).
 pub const MAX_VARCHAR2: usize = 32767;
@@ -122,7 +123,7 @@ impl Binds {
         &self,
         result: Option<&mut ExecResult>,
         is_plsql: bool,
-        numbers: Numbers,
+        numbers: NumberMode,
     ) -> Result<ZBox<ZendHashTable>, Error> {
         let mut out = ZendHashTable::new();
         if !self.0.iter().any(|(_, value)| value.is_out()) {

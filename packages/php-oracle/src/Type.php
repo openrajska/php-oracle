@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Rajska\Oracle;
 
 /**
- * An Oracle type: of a typed Bind, or of a Column. Backed by the case name in
- * lowerCamelCase. Nested table and VARRAY are both `Collection`.
+ * An Oracle type, as a column describes it and as a bind declares it.
+ * Backed by the case name in lowerCamelCase.
+ *
+ * The column-only cases (`Long`, `LongRaw`, `Urowid`, `Bfile`, `Xmltype`)
+ * never name a bind. Nested table and VARRAY are both `Collection`. A column
+ * of a type not fetched yet is still described; only fetching it fails.
  */
 enum Type: string
 {
-    // The Bind catalog: each has a class in Rajska\Oracle\Bind\ (Object is
-    // Struct, AssociativeArray is Indexed).
     case Varchar = 'varchar';
     case Char = 'char';
     case NVarchar = 'nVarchar';
@@ -39,7 +41,6 @@ enum Type: string
     case Collection = 'collection';
     case AssociativeArray = 'associativeArray';
 
-    // Column only: described normally; fetching a value fails.
     case Long = 'long';
     case LongRaw = 'longRaw';
     case Urowid = 'urowid';
