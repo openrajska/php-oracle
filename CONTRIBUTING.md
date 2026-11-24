@@ -165,6 +165,17 @@ sets. One Core test waits 61 s for the Pool's idle ping; `--exclude-group slow`
 skips it. CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and
 ZTS.
 
+Core `require`s `ext-rajska_oracle`, but Composer runs without the Extension
+loaded, hence `--ignore-platform-req=ext-rajska_oracle`. The constraint
+(`^0.1`) declares the oldest Extension Core works with; the adapter
+(`ExtensionDriver::MINIMUM`) refuses anything outside `>= minimum, <` the next
+breaking version on the first `connect()`. Raise both together, and only after
+releasing that Extension: its release is tagged `php-oracle-ext-v<version>`, and
+CI then runs Core's suite against the Extension built from that tag too
+(`.github/scripts/extension-matrix.sh`). Until the minimum has a tag, it is the
+checkout's own Extension and the regular legs cover it; running the workflow by
+hand with `minimum-ref` builds that leg from any ref.
+
 ### The `oracledb` fork
 
 The Rust thin Backend builds on [openrajska/rust-oracledb](https://github.com/openrajska/rust-oracledb),
