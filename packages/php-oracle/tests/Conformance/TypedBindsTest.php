@@ -691,9 +691,8 @@ final class TypedBindsTest extends ConformanceTestCase
     public static function typedMistakes(): iterable
     {
         yield 'bytes that are not UTF-8' => [Varchar::in("\xff"), 'bind binary data with Raw::in() or Blob::in()'];
-        yield 'text over 32767 bytes' => [Varchar::in(str_repeat('a', 32768)), 'over 32767 bytes; bind it with Clob::in()'];
-        yield 'national text over 32767 bytes' => [NVarchar::in(str_repeat('a', 32768)), 'over 32767 bytes; bind it with Clob::in()'];
-        yield 'bytes over 32767' => [Raw::in(str_repeat("\x00", 32768)), 'over 32767; bind them with Blob::in()'];
+        // Text or bytes over 32767 are a LONG bind: UnsupportedException,
+        // in ScopeTest.
     }
 
     #[Test]

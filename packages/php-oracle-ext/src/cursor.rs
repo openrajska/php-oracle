@@ -66,8 +66,9 @@ enum Mapping {
     Json,
     /// VECTOR: a list, or a `SparseVector` (see [`vector`]).
     Vector,
-    /// A type whose values cannot be fetched yet; describing it is fine.
-    Unsupported(String),
+    /// A type whose values cannot be fetched yet (BFILE, XMLTYPE);
+    /// describing it is fine. Holds the type's name for the error.
+    Unsupported(&'static DbType, String),
 }
 
 /// `Type`'s backing value for a column, or `None` for a type the server
@@ -273,7 +274,7 @@ impl Column {
         } else if db_type == DB_TYPE_INTERVAL_YM {
             Mapping::IntervalYm
         } else {
-            Mapping::Unsupported(metadata.data_type())
+            Mapping::Unsupported(db_type, metadata.data_type())
         };
         let name = match options.key_case {
             KeyCase::Native => metadata.name().to_string(),
@@ -343,14 +344,16 @@ impl Column {
                     None => Ok(Zval::null()),
                 };
             }
-            Mapping::Unsupported(data_type) => {
-                return Err(Error::unsupported(format!(
-                    "Column {}: {data_type} values cannot be fetched yet.",
-                    self.name
-                )));
-            }
+            Mapping::Unsupported(_, data_type) => return Err(self.unsupported(data_type)),
         }
         Ok(zval)
+    }
+
+    fn unsupported(&self, data_type: &str) -> Error {
+        Error::unsupported(format!(
+            "Column {}: {data_type} values cannot be fetched yet.",
+            self.name
+        ))
     }
 }
 
@@ -436,6 +439,26 @@ impl NativeCursor {
         Ok(())
     }
 
+    /// A fetch the crate could not read: a value of a type it cannot decode
+    /// (XMLTYPE) fails naming its column, as a value of a later type does.
+    fn refused(&self, e: oracledb::Error) -> Error {
+        if let oracledb::ErrorKind::UnsupportedDbType(db_type) = e.kind() {
+            let refused = self
+                .columns
+                .iter()
+                .find_map(|column| match &column.mapping {
+                    Mapping::Unsupported(unsupported, data_type) if unsupported == db_type => {
+                        Some(column.unsupported(data_type))
+                    }
+                    _ => None,
+                });
+            if let Some(refused) = refused {
+                return refused;
+            }
+        }
+        e.into()
+    }
+
     fn row(&self, row: &mut Row) -> Result<ZBox<ZendHashTable>, Error> {
         let mut values =
             ZendHashTable::with_capacity(u32::try_from(self.columns.len()).unwrap_or(0));
@@ -519,7 +542,7 @@ impl NativeCursor {
                 let mut exhausted = false;
                 while fetched.len() < size {
                     match cursor.next() {
-                        Some(row) => fetched.push(row?),
+                        Some(row) => fetched.push(row.map_err(|e| self.refused(e))?),
                         None => {
                             exhausted = true;
                             break;

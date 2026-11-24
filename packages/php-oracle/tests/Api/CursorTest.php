@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Column;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Cursor;
+use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\KeyCase;
@@ -293,6 +294,35 @@ final class CursorTest extends TestCase
         ], $columns);
         self::assertSame(Type::Number, $cursor->columns()[0]->type);
         $cursor->close();
+    }
+
+    /**
+     * Scope 8 through the public API: an XMLTYPE column is a Column of
+     * `Type::Xmltype`; reading its value throws UnsupportedException, and
+     * the Connection reads on. The other scalar types arrive as stated.
+     */
+    #[Test]
+    public function an_xmltype_column_is_described_and_reading_it_is_unsupported(): void
+    {
+        $cursor = $this->connection->select("select xmltype('<a>1</a>') doc from dual");
+        self::assertSame(Type::Xmltype, $cursor->columns()[0]->type);
+
+        try {
+            $cursor->first();
+            self::fail('An XMLTYPE value was read.');
+        } catch (UnsupportedException $e) {
+            self::assertSame('Column DOC: XMLTYPE values cannot be fetched yet.', $e->getMessage());
+        }
+
+        self::assertSame(
+            ['BF' => 0.1, 'FLAG' => true, 'BYTES' => "\x00\xff", 'CH' => 'a  ', 'LONG_TEXT' => 'long text'],
+            $this->connection->select(<<<'SQL'
+                select to_binary_float(0.1) bf, true flag, hextoraw('00FF') bytes,
+                       cast('a' as char(3)) ch, l.text long_text
+                  from fx_long_rows l
+                 where l.id = 1
+                SQL)->first(),
+        );
     }
 
     /**
