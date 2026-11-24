@@ -14,6 +14,7 @@ use crate::bind::Binds;
 use crate::cursor::NativeCursor;
 use crate::error::{Error, run};
 use crate::input::Fields;
+use crate::options::Options;
 use crate::pool::{self, Lease, PoolKey};
 
 /// The keys of `$pool`: the Pool-key fields of `ConnectionConfig`.
@@ -34,16 +35,6 @@ const POOL_KEYS: &[&str] = &[
 ];
 const SESSION_KEYS: &[&str] = &["tracing", "callTimeout"];
 const TRACING_KEYS: &[&str] = &["module", "action", "clientIdentifier", "clientInfo"];
-const OPTION_KEYS: &[&str] = &[
-    "autocommit",
-    "timeout",
-    "fetchSize",
-    "numbers",
-    "temporals",
-    "lobs",
-    "rowShape",
-    "keyCase",
-];
 
 /// What a Connection and its Cursors share: the Session, on loan until the
 /// Connection is closed or the last of them goes.
@@ -73,30 +64,6 @@ impl ConnState {
             Some(lease) => f(lease.session()),
             None => Err(Error::usage("The Connection is closed.")),
         }
-    }
-}
-
-/// The options of one execute, read from `$options`.
-pub struct Options {
-    pub fetch_size: u32,
-}
-
-impl Options {
-    fn read(options: &ZendHashTable) -> Result<Self, Error> {
-        let fields = Fields::new("$options", options, OPTION_KEYS)?;
-        fields.bool("autocommit")?;
-        fields.optional_int("timeout")?;
-        fields.choice("numbers", &["exact", "float"])?;
-        fields.choice("temporals", &["object", "string"])?;
-        fields.choice("lobs", &["locator", "inline"])?;
-        fields.choice("rowShape", &["assoc", "list"])?;
-        fields.choice("keyCase", &["native", "lower"])?;
-        let fetch_size = fields.int("fetchSize")?;
-        let fetch_size = u32::try_from(fetch_size)
-            .ok()
-            .filter(|n| *n >= 1)
-            .ok_or_else(|| Error::usage("'fetchSize' in $options must be at least 1."))?;
-        Ok(Self { fetch_size })
     }
 }
 
@@ -178,25 +145,47 @@ impl NativeConnection {
         run(|| {
             let options = Options::read(options)?;
             let binds = Binds::read(binds)?;
-            let (row_count, cursor) = self.state.with(|session| {
+            let (row_count, cursor, warning) = self.state.with(|session| {
+                // The crate keeps the Session's last warning for the
+                // Session's whole life, across pooled Connections, so a
+                // warning belongs to this execute only if it changed during
+                // it. The same text twice in a row is
+                // missed the second time: that needs a per-execute warning
+                // in the fork.
+                let before = session.last_warning()?;
                 let mut statement = session
                     .statement(sql)?
                     .fetch_array_size(options.fetch_size)
-                    .prefetch_rows(options.fetch_size)
+                    // One row more than a batch: the server reports the end
+                    // of the rows only when asked for more than there are,
+                    // so a query of up to fetchSize rows costs one Round
+                    // trip. Every batch after it is still one Round trip.
+                    .prefetch_rows(options.fetch_size.saturating_add(1))
+                    // LOB columns as locators: otherwise the crate redefines
+                    // them as LONG / LONG RAW and the describe loses the type.
+                    .fetch_lobs()
                     .build()?;
                 // Building parses the SQL on the client: no Round trip yet.
                 let matched = binds.matched(statement.bind_names())?;
                 let params: Vec<_> = matched.iter().map(|(n, v)| (n.as_str(), *v)).collect();
-                if statement.is_query() {
+                let (row_count, cursor) = if statement.is_query() {
                     let cursor = statement.query_named(&params)?;
-                    Ok((
-                        0,
-                        Some(NativeCursor::new(Arc::clone(&self.state), cursor, &options)),
-                    ))
+                    let cursor = NativeCursor::new(Arc::clone(&self.state), cursor, &options)?;
+                    (0, Some(cursor))
                 } else {
                     let result = statement.execute_named(&params)?;
-                    Ok((result.rows_affected(), None))
-                }
+                    // The server counts 1 for a PL/SQL block; only DML counts.
+                    let count = if statement.is_dml() {
+                        result.rows_affected()
+                    } else {
+                        0
+                    };
+                    (count, None)
+                };
+                let warning = session
+                    .last_warning()?
+                    .filter(|w| before.as_ref() != Some(w));
+                Ok((row_count, cursor, warning))
             })?;
 
             let mut result = ZendHashTable::with_capacity(5);
@@ -216,7 +205,7 @@ impl NativeConnection {
             result
                 .insert("implicitResults", ZendHashTable::new())
                 .map_err(put)?;
-            result.insert("warning", ()).map_err(put)?;
+            result.insert("warning", warning.as_deref()).map_err(put)?;
             Ok(result)
         })
     }

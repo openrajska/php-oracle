@@ -16,6 +16,7 @@ mod connection;
 mod cursor;
 mod error;
 mod input;
+mod options;
 mod pool;
 
 #[php_module]

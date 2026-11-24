@@ -84,7 +84,9 @@ final class Connection
 final class Cursor
 {
     /**
-     * @return list<array<string, mixed>>
+     * Exactly Column's fields; `type` and `vectorFormat` as backing values.
+     *
+     * @return list<array{name: string, type: string, nullable: bool, precision: ?int, scale: ?int, maxSize: ?int, objectType: ?string, vectorDimensions: ?int, vectorFormat: ?string, sparse: bool}>
      *
      * @throws Exception
      */
