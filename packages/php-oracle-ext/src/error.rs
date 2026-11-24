@@ -52,6 +52,9 @@ pub struct Error {
     code: i32,
     message: String,
     offset: Option<i64>,
+    /// A PHP exception is already pending (thrown by user code the
+    /// Extension called): it goes to the caller as is.
+    pending: bool,
 }
 
 impl Error {
@@ -61,6 +64,7 @@ impl Error {
             code: 0,
             message: message.into(),
             offset: None,
+            pending: false,
         }
     }
 
@@ -70,6 +74,15 @@ impl Error {
 
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self::new(Kind::Unsupported, message)
+    }
+
+    /// User code the Extension called threw: its exception is pending, and
+    /// it reaches the caller unchanged.
+    pub fn php_exception() -> Self {
+        Self {
+            pending: true,
+            ..Self::new(Kind::Usage, "")
+        }
     }
 
     /// An error of the crate while opening a Session: always `connection`,
@@ -101,6 +114,9 @@ impl Error {
     /// `offset` and `rows`. The returned value is only there to satisfy
     /// `PhpResult`: with an exception pending, throwing it does nothing.
     fn throw(self) -> PhpException {
+        if self.pending && ExecutorGlobals::has_exception() {
+            return PhpException::from_message(String::new());
+        }
         let ce = <NativeException as RegisteredClass>::get_metadata().ce();
         PhpException::new(self.message, self.code, ce).throw();
         if let Some(mut object) = ExecutorGlobals::take_exception() {
@@ -128,6 +144,7 @@ impl From<oracledb::Error> for Error {
                 code: i32::try_from(db.code()).unwrap_or(0),
                 message: db.message().to_string(),
                 offset: i64::try_from(db.offset()).ok(),
+                pending: false,
             },
             _ => Self::new(Kind::Database, e.to_string()),
         }
