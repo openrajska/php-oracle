@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
+use Rajska\Oracle\Bind\Cursor;
 use Rajska\Oracle\Bind\NClob;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Driver\DriverLob;
+use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\LobMode;
@@ -21,7 +25,8 @@ use Rajska\Oracle\ValueMapping;
 /**
  * Conformance catalog: LOB reads (Values 13, 14, 15; Scope 1 for NCLOB;
  * Native surface 8 and 10; Seam and rows 2), as handle cells of the Driver
- * contract (fixtures/sql/05_lob.sql).
+ * contract (fixtures/sql/05_lob.sql), in the rows of a query, a REF CURSOR, a
+ * nested `CURSOR()` or an Implicit result.
  */
 final class LobsTest extends ConformanceTestCase
 {
@@ -33,6 +38,15 @@ final class LobsTest extends ConformanceTestCase
 
     /** One chunk of the native Lob, in UCS-2 code units or bytes. */
     private const int CHUNK = 1 << 20;
+
+    /**
+     * Every kind of LOB of fx_lobs as CLOB, NCLOB and BLOB: small multibyte,
+     * empty, NULL, and 16 MiB (over the LOB prefetch size).
+     */
+    private const string ALL_LOBS = <<<'SQL'
+        select id, text_value, to_nclob(text_value) as national_value, binary_value
+          from fx_lobs where id <= 4 order by id
+        SQL;
 
     /**
      * Values 13 and Seam and rows 2: a CLOB and a BLOB cell is a DriverLob
@@ -442,6 +456,180 @@ final class LobsTest extends ConformanceTestCase
             \ini_set('memory_limit', (string) $limit);
         }
         self::assertSame(1, self::value($connection, 'select 1 from dual'), 'The Connection still works');
+    }
+
+    /**
+     * The Cursors a query's rows can arrive in, besides its own.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function cursorKinds(): array
+    {
+        return ['REF CURSOR' => ['ref'], 'nested CURSOR()' => ['nested'], 'Implicit result' => ['implicit']];
+    }
+
+    /**
+     * Each Cursor kind under each LobMode.
+     *
+     * @return array<string, array{string, LobMode}>
+     */
+    public static function cursorKindsAndLobModes(): array
+    {
+        $cases = [];
+        foreach (self::cursorKinds() as $name => [$kind]) {
+            foreach (LobMode::cases() as $mode) {
+                $cases["$name, LobMode::{$mode->name}"] = [$kind, $mode];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Values 13 and 15: the CLOB, NCLOB and BLOB columns of a REF CURSOR, a
+     * nested `CURSOR()` or an Implicit result read like those of the same
+     * query run on its own: small multibyte, empty, NULL and 16 MiB values,
+     * as `Lob`s or inline.
+     */
+    #[Test]
+    #[DataProvider('cursorKindsAndLobModes')]
+    public function lob_columns_of_a_cursor_read_like_those_of_a_query(string $kind, LobMode $mode): void
+    {
+        $connection = $this->connect();
+        $options = self::options(values: new ValueMapping(lobs: $mode));
+        $query = self::comparable(self::rows($connection, self::ALL_LOBS, [], $options));
+        [$cursor] = self::cursorOf($kind, $connection, self::ALL_LOBS, $options);
+
+        self::assertSame(['number', 'clob', 'nClob', 'blob'], array_column($cursor->columns(), 'type'));
+        self::assertSame($query, self::comparable(self::drain($cursor)));
+        self::assertSame([
+            ['ID' => 1, 'TEXT_VALUE' => self::SMALL, 'NATIONAL_VALUE' => self::SMALL, 'BINARY_VALUE' => "\xde\xad\xbe\xef"],
+            ['ID' => 2, 'TEXT_VALUE' => '', 'NATIONAL_VALUE' => '', 'BINARY_VALUE' => ''],
+            ['ID' => 3, 'TEXT_VALUE' => null, 'NATIONAL_VALUE' => null, 'BINARY_VALUE' => null],
+            ['ID' => 4, 'TEXT_VALUE' => md5(self::largeText()), 'NATIONAL_VALUE' => md5(self::largeText()), 'BINARY_VALUE' => md5(self::largeBinary())],
+        ], $query);
+    }
+
+    /**
+     * Values 13 and 15: the LOB columns of a REF CURSOR, a nested `CURSOR()`
+     * or an Implicit result cost the Round trips they cost in a query: none
+     * in the fetch under `lobs: Locator`, and under `lobs: Inline` what they
+     * add to the query (one per LOB over the LOB prefetch size). A LOB
+     * within the LOB prefetch size reads with no Round trip.
+     */
+    #[Test]
+    #[DataProvider('cursorKinds')]
+    public function lob_columns_of_a_cursor_cost_the_round_trips_they_cost_in_a_query(string $kind): void
+    {
+        $connection = $this->connect();
+        $sid = self::sid($connection);
+        $counter = RoundTripCounter::open();
+        $locator = self::options(values: new ValueMapping(lobs: LobMode::Locator));
+        $inline = self::options(values: new ValueMapping(lobs: LobMode::Inline));
+
+        try {
+            $query = static function (DriverOptions $options) use ($connection, $counter, $sid): int {
+                self::rows($connection, self::ALL_LOBS, [], $options);
+
+                return $counter->during($sid, static function () use ($connection, $options): void {
+                    self::rows($connection, self::ALL_LOBS, [], $options);
+                });
+            };
+            $fetch = static function (string $sql, DriverOptions $options) use ($kind, $connection, $counter, $sid): int {
+                [$cursor, $parent] = self::cursorOf($kind, $connection, $sql, $options);
+
+                return $counter->during($sid, static function () use ($cursor): void {
+                    self::drain($cursor);
+                });
+            };
+
+            self::assertSame(
+                $fetch('select id from fx_lobs where id <= 4 order by id', $locator),
+                $fetch(self::ALL_LOBS, $locator),
+                'LobMode::Locator: the fetch costs what it costs without the LOB columns',
+            );
+            self::assertSame(
+                $query($inline) - $query($locator),
+                $fetch(self::ALL_LOBS, $inline) - $fetch(self::ALL_LOBS, $locator),
+                'LobMode::Inline adds what it adds to the query',
+            );
+
+            [$cursor, $parent] = self::cursorOf($kind, $connection, self::ALL_LOBS, $locator);
+            $small = $cursor->fetchBatch()[0];
+            unset($small['ID']);
+            $read = [];
+            $trips = $counter->during($sid, static function () use ($small, &$read): void {
+                $read = array_map(self::read(...), array_map(self::lob(...), $small));
+            });
+            self::assertSame(['TEXT_VALUE' => self::SMALL, 'NATIONAL_VALUE' => self::SMALL, 'BINARY_VALUE' => "\xde\xad\xbe\xef"], $read);
+            self::assertSame(0, $trips, 'A LOB within the LOB prefetch size reads with no Round trip');
+        } finally {
+            $counter->close();
+        }
+    }
+
+    /**
+     * Opens the Cursor of the given kind over the query's rows. The second
+     * element keeps the parent of a nested Cursor open.
+     *
+     * @return array{DriverCursor, ?DriverCursor}
+     */
+    private static function cursorOf(string $kind, DriverConnection $connection, string $query, DriverOptions $options): array
+    {
+        if ($kind === 'ref') {
+            $values = $connection->execute("begin open :o for $query; end;", ['o' => Cursor::out()], $options)->outValues()['o'] ?? [];
+            self::assertInstanceOf(DriverCursor::class, $values[0] ?? null);
+
+            return [$values[0], null];
+        }
+        if ($kind === 'nested') {
+            $parent = $connection->execute("select cursor($query) as nested_rows from dual", [], $options)->cursor();
+            self::assertNotNull($parent);
+            $nested = $parent->fetchBatch()[0]['NESTED_ROWS'] ?? null;
+            self::assertInstanceOf(DriverCursor::class, $nested);
+
+            return [$nested, $parent];
+        }
+        $results = $connection->execute(
+            "declare c sys_refcursor; begin open c for $query; dbms_sql.return_result(c); end;",
+            [],
+            $options,
+        )->implicitResults();
+        self::assertCount(1, $results);
+
+        return [$results[0], null];
+    }
+
+    /**
+     * Every remaining row of a DriverCursor.
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    private static function drain(DriverCursor $cursor): array
+    {
+        $rows = [];
+        while (($batch = $cursor->fetchBatch()) !== []) {
+            array_push($rows, ...$batch);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The rows with each LOB read to its contents, and contents longer than
+     * 1 KiB replaced by their MD5, so that rows compare readably.
+     *
+     * @param list<array<int|string, mixed>> $rows
+     *
+     * @return list<array<int|string, mixed>>
+     */
+    private static function comparable(array $rows): array
+    {
+        return array_map(static fn (array $row): array => array_map(static function (mixed $value): mixed {
+            $value = $value instanceof DriverLob ? self::read($value) : $value;
+
+            return \is_string($value) && \strlen($value) > 1024 ? md5($value) : $value;
+        }, $row), $rows);
     }
 
     /**
