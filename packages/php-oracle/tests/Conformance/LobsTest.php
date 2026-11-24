@@ -393,7 +393,9 @@ final class LobsTest extends ConformanceTestCase
                 } elseif (str_starts_with($case, 'one LOB of 3276')) {
                     self::assertSame(str_repeat('x', (int) substr($case, 11, 5)), $inline[0][array_key_first($inline[0])], $case);
                 } elseif ($case === 'one LOB of 16 MiB') {
-                    self::assertSame(md5(self::largeText()), md5($inline[0]['TEXT_VALUE']));
+                    $value = $inline[0]['TEXT_VALUE'];
+                    self::assertIsString($value);
+                    self::assertSame(md5(self::largeText()), md5($value));
                 }
             }
         } finally {
