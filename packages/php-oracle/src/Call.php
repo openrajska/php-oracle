@@ -38,6 +38,9 @@ final readonly class Call
 
     private const string IDENTIFIER = 'an identifier (a letter, then letters, digits, _, $ or #) or a double-quoted name, of at most 128 bytes';
 
+    /** How many validated Call shapes (name and parameter names) are kept. */
+    private const int KNOWN = 256;
+
     /**
      * @param array<string, mixed> $binds by synthetic name
      * @param array<string, string> $parameters the parameter name as the user wrote it, by synthetic name
@@ -57,6 +60,25 @@ final readonly class Call
      */
     public static function of(string $name, #[\SensitiveParameter] array $binds): self
     {
+        /**
+         * Calls already validated, oldest first, by name and parameter
+         * names: the parameter names, the argument list and the synthetic
+         * bind names. A Call's text depends on nothing else, so one
+         * validation serves every later Call of the same shape.
+         *
+         * @var array<string, array{list<string>, string, list<string>}> $known
+         */
+        static $known = [];
+
+        $keys = array_keys($binds);
+        $id = $name."\0".implode("\0", $keys);
+        $shape = $known[$id] ?? null;
+        if ($shape !== null && $shape[0] === $keys) {
+            [$parameters, $arguments, $synthetic] = $shape;
+
+            return new self($name, $arguments, array_combine($synthetic, $binds), array_combine($synthetic, $parameters));
+        }
+
         $parts = self::parts($name, 'Call name', 'each dot-separated part must be '.self::IDENTIFIER, $name);
         if ($parts > 3) {
             throw new UsageException("Call name '$name' has $parts parts; a name has at most 3: schema.package.name.", 0, null, $name);
@@ -86,7 +108,13 @@ final readonly class Call
             $parameters[$bind] = $key;
         }
 
-        return new self($name, $arguments === [] ? '' : '('.implode(', ', $arguments).')', $synthetic, $parameters);
+        $arguments = $arguments === [] ? '' : '('.implode(', ', $arguments).')';
+        if (\count($known) >= self::KNOWN) {
+            unset($known[array_key_first($known)]);
+        }
+        $known[$id] = [array_values($parameters), $arguments, array_keys($synthetic)];
+
+        return new self($name, $arguments, $synthetic, $parameters);
     }
 
     /**

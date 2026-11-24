@@ -48,6 +48,14 @@ final class Connection
     private const int OUTPUT_BATCH = 1000;
 
     /**
+     * The options of a call that passes none, resolved once per
+     * Autocommit state: index 1 under Autocommit, 0 inside a transaction.
+     *
+     * @var array<int, DriverOptions>
+     */
+    private array $defaults = [];
+
+    /**
      * @internal use Oracle::connect()
      */
     public function __construct(
@@ -68,7 +76,7 @@ final class Connection
             $this->driver->execute($sql, $binds, $this->resolve($options)),
             $sql,
             $this->state,
-            array_map(strval(...), array_keys($binds)),
+            array_keys($binds),
         );
     }
 
@@ -148,7 +156,7 @@ final class Connection
             \count($rows),
             $sql,
             $this->state,
-            array_map(strval(...), array_keys($rows[0] ?? [])),
+            array_keys($rows[0] ?? []),
         );
     }
 
@@ -470,7 +478,10 @@ final class Connection
 
     private function resolve(?ExecuteOptions $options): DriverOptions
     {
-        $options ??= new ExecuteOptions();
+        if ($options === null) {
+            // The ConnectionConfig is immutable: these never change.
+            return $this->defaults[(int) !$this->inTransaction] ??= $this->resolve(new ExecuteOptions());
+        }
 
         return new DriverOptions(
             autocommit: !$this->inTransaction,

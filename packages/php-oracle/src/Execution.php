@@ -6,6 +6,7 @@ namespace Rajska\Oracle;
 
 use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
@@ -61,10 +62,7 @@ final class Execution
      */
     public function out(string $name): OutValue
     {
-        $values = $this->outValues ??= array_map(
-            fn (array $values): array => Lob::wrap(Cursor::wrap($values, $this->connection), $this->connection),
-            $this->driver->outValues(),
-        );
+        $values = $this->outValues ??= self::wrap($this->driver->outValues(), $this->connection);
         $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));
         if ($key !== null) {
             return new OutValue($key, $values[$key], $this->sql, $this->call);
@@ -121,6 +119,28 @@ final class Execution
     public function warning(): ?string
     {
         return $this->driver->warning();
+    }
+
+    /**
+     * The OUT values with each REF CURSOR wrapped as a Cursor and each LOB as
+     * a Lob; a bind whose values are neither is left as it is.
+     *
+     * @param array<string, list<mixed>> $outValues
+     *
+     * @return array<string, list<mixed>>
+     */
+    private static function wrap(array $outValues, ConnectionState $connection): array
+    {
+        foreach ($outValues as $name => $values) {
+            foreach ($values as $value) {
+                if ($value instanceof DriverCursor || $value instanceof DriverLob) {
+                    $outValues[$name] = Lob::wrap(Cursor::wrap($values, $connection), $connection);
+                    break;
+                }
+            }
+        }
+
+        return $outValues;
     }
 
     /**

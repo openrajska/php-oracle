@@ -17,6 +17,17 @@ use Rajska\Oracle\Tracing;
  */
 final class ExtensionConnection implements DriverConnection
 {
+    /**
+     * The last options passed, and their `$options` array: Core passes the
+     * same DriverOptions to every call that sets none.
+     */
+    private ?DriverOptions $lastOptions = null;
+
+    /**
+     * @var array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}|null
+     */
+    private ?array $lastArray = null;
+
     public function __construct(private readonly NativeConnection $native)
     {
     }
@@ -24,7 +35,7 @@ final class ExtensionConnection implements DriverConnection
     public function execute(string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
     {
         try {
-            $result = $this->native->execute($sql, $binds, self::options($options));
+            $result = $this->native->execute($sql, $binds, $this->options($options));
         } catch (NativeException $e) {
             throw ExceptionTranslator::translate($e, $sql);
         }
@@ -32,8 +43,8 @@ final class ExtensionConnection implements DriverConnection
         return new ExtensionExecution(
             $result['rowCount'],
             $result['cursor'] === null ? null : new ExtensionCursor($result['cursor'], $sql),
-            ExtensionCursor::handles($result['outValues'], $sql),
-            array_map(static fn ($cursor) => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
+            $result['outValues'] === [] ? [] : ExtensionCursor::handles($result['outValues'], $sql),
+            $result['implicitResults'] === [] ? [] : array_map(static fn ($cursor) => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
             $result['warning'],
         );
     }
@@ -41,7 +52,7 @@ final class ExtensionConnection implements DriverConnection
     public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverBatch
     {
         try {
-            $result = $this->native->executeMany($sql, $rows, self::options($options));
+            $result = $this->native->executeMany($sql, $rows, $this->options($options));
         } catch (NativeException $e) {
             throw ExceptionTranslator::translate($e, $sql);
         }
@@ -95,9 +106,25 @@ final class ExtensionConnection implements DriverConnection
     }
 
     /**
+     * The `$options` array of `$options`, built once while Core passes the
+     * same DriverOptions.
+     *
      * @return array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}
      */
-    private static function options(DriverOptions $options): array
+    private function options(DriverOptions $options): array
+    {
+        if ($options !== $this->lastOptions || $this->lastArray === null) {
+            $this->lastArray = self::array($options);
+            $this->lastOptions = $options;
+        }
+
+        return $this->lastArray;
+    }
+
+    /**
+     * @return array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}
+     */
+    private static function array(DriverOptions $options): array
     {
         return [
             'autocommit' => $options->autocommit,
