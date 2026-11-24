@@ -218,6 +218,9 @@ fn kind_of(kind: &oracledb::ErrorKind) -> Kind {
         | E::OutOfData
         | E::ParseError(..) => Kind::ConnectionLost,
         E::DbError(db) => kind_of_code(db.code()),
+        // A feature the crate lacks, such as a TSLTZ value under a named
+        // DBTIMEZONE: fails loudly, never with wrong data.
+        E::NotImplemented(_) => Kind::Unsupported,
         _ => Kind::Database,
     }
 }
@@ -341,6 +344,19 @@ mod tests {
         ] {
             assert_eq!(kind_of(&kind), Kind::ConnectionLost, "{kind:?}");
         }
+    }
+
+    /// Values 6: a TSLTZ value under a named DBTIMEZONE fails in the crate
+    /// as not implemented (`DBTIMEZONE` is set at database creation, so the
+    /// suite's database cannot provoke it).
+    #[test]
+    fn a_feature_the_crate_lacks_classifies_as_unsupported() {
+        assert_eq!(
+            kind_of(&ErrorKind::NotImplemented(
+                "named database time zone".to_string()
+            )),
+            Kind::Unsupported
+        );
     }
 
     #[test]

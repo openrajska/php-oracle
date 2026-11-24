@@ -14,6 +14,7 @@ use oracledb::{
 
 use crate::bind::{MAX_VARCHAR2, exact_number};
 use crate::error::Error;
+use crate::temporal::{self, Temporal};
 
 /// The base class every typed bind extends.
 pub const BIND_CLASS: &str = "Rajska\\Oracle\\Bind\\Bind";
@@ -25,6 +26,8 @@ const OUT_SIZE: usize = MAX_VARCHAR2;
 pub struct Typed {
     value: Box<dyn ToDbValue>,
     direction: Direction,
+    /// The timestamp type declared, which may travel as another type.
+    reads_as: Option<Temporal>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,6 +45,12 @@ impl Typed {
     /// Whether the user reads it back (OUT or IN OUT).
     pub fn is_out(&self) -> bool {
         self.direction != Direction::In
+    }
+
+    /// The timestamp type declared: its OUT value maps as that type,
+    /// whatever type the server sent it back as.
+    pub fn reads_as(&self) -> Option<Temporal> {
+        self.reads_as
     }
 }
 
@@ -95,6 +104,13 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
         // A REF CURSOR goes as NULL, and the server opens it.
         "cursor" if value.is_null() => Box::new(DB_TYPE_CURSOR),
         "cursor" => return Err(cursor_in(name)),
+        "date" | "timestamp" | "timestampTz" | "timestampLtz" => temporal::timestamp_bind(
+            name,
+            value,
+            Temporal::of_bind(&type_name).unwrap_or(Temporal::Timestamp),
+        )?,
+        "intervalDs" => temporal::interval_ds_bind(name, value)?,
+        "intervalYm" => temporal::interval_ym_bind(name, value)?,
         other => {
             return Err(Error::unsupported(format!(
                 "Bind '{name}': {} binds are not implemented yet.",
@@ -102,7 +118,11 @@ pub fn read(name: &str, object: &ZendObject) -> Result<Typed, Error> {
             )));
         }
     };
-    Ok(Typed { value, direction })
+    Ok(Typed {
+        value,
+        direction,
+        reads_as: Temporal::of_bind(&type_name),
+    })
 }
 
 /// The backing value of an enum property (`type`, `direction`).

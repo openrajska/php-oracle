@@ -207,8 +207,8 @@ final class NativeSurfaceTest extends ConformanceTestCase
             ],
             'unsupported' => [
                 UnsupportedException::class,
-                fn () => $native->execute('select sysdate from dual', [], self::nativeOptions())['cursor']?->fetchBatch(),
-                fn () => $driver->execute('select sysdate from dual', [], self::options())->cursor()?->fetchBatch(),
+                fn () => $native->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::nativeOptions())['cursor']?->fetchBatch(),
+                fn () => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
             ],
             'usage' => [
                 UsageException::class,

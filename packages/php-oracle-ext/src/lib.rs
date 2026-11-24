@@ -18,6 +18,7 @@ mod error;
 mod input;
 mod options;
 mod pool;
+mod temporal;
 mod typed;
 mod value;
 

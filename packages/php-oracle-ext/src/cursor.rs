@@ -15,14 +15,15 @@ use oracledb::{
     DB_TYPE_INTERVAL_DS, DB_TYPE_INTERVAL_YM, DB_TYPE_JSON, DB_TYPE_LONG, DB_TYPE_LONG_RAW,
     DB_TYPE_NCHAR, DB_TYPE_NCLOB, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR, DB_TYPE_OBJECT, DB_TYPE_RAW,
     DB_TYPE_ROWID, DB_TYPE_TIMESTAMP, DB_TYPE_TIMESTAMP_LTZ, DB_TYPE_TIMESTAMP_TZ, DB_TYPE_UROWID,
-    DB_TYPE_VARCHAR, DB_TYPE_VECTOR, DB_TYPE_XMLTYPE, DbType, Metadata, OracleNumber, Row,
-    VectorStorageFormat,
+    DB_TYPE_VARCHAR, DB_TYPE_VECTOR, DB_TYPE_XMLTYPE, DbType, Metadata, OracleIntervalDS,
+    OracleIntervalYM, OracleNumber, OracleTimestamp, Row, VectorStorageFormat,
 };
 
 use crate::connection::{ConnState, CursorSlot};
 use crate::error::{Error, run};
-use crate::options::{KeyCase, NumberMode, Options, RowShape};
+use crate::options::{KeyCase, NumberMode, Options, RowShape, TemporalMode};
 use crate::pool::lock;
+use crate::temporal::{self, Temporal};
 use crate::value;
 
 /// How a column's values become PHP values.
@@ -33,6 +34,12 @@ enum Mapping {
     Number(NumberMode),
     /// Character types: `string`.
     Text,
+    /// DATE, TIMESTAMP, TSTZ, TSLTZ: a `DateTimeImmutable`, or ISO text.
+    Temporal(Temporal, TemporalMode),
+    /// INTERVAL DAY TO SECOND: a `DateInterval`.
+    IntervalDs,
+    /// INTERVAL YEAR TO MONTH: a `DateInterval`.
+    IntervalYm,
     /// A nested `CURSOR()` (or a REF CURSOR in a select list): a native
     /// Cursor nested in this one, with its options.
     Cursor,
@@ -218,6 +225,12 @@ impl Column {
             Mapping::Text
         } else if db_type == DB_TYPE_CURSOR {
             Mapping::Cursor
+        } else if let Some(temporal) = Temporal::of(db_type) {
+            Mapping::Temporal(temporal, options.temporals)
+        } else if db_type == DB_TYPE_INTERVAL_DS {
+            Mapping::IntervalDs
+        } else if db_type == DB_TYPE_INTERVAL_YM {
+            Mapping::IntervalYm
         } else {
             Mapping::Unsupported(metadata.data_type())
         };
@@ -263,6 +276,24 @@ impl Column {
                 Some(text) => set_string(&mut zval, text)?,
                 None => zval.set_null(),
             },
+            Mapping::Temporal(temporal, mode) => {
+                return match row.get::<Option<OracleTimestamp>>(index)? {
+                    Some(value) => temporal::timestamp_value(value, *temporal, *mode),
+                    None => Ok(Zval::null()),
+                };
+            }
+            Mapping::IntervalDs => {
+                return match row.get::<Option<OracleIntervalDS>>(index)? {
+                    Some(value) => temporal::interval_ds(value),
+                    None => Ok(Zval::null()),
+                };
+            }
+            Mapping::IntervalYm => {
+                return match row.get::<Option<OracleIntervalYM>>(index)? {
+                    Some(value) => temporal::interval_ym(value),
+                    None => Ok(Zval::null()),
+                };
+            }
             Mapping::Unsupported(data_type) => {
                 return Err(Error::unsupported(format!(
                     "Column {}: {data_type} values cannot be fetched yet.",

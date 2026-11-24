@@ -10,12 +10,18 @@ use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
 use Rajska\Oracle\Bind\Cursor as CursorBind;
+use Rajska\Oracle\Bind\Date;
+use Rajska\Oracle\Bind\IntervalDs;
+use Rajska\Oracle\Bind\IntervalYm;
 use Rajska\Oracle\Bind\NChar;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\NVarchar;
 use Rajska\Oracle\Bind\PlsInteger;
 use Rajska\Oracle\Bind\Raw;
 use Rajska\Oracle\Bind\Rowid;
+use Rajska\Oracle\Bind\Timestamp;
+use Rajska\Oracle\Bind\TimestampLtz;
+use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Exceptions\UsageException;
 
@@ -80,6 +86,19 @@ final class FunctionCall
             : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a NUMBER.', 0, null, $this->call->name);
     }
 
+    /**
+     * A timestamp return value: an object, or ISO text under
+     * `TemporalMode::String`.
+     */
+    private function temporal(Bind $bind): \DateTimeImmutable|string|null
+    {
+        $value = ($this->run)($bind)->value();
+
+        return $value === null || $value instanceof \DateTimeImmutable || \is_string($value)
+            ? $value
+            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a date.', 0, null, $this->call->name);
+    }
+
     public function binaryFloat(): ?float
     {
         return ($this->run)(BinaryFloat::out())->float();
@@ -105,7 +124,7 @@ final class FunctionCall
      */
     public function date(): \DateTimeImmutable|string|null
     {
-        throw $this->call->unsupported('date()');
+        return $this->temporal(Date::out());
     }
 
     /**
@@ -113,7 +132,7 @@ final class FunctionCall
      */
     public function timestamp(): \DateTimeImmutable|string|null
     {
-        throw $this->call->unsupported('timestamp()');
+        return $this->temporal(Timestamp::out());
     }
 
     /**
@@ -121,7 +140,7 @@ final class FunctionCall
      */
     public function timestampTz(): \DateTimeImmutable|string|null
     {
-        throw $this->call->unsupported('timestampTz()');
+        return $this->temporal(TimestampTz::out());
     }
 
     /**
@@ -130,17 +149,17 @@ final class FunctionCall
      */
     public function timestampLtz(): \DateTimeImmutable|string|null
     {
-        throw $this->call->unsupported('timestampLtz()');
+        return $this->temporal(TimestampLtz::out());
     }
 
     public function intervalDs(): ?\DateInterval
     {
-        throw $this->call->unsupported('intervalDs()');
+        return ($this->run)(IntervalDs::out())->interval();
     }
 
     public function intervalYm(): ?\DateInterval
     {
-        throw $this->call->unsupported('intervalYm()');
+        return ($this->run)(IntervalYm::out())->interval();
     }
 
     /**

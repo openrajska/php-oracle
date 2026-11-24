@@ -7,25 +7,32 @@ use ext_php_rs::convert::IntoZval;
 use ext_php_rs::types::{ZendClassObject, Zval};
 use oracledb::{
     DB_TYPE_BINARY_DOUBLE, DB_TYPE_BINARY_FLOAT, DB_TYPE_BINARY_INTEGER, DB_TYPE_BOOLEAN,
-    DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_LONG, DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER,
-    DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_ROWID, DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleNumber,
-    Row,
+    DB_TYPE_CHAR, DB_TYPE_CURSOR, DB_TYPE_INTERVAL_DS, DB_TYPE_INTERVAL_YM, DB_TYPE_LONG,
+    DB_TYPE_LONG_RAW, DB_TYPE_NCHAR, DB_TYPE_NUMBER, DB_TYPE_NVARCHAR, DB_TYPE_RAW, DB_TYPE_ROWID,
+    DB_TYPE_UROWID, DB_TYPE_VARCHAR, OracleIntervalDS, OracleIntervalYM, OracleNumber,
+    OracleTimestamp, Row,
 };
 
 use crate::connection::{ConnState, CursorSlot};
 use crate::cursor::NativeCursor;
 use crate::error::Error;
 use crate::options::{NumberMode, Options};
+use crate::temporal::{self, Temporal};
 
 /// The value at `index` of a row, as PHP sees it. `what` names the value in
 /// an error ("OUT bind 'x'"). A REF CURSOR is taken out of the row and
 /// becomes a native Cursor of the Connection, with the Execution's options.
+///
+/// `reads_as` is the timestamp type an OUT bind declared, when it differs
+/// from what comes back: a `Date` IN OUT goes (and comes back) as TIMESTAMP,
+/// a `TimestampLtz` IN OUT as TSTZ (see [`temporal::timestamp_bind`]).
 pub fn cell(
     row: &mut Row,
     index: usize,
     state: &Arc<ConnState>,
     options: &Options,
     what: &str,
+    reads_as: Option<Temporal>,
 ) -> Result<Zval, Error> {
     let numbers = options.numbers;
     let metadata = row
@@ -35,6 +42,26 @@ pub fn cell(
     let db_type = metadata.db_type();
     if db_type == DB_TYPE_CURSOR {
         return cursor(row, index, state, options, Vec::new());
+    }
+    if let Some(temporal) = Temporal::of(db_type) {
+        return match row.get::<Option<OracleTimestamp>>(index)? {
+            Some(value) => {
+                temporal::timestamp_value(value, reads_as.unwrap_or(temporal), options.temporals)
+            }
+            None => Ok(Zval::null()),
+        };
+    }
+    if db_type == DB_TYPE_INTERVAL_DS {
+        return match row.get::<Option<OracleIntervalDS>>(index)? {
+            Some(value) => temporal::interval_ds(value),
+            None => Ok(Zval::null()),
+        };
+    }
+    if db_type == DB_TYPE_INTERVAL_YM {
+        return match row.get::<Option<OracleIntervalYM>>(index)? {
+            Some(value) => temporal::interval_ym(value),
+            None => Ok(Zval::null()),
+        };
     }
     let mut zval = Zval::new();
     if db_type == DB_TYPE_NUMBER || db_type == DB_TYPE_BINARY_INTEGER {

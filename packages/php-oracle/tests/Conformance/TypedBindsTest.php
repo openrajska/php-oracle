@@ -11,12 +11,18 @@ use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Date;
+use Rajska\Oracle\Bind\IntervalDs;
+use Rajska\Oracle\Bind\IntervalYm;
 use Rajska\Oracle\Bind\NChar;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\NVarchar;
 use Rajska\Oracle\Bind\PlsInteger;
 use Rajska\Oracle\Bind\Raw;
 use Rajska\Oracle\Bind\Rowid;
+use Rajska\Oracle\Bind\Timestamp;
+use Rajska\Oracle\Bind\TimestampLtz;
+use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\QueryException;
@@ -27,6 +33,7 @@ use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\RowShape;
 use Rajska\Oracle\TemporalMode;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
+use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\ValueMapping;
 
 /**
@@ -80,6 +87,155 @@ final class TypedBindsTest extends ConformanceTestCase
         yield 'Boolean' => ['boolean', Boolean::in(null), Boolean::out(), Boolean::inOut(null)];
         yield 'Raw' => ['raw', Raw::in(null), Raw::out(), Raw::inOut(null)];
         yield 'Rowid' => ['rowid', Rowid::in(null), Rowid::out(), Rowid::inOut(null)];
+        yield 'Date' => ['date', Date::in(null), Date::out(), Date::inOut(null)];
+        yield 'Timestamp' => ['timestamp', Timestamp::in(null), Timestamp::out(), Timestamp::inOut(null)];
+        yield 'TimestampTz' => ['timestamp with time zone', TimestampTz::in(null), TimestampTz::out(), TimestampTz::inOut(null)];
+        yield 'TimestampLtz' => ['timestamp with local time zone', TimestampLtz::in(null), TimestampLtz::out(), TimestampLtz::inOut(null)];
+        yield 'IntervalDs' => ['interval day to second', IntervalDs::in(null), IntervalDs::out(), IntervalDs::inOut(null)];
+        yield 'IntervalYm' => ['interval year to month', IntervalYm::in(null), IntervalYm::out(), IntervalYm::inOut(null)];
+    }
+
+    /**
+     * Each temporal class with its PL/SQL type, as `classes()`: the IN bind
+     * and the OUT value it becomes, the OUT bind, the IN OUT bind, how the
+     * block changes it, and the result. Values as `Temporals::shown()`
+     * writes them, in PHP's zone America/Sao_Paulo.
+     *
+     * @return iterable<string, array{string, Bind, string, Bind, Bind, string, string}>
+     */
+    public static function temporalClasses(): iterable
+    {
+        $date = new \DateTimeImmutable('2026-03-01 10:00:00.123456', new \DateTimeZone('Asia/Kathmandu'));
+        $zone = 'America/Sao_Paulo';
+        yield 'Date' => ['date', Date::in($date), "+2026-03-01 10:00:00.000000 $zone", Date::out(), Date::inOut($date), 'io + 1', "+2026-03-02 10:00:00.000000 $zone"];
+        yield 'Timestamp' => ['timestamp', Timestamp::in($date), "+2026-03-01 10:00:00.123456 $zone", Timestamp::out(), Timestamp::inOut($date), "io + interval '0.5' second", "+2026-03-01 10:00:00.623456 $zone"];
+        yield 'TimestampTz' => ['timestamp with time zone', TimestampTz::in($date), '+2026-03-01 10:00:00.123456 +05:45', TimestampTz::out(), TimestampTz::inOut($date), "io + interval '1' hour", '+2026-03-01 11:00:00.123456 +05:45'];
+        // 10:00 at +05:45 is 04:15 UTC, 01:15 in São Paulo.
+        yield 'TimestampLtz' => ['timestamp with local time zone', TimestampLtz::in($date), "+2026-03-01 01:15:00.123456 $zone", TimestampLtz::out(), TimestampLtz::inOut($date), "io + interval '1' hour", "+2026-03-01 02:15:00.123456 $zone"];
+        $ds = new \DateInterval('P3DT4H5M6S');
+        $ds->f = 0.789;
+        yield 'IntervalDs' => ['interval day to second', IntervalDs::in($ds), '+0Y0M3DT4H5M6S.789000', IntervalDs::out(), IntervalDs::inOut($ds), 'io * 2', '+0Y0M6DT8H10M13S.578000'];
+        $negative = new \DateInterval('PT36H');
+        $negative->invert = 1;
+        yield 'IntervalDs negative' => ['interval day to second', IntervalDs::in($negative), '-0Y0M1DT12H0M0S.000000', IntervalDs::out(), IntervalDs::inOut($negative), 'io * -1', '+0Y0M1DT12H0M0S.000000'];
+        yield 'IntervalYm' => ['interval year to month', IntervalYm::in(new \DateInterval('P2Y5M')), '+2Y5M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut(new \DateInterval('P1Y11M')), 'io * 2', '+3Y10M0DT0H0M0S.000000'];
+        $months = new \DateInterval('P14M');
+        $months->invert = 1;
+        yield 'IntervalYm negative' => ['interval year to month', IntervalYm::in($months), '-1Y2M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut($months), 'io', '-1Y2M0DT0H0M0S.000000'];
+    }
+
+    /**
+     * Binds 4, Scope 2: the temporal classes IN, OUT and IN OUT through a
+     * PL/SQL parameter of their type.
+     */
+    #[Test]
+    #[DataProvider('temporalClasses')]
+    public function each_temporal_class_binds_in_out_and_in_out_through_its_plsql_type(
+        string $plsql,
+        Bind $in,
+        string $out,
+        Bind $outBind,
+        Bind $inOut,
+        string $change,
+        string $changed,
+    ): void {
+        Temporals::inZone('America/Sao_Paulo', function () use ($plsql, $in, $out, $outBind, $inOut, $change, $changed): void {
+            $execution = $this->connect()->execute(
+                "declare
+                   procedure p(i in $plsql, o out $plsql, io in out $plsql) is
+                   begin
+                     o := i;
+                     io := $change;
+                   end;
+                 begin
+                   p(:i, :o, :io);
+                 end;",
+                ['i' => $in, 'o' => $outBind, 'io' => $inOut],
+                self::options(),
+            );
+
+            $values = $execution->outValues();
+            self::assertSame(['o' => [$out], 'io' => [$changed]], array_map(
+                static fn (array $list): array => array_map(Temporals::shown(...), $list),
+                $values,
+            ));
+        });
+    }
+
+    /**
+     * Binds 10: with the Session zone (São Paulo) other than the object's
+     * (Tokyo), `Date` and `Timestamp` store the Wall clock and `Date` drops
+     * the fraction, while TSTZ and TSLTZ store the Instant.
+     */
+    #[Test]
+    public function wall_clock_types_store_the_wall_clock_and_zoned_types_the_instant(): void
+    {
+        Temporals::inZone('America/Sao_Paulo', function (): void {
+            $connection = $this->connect();
+            $tokyo = new \DateTimeImmutable('2026-03-01 10:00:00.123456', new \DateTimeZone('Asia/Tokyo'));
+
+            $execution = $connection->execute(
+                "declare
+                   d date := :d;
+                   t timestamp(9) := :t;
+                   tz timestamp(9) with time zone := :tz;
+                   ltz timestamp(9) with local time zone := :ltz;
+                   f varchar2(40) := 'YYYY-MM-DD HH24:MI:SS.FF6';
+                 begin
+                   :d_out := to_char(cast(d as timestamp), f);
+                   :t_out := to_char(t, f);
+                   :tz_out := to_char(sys_extract_utc(tz), f);
+                   :ltz_out := to_char(sys_extract_utc(ltz), f);
+                 end;",
+                [
+                    'd' => Date::in($tokyo), 't' => Timestamp::in($tokyo),
+                    'tz' => TimestampTz::in($tokyo), 'ltz' => TimestampLtz::in($tokyo),
+                    'd_out' => Varchar::out(), 't_out' => Varchar::out(),
+                    'tz_out' => Varchar::out(), 'ltz_out' => Varchar::out(),
+                ],
+                self::options(),
+            );
+
+            self::assertSame([
+                'd_out' => ['2026-03-01 10:00:00.000000'],
+                't_out' => ['2026-03-01 10:00:00.123456'],
+                'tz_out' => ['2026-03-01 01:00:00.123456'],
+                'ltz_out' => ['2026-03-01 01:00:00.123456'],
+            ], $execution->outValues());
+        });
+    }
+
+    /**
+     * Binds 11: `IntervalDs` rejects years and months, `IntervalYm` days and
+     * smaller units, when the bind is built: before any Round trip.
+     *
+     * @return iterable<string, array{\Closure(): Bind, non-empty-string}>
+     */
+    public static function incompatibleIntervals(): iterable
+    {
+        yield 'IntervalDs with years' => [static fn () => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalDs with months' => [static fn () => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalYm with days' => [static fn () => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with seconds' => [static fn () => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
+        $fraction = new \DateInterval('P1Y');
+        $fraction->f = 0.5;
+        yield 'IntervalYm with a fraction' => [static fn () => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
+    }
+
+    /**
+     * @param \Closure(): Bind $bind
+     * @param non-empty-string $message
+     */
+    #[Test]
+    #[DataProvider('incompatibleIntervals')]
+    public function an_incompatible_date_interval_fails_when_the_bind_is_built(\Closure $bind, string $message): void
+    {
+        try {
+            $bind();
+            self::fail('The interval was accepted.');
+        } catch (UsageException $e) {
+            self::assertStringStartsWith($message, $e->getMessage());
+        }
     }
 
     /**
@@ -428,10 +584,15 @@ final class TypedBindsTest extends ConformanceTestCase
 
     /**
      * Values 16: OUT and IN OUT values follow the column mapping under every
-     * ValueMapping. Only `numbers` changes these types.
+     * ValueMapping. Only `numbers` and `temporals` change these types.
      */
     #[Test]
     public function out_values_follow_the_column_mapping_under_every_value_mapping(): void
+    {
+        Temporals::inZone('America/Sao_Paulo', $this->outValuesFollowTheColumnMapping(...));
+    }
+
+    private function outValuesFollowTheColumnMapping(): void
     {
         $connection = $this->connect();
 
@@ -444,16 +605,54 @@ final class TypedBindsTest extends ConformanceTestCase
                            :fraction := 12.5; :integral := 5; :huge := 1e30; :pls := 7;
                            :bf := 0.1f; :bd := 0.1d; :flag := true; :bytes := hextoraw('00ff');
                            :text := 'a'; :io := :io + 0.25;
+                           :d := date '2026-03-01' + 1/24; :ts := timestamp '2026-03-01 10:00:00.123456789';
+                           :tz := timestamp '2026-03-01 10:00:00.5 +05:45';
+                           :ltz := cast(timestamp '2026-03-01 13:00:00 +00:00' as timestamp with local time zone);
+                           :d_io := :d_io + 1; :ltz_io := :ltz_io;
+                           :ds := interval '1 02:03:04.5' day to second; :ym := interval '1-2' year to month;
                          end;",
                         [
                             'fraction' => Number::out(), 'integral' => Number::out(), 'huge' => Number::out(),
                             'pls' => PlsInteger::out(), 'bf' => BinaryFloat::out(), 'bd' => BinaryDouble::out(),
                             'flag' => Boolean::out(), 'bytes' => Raw::out(), 'text' => Varchar::out(),
                             'io' => Number::inOut(1),
+                            'd' => Date::out(), 'ts' => Timestamp::out(), 'tz' => TimestampTz::out(),
+                            'ltz' => TimestampLtz::out(), 'ds' => IntervalDs::out(), 'ym' => IntervalYm::out(),
+                            // These travel as TIMESTAMP and TSTZ, and come back
+                            // as the type declared.
+                            'd_io' => Date::inOut(new \DateTimeImmutable('2026-03-01 10:00:00.5')),
+                            'ltz_io' => TimestampLtz::inOut(new \DateTimeImmutable('2026-03-01 13:00:00', new \DateTimeZone('UTC'))),
                         ],
                         new DriverOptions(true, null, 100, $values, RowShape::Assoc, KeyCase::Native),
                     );
                     $float = $numbers === NumberMode::Float;
+                    $string = $temporals === TemporalMode::String;
+                    $outValues = $execution->outValues();
+                    $temporal = [];
+                    foreach (['d', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym'] as $name) {
+                        $temporal[$name] = array_map(Temporals::shown(...), $outValues[$name]);
+                        unset($outValues[$name]);
+                    }
+
+                    self::assertSame($string ? [
+                        'd' => ['2026-03-01 01:00:00'],
+                        'ts' => ['2026-03-01 10:00:00.123456789'],
+                        'tz' => ['2026-03-01 10:00:00.500000000 +05:45'],
+                        'ltz' => ['2026-03-01 10:00:00.000000000 -03:00'],
+                        'd_io' => ['2026-03-02 10:00:00'],
+                        'ltz_io' => ['2026-03-01 10:00:00.000000000 -03:00'],
+                        'ds' => ['+0Y0M1DT2H3M4S.500000'],
+                        'ym' => ['+1Y2M0DT0H0M0S.000000'],
+                    ] : [
+                        'd' => ['+2026-03-01 01:00:00.000000 America/Sao_Paulo'],
+                        'ts' => ['+2026-03-01 10:00:00.123456 America/Sao_Paulo'],
+                        'tz' => ['+2026-03-01 10:00:00.500000 +05:45'],
+                        'ltz' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
+                        'd_io' => ['+2026-03-02 10:00:00.000000 America/Sao_Paulo'],
+                        'ltz_io' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
+                        'ds' => ['+0Y0M1DT2H3M4S.500000'],
+                        'ym' => ['+1Y2M0DT0H0M0S.000000'],
+                    ], $temporal, "$numbers->value, $temporals->value, $lobs->value");
 
                     self::assertSame([
                         'fraction' => [$float ? 12.5 : '12.5'],
@@ -466,7 +665,7 @@ final class TypedBindsTest extends ConformanceTestCase
                         'bytes' => ["\x00\xff"],
                         'text' => ['a'],
                         'io' => [$float ? 1.25 : '1.25'],
-                    ], $execution->outValues(), "$numbers->value, $temporals->value, $lobs->value");
+                    ], $outValues, "$numbers->value, $temporals->value, $lobs->value");
                 }
             }
         }

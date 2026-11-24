@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Tests\Conformance;
 
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Cursor;
+use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\QueryException;
@@ -13,7 +14,9 @@ use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\KeyCase;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\RowShape;
+use Rajska\Oracle\TemporalMode;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
+use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\ValueMapping;
 
 /**
@@ -53,6 +56,41 @@ final class RefCursorsTest extends ConformanceTestCase
             ],
             self::drain(self::cursor($execution, 'o')),
         );
+    }
+
+    /**
+     * The fixture REF CURSORs with a DATE column (function return, strongly
+     * typed, several OUTs) read in full, the Execution's `temporals`
+     * inherited.
+     */
+    #[Test]
+    public function ref_cursors_with_a_date_column_read_in_full(): void
+    {
+        Temporals::inZone('UTC', function (): void {
+            $connection = $this->connect();
+            $string = self::options(values: new ValueMapping(temporals: TemporalMode::String));
+
+            $items = $connection->execute('begin :o := fx_cursor.items(2); end;', ['o' => Cursor::out()], self::options());
+            $typed = $connection->execute('begin fx_cursor.typed_cursor(2, :o); end;', ['o' => Cursor::out()], $string);
+            $two = $connection->execute(
+                'begin fx_cursor.two_cursors(1, :items, :categories, :total); end;',
+                ['items' => Cursor::out(), 'categories' => Cursor::out(), 'total' => Number::out()],
+                self::options(),
+            );
+
+            self::assertSame(
+                ['+2026-01-01 00:00:00.000000 UTC', '+2026-01-01 01:00:00.000000 UTC'],
+                array_map(Temporals::shown(...), array_column(self::drain(self::cursor($items, 'o')), 'CREATED_AT')),
+            );
+            self::assertSame(
+                ['2026-01-01 00:00:00', '2026-01-01 01:00:00'],
+                array_column(self::drain(self::cursor($typed, 'o')), 'CREATED_AT'),
+            );
+            self::assertSame(
+                [['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25', 'CREATED_AT' => '+2026-01-01 00:00:00.000000 UTC']],
+                array_map(static fn (array $row): array => array_map(Temporals::shown(...), $row), self::drain(self::cursor($two, 'items'))),
+            );
+        });
     }
 
     /**

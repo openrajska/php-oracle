@@ -47,6 +47,12 @@ pub struct PoolKey {
     pub acquire_timeout: i64,
     pub statement_cache_size: i64,
     pub standalone: bool,
+    /// PHP's default time zone when the Pool was created
+    /// (`date_default_timezone_get()`), by name: every Session of the Pool
+    /// gets it as its Session time zone at logon (C20). Not in `$pool`: the
+    /// Extension reads it itself. A later `date_default_timezone_set()`
+    /// makes the next `connect()` use another Pool.
+    pub time_zone: String,
 }
 
 impl PoolKey {
@@ -81,6 +87,7 @@ impl PoolKey {
         oracledb::Config::default()
             .set_credentials(&self.user, &self.password)
             .set_stmtcachesize(self.statement_cache_size()?)
+            .set_time_zone(&self.time_zone)
             .set_connect_string(&self.dsn)
             .map_err(Error::connect)
     }
@@ -93,6 +100,7 @@ impl PoolKey {
             .set_connection_increment(1)
             .set_max_connections(self.max_connections()?)
             .set_ping_interval(Some(PING_INTERVAL))
+            .set_time_zone(&self.time_zone)
             .set_connect_string(&self.dsn)
             .map_err(Error::connect)
     }
@@ -105,6 +113,7 @@ impl std::fmt::Debug for PoolKey {
             .field("dsn", &self.dsn)
             .field("user", &self.user)
             .field("standalone", &self.standalone)
+            .field("time_zone", &self.time_zone)
             .finish_non_exhaustive()
     }
 }
@@ -436,6 +445,7 @@ mod tests {
             acquire_timeout: 5_000,
             statement_cache_size: 20,
             standalone: false,
+            time_zone: "UTC".to_string(),
         }
     }
 

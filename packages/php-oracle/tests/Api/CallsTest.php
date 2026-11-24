@@ -17,7 +17,9 @@ use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
+use Rajska\Oracle\TemporalMode;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
+use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
 
@@ -92,12 +94,6 @@ final class CallsTest extends TestCase
         $counter = RoundTripCounter::open();
         $function = $this->connection->function('fx_scalar.add_days', ['p_date' => null, 'p_days' => 1]);
         $terminals = [
-            'date()' => $function->date(...),
-            'timestamp()' => $function->timestamp(...),
-            'timestampTz()' => $function->timestampTz(...),
-            'timestampLtz()' => $function->timestampLtz(...),
-            'intervalDs()' => $function->intervalDs(...),
-            'intervalYm()' => $function->intervalYm(...),
             'clob()' => $function->clob(...),
             'nclob()' => $function->nclob(...),
             'blob()' => $function->blob(...),
@@ -152,6 +148,40 @@ final class CallsTest extends TestCase
     {
         self::assertSame($expected, $this->connection->function($function)->{$terminal}());
         self::assertNull($this->connection->function($function, ['p_null' => true])->{$terminal}());
+    }
+
+    /**
+     * Seam and rows 14: the temporal terminals return the value mapped as
+     * an OUT value of their type (ISO text under `TemporalMode::String`),
+     * and a NULL return gives null.
+     */
+    #[Test]
+    public function the_temporal_terminals_return_the_mapped_value(): void
+    {
+        $string = new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String));
+        $cases = [
+            'date' => ['fx_call.f_date', '+2026-03-01 10:00:00.000000 America/Sao_Paulo', '2026-03-01 10:00:00'],
+            'timestamp' => ['fx_call.f_timestamp', '+2026-03-01 10:00:00.123456 America/Sao_Paulo', '2026-03-01 10:00:00.123456000'],
+            'timestampTz' => ['fx_call.f_timestamp_tz', '+2026-03-01 10:00:00.123456 +05:45', '2026-03-01 10:00:00.123456000 +05:45'],
+            'timestampLtz' => ['fx_call.f_timestamp_ltz', '+2026-03-01 10:00:00.000000 America/Sao_Paulo', '2026-03-01 10:00:00.000000000 -03:00'],
+            'intervalDs' => ['fx_call.f_interval_ds', '+0Y0M3DT4H5M6S.789000', null],
+            'intervalYm' => ['fx_call.f_interval_ym', '+2Y5M0DT0H0M0S.000000', null],
+        ];
+
+        Temporals::inZone('America/Sao_Paulo', function () use ($cases, $string): void {
+            $connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
+            try {
+                foreach ($cases as $terminal => [$function, $object, $text]) {
+                    self::assertSame($object, Temporals::shown($connection->function($function)->{$terminal}()), $terminal);
+                    self::assertNull($connection->function($function, ['p_null' => true])->{$terminal}(), $terminal);
+                    if ($text !== null) {
+                        self::assertSame($text, $connection->function($function, [], $string)->{$terminal}(), $terminal);
+                    }
+                }
+            } finally {
+                $connection->close();
+            }
+        });
     }
 
     /**

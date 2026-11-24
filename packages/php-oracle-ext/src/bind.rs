@@ -31,6 +31,7 @@ use oracledb::{ExecResult, OracleNumber, Row, ToDbValue};
 use crate::connection::ConnState;
 use crate::error::Error;
 use crate::options::Options;
+use crate::temporal::Temporal;
 use crate::typed::{self, Typed};
 use crate::value::cell;
 
@@ -65,6 +66,14 @@ impl Value {
     /// Whether the user reads this bind back through `out()`.
     fn is_out(&self) -> bool {
         matches!(self, Value::Typed(typed) if typed.is_out())
+    }
+
+    /// The timestamp type a typed bind declared.
+    fn reads_as(&self) -> Option<Temporal> {
+        match self {
+            Value::Typed(typed) => typed.reads_as(),
+            _ => None,
+        }
     }
 }
 
@@ -143,7 +152,7 @@ impl Binds {
             None => Vec::new(),
         };
         let put = |e: ext_php_rs::error::Error| Error::unsupported(e.to_string());
-        for (name, _) in self.0.iter().filter(|(_, value)| value.is_out()) {
+        for (name, bind) in self.0.iter().filter(|(_, value)| value.is_out()) {
             let what = format!("OUT bind '{name}'");
             let index = rows.first().and_then(|row| {
                 row.columns()
@@ -154,7 +163,7 @@ impl Binds {
             for row in &mut rows {
                 // A bind the block only reads sends nothing back.
                 let value = match index {
-                    Some(index) => cell(row, index, state, options, &what)?,
+                    Some(index) => cell(row, index, state, options, &what, bind.reads_as())?,
                     None => Zval::null(),
                 };
                 values.push(value).map_err(put)?;

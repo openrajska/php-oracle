@@ -26,6 +26,15 @@ pub enum NumberMode {
     Float,
 }
 
+/// How DATE, TIMESTAMP, TSTZ and TSLTZ values reach PHP.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TemporalMode {
+    /// A `DateTimeImmutable`.
+    Object,
+    /// NLS-independent ISO text at full precision.
+    String,
+}
+
 /// Rows keyed by column name, or lists in column order.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RowShape {
@@ -45,6 +54,7 @@ pub enum KeyCase {
 pub struct Options {
     pub fetch_size: u32,
     pub numbers: NumberMode,
+    pub temporals: TemporalMode,
     pub row_shape: RowShape,
     pub key_case: KeyCase,
 }
@@ -54,11 +64,14 @@ impl Options {
         let fields = Fields::new("$options", options, OPTION_KEYS)?;
         fields.bool("autocommit")?;
         fields.optional_int("timeout")?;
-        fields.choice("temporals", &["object", "string"])?;
         fields.choice("lobs", &["locator", "inline"])?;
         let numbers = match fields.choice("numbers", &["exact", "float"])? {
             "float" => NumberMode::Float,
             _ => NumberMode::Exact,
+        };
+        let temporals = match fields.choice("temporals", &["object", "string"])? {
+            "string" => TemporalMode::String,
+            _ => TemporalMode::Object,
         };
         let row_shape = match fields.choice("rowShape", &["assoc", "list"])? {
             "list" => RowShape::List,
@@ -76,6 +89,7 @@ impl Options {
         Ok(Self {
             fetch_size,
             numbers,
+            temporals,
             row_shape,
             key_case,
         })

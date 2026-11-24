@@ -217,9 +217,20 @@ fn read_pool(pool: &ZendHashTable, session: &ZendHashTable) -> Result<PoolKey, E
         acquire_timeout: fields.int("acquireTimeout")?,
         statement_cache_size: fields.int("statementCacheSize")?,
         standalone: fields.bool("standalone")?,
+        time_zone: default_time_zone()?,
     };
     read_session(session)?;
     Ok(key)
+}
+
+/// PHP's default time zone, by name (`date_default_timezone_get()`): the
+/// Session time zone (spec #32 §8, C20).
+fn default_time_zone() -> Result<String, Error> {
+    let zone = ext_php_rs::zend::Function::try_from_function("date_default_timezone_get")
+        .and_then(|function| function.try_call(vec![]).ok())
+        .and_then(|zone| zone.str().map(str::to_string))
+        .ok_or_else(|| Error::unsupported("PHP's default time zone cannot be read."))?;
+    Ok(zone)
 }
 
 #[php_class]

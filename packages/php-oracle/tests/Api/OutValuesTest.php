@@ -8,13 +8,19 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
+use Rajska\Oracle\Bind\Date;
+use Rajska\Oracle\Bind\IntervalDs;
+use Rajska\Oracle\Bind\IntervalYm;
 use Rajska\Oracle\Bind\Number;
+use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\TemporalMode;
+use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
 
@@ -89,6 +95,35 @@ final class OutValuesTest extends TestCase
         );
 
         self::assertSame(12.5, $execution->out('fraction')->float());
+    }
+
+    /**
+     * `dateTime()` and `interval()` read temporal OUT values, NULL included,
+     * and narrow like every getter.
+     */
+    #[Test]
+    public function date_time_and_interval_read_temporal_out_values(): void
+    {
+        $sql = "begin
+                  :d := date '2026-03-01'; :tz := timestamp '2026-03-01 10:00:00 +05:45';
+                  :ds := interval '1 02:00:00' day to second; :nothing := null;
+                end;";
+        $binds = ['d' => Date::out(), 'tz' => TimestampTz::out(), 'ds' => IntervalDs::out(), 'nothing' => IntervalYm::out()];
+        $execution = Temporals::inZone('UTC', fn () => $this->connection->run($sql, $binds));
+
+        self::assertSame('+2026-03-01 00:00:00.000000 UTC', Temporals::shown($execution->out('d')->dateTime()));
+        self::assertSame('+2026-03-01 10:00:00.000000 +05:45', Temporals::shown($execution->out('tz')->dateTime()));
+        self::assertSame('+0Y0M1DT2H0M0S.000000', Temporals::shown($execution->out('ds')->interval()));
+        self::assertNull($execution->out('nothing')->interval());
+        self::assertNull($execution->out('nothing')->dateTime());
+
+        self::assertFails(fn () => $execution->out('d')->interval(), "OUT bind 'd' holds DateTimeImmutable, not a DateInterval. Read it with dateTime().");
+        self::assertFails(fn () => $execution->out('ds')->dateTime(), "OUT bind 'ds' holds DateInterval, not a DateTimeImmutable. Read it with interval().");
+        self::assertFails(fn () => $execution->out('d')->string(), "OUT bind 'd' holds DateTimeImmutable, not a string. Read it with dateTime().");
+
+        $string = $this->connection->run($sql, $binds, new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String)));
+        self::assertSame('2026-03-01 00:00:00', $string->out('d')->string());
+        self::assertFails(fn () => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
     }
 
     /**
