@@ -13,19 +13,23 @@ use Rajska\Oracle\Bind\Date;
 use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\IntervalDs;
 use Rajska\Oracle\Bind\IntervalYm;
+use Rajska\Oracle\Bind\Json;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Struct;
 use Rajska\Oracle\Bind\TimestampTz;
 use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Bind\Vector;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\SparseVector;
 use Rajska\Oracle\TemporalMode;
 use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
+use Rajska\Oracle\VectorFormat;
 
 /**
  * Typed binds go IN, OUT and IN OUT; `out()` reads what came back, and its
@@ -155,6 +159,32 @@ final class OutValuesTest extends TestCase
         self::assertNull($execution->out('none')->array());
         self::assertFails(fn () => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
         self::assertFails(fn () => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
+    }
+
+    /**
+     * A JSON object or array is read with `array()`, a JSON scalar with its
+     * own getter; a VECTOR is a list or a `SparseVector`, read with
+     * `value()`.
+     */
+    #[Test]
+    public function json_and_vector_out_values_have_their_mapped_types(): void
+    {
+        $execution = $this->connection->run(
+            "begin :doc := :doc; :scalar := json('5'); :dense := :dense; :sparse := :sparse; end;",
+            [
+                'doc' => Json::inOut(['a' => [1, 0.5]]),
+                'scalar' => Json::out(),
+                'dense' => Vector::inOut([1, 2], VectorFormat::Int8),
+                'sparse' => Vector::inOut(new SparseVector(4, [2 => 0.5])),
+            ],
+        );
+
+        self::assertSame(['a' => [1, '0.5']], $execution->out('doc')->array());
+        self::assertSame(5, $execution->out('scalar')->int());
+        self::assertSame([1, 2], $execution->out('dense')->array());
+        $sparse = $execution->out('sparse')->value();
+        self::assertInstanceOf(SparseVector::class, $sparse);
+        self::assertSame([4, [2 => 0.5]], [$sparse->dimensions, $sparse->values]);
     }
 
     /**
