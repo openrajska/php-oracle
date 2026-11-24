@@ -136,6 +136,27 @@ ddev exec -s oracle sqlplus rajska/rajska@localhost/FREEPDB1
 
 The Oracle database is ephemeral. `ddev restart` gives you a clean database.
 
+### Running the suites
+
+Install the fixtures and the suites' grants first (`ddev fixtures`, again
+after every restart). Then, from the repository root:
+
+```bash
+# The Extension's suite
+(cd packages/php-oracle-ext && ddev cargo test)
+
+# Core's suite, with the Extension built and loaded
+ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
+  && ddev exec -d /var/www/html/packages/php-oracle composer install \
+  && ddev exec -d /var/www/html/packages/php-oracle php \
+       -d extension=/var/cache/cargo-target/debug/librajska_oracle.so vendor/bin/phpunit
+```
+
+Core's suite fails on any PHP warning, notice or deprecation and runs with
+`zend.exception_ignore_args=Off` (`phpunit.xml.dist`). It reaches Oracle through
+`ORACLE_CONNECT_STRING`, `ORACLE_USER` and `ORACLE_PASSWORD`, which ddev sets.
+CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and ZTS.
+
 ### The `oracledb` fork
 
 The Rust thin Backend builds on [openrajska/rust-oracledb](https://github.com/openrajska/rust-oracledb),
