@@ -24,7 +24,6 @@
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::mem::offset_of;
 use std::ptr;
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
@@ -431,21 +430,32 @@ fn date_time(fields: &Fields, micro: bool, offset: bool) -> Result<Zval, Error> 
 fn parse(format: &CStr, text: &Text) -> Result<Zval, Error> {
     let mut value = Zval::new();
     // SAFETY: ext/date is always compiled into PHP and registers its
-    // classes at startup. php_date_instantiate() makes `value` own a new
-    // object of the class, whose zend_object is the `std` member of a
-    // php_date_obj (php_date.h, the same layout since PHP 7.0). `format` is
-    // NUL-terminated, `text` is read up to its length only, and a NULL zone
-    // means PHP's default zone, as date_create_immutable_from_format()
-    // calls it with PHP_DATE_INIT_FORMAT.
-    let initialized = unsafe {
+    // classes at startup; php_date_instantiate() makes `value` own a new
+    // object of the class.
+    let object: *mut ZendObject = unsafe {
         php_date_instantiate(php_date_get_immutable_ce(), &raw mut value);
-        let object: *mut ZendObject = value
+        value
             .object_mut()
-            .ok_or_else(|| Error::unsupported("The DateTimeImmutable class cannot be created."))?;
-        let date = object
-            .cast::<u8>()
-            .sub(offset_of!(PhpDateObj, std))
-            .cast::<PhpDateObj>();
+            .ok_or_else(|| Error::unsupported("The DateTimeImmutable class cannot be created."))?
+    };
+    // The object's zend_object is the `std` member of a php_date_obj, and
+    // its handlers record where `std` sits in it (`offset`, what PHP itself
+    // uses to free the object): the start of the php_date_obj, whatever its
+    // layout. A class without a struct of its own has an offset of 0, and
+    // goes through PHP's own function instead.
+    // SAFETY: `object` is the live object `value` owns; every object has
+    // handlers.
+    let offset = unsafe { (*(*object).handlers).offset };
+    let Some(offset) = usize::try_from(offset).ok().filter(|offset| *offset > 0) else {
+        return parse_in_php(format, text);
+    };
+    // SAFETY: `date` is the start of the php_date_obj that holds `object`,
+    // `offset` bytes before it. `format` is NUL-terminated, `text` is read
+    // up to its length only, and a NULL zone means PHP's default zone, as
+    // date_create_immutable_from_format() calls it with
+    // PHP_DATE_INIT_FORMAT.
+    let initialized = unsafe {
+        let date = object.cast::<u8>().sub(offset).cast::<c_void>();
         php_date_initialize(
             date,
             text.as_bytes().as_ptr().cast::<c_char>(),
@@ -457,19 +467,29 @@ fn parse(format: &CStr, text: &Text) -> Result<Zval, Error> {
     };
     if !initialized {
         // `value` releases the half-built object.
-        return Err(Error::unsupported(format!(
-            "The temporal value {} cannot be a DateTimeImmutable.",
-            text.as_str()
-        )));
+        return Err(unparsed(text));
     }
     Ok(value)
 }
 
-/// `struct _php_date_obj` (php_date.h): a `DateTime` or `DateTimeImmutable`.
-#[repr(C)]
-struct PhpDateObj {
-    time: *mut c_void,
-    std: ZendObject,
+/// [`parse`] through the userland function.
+fn parse_in_php(format: &CStr, text: &Text) -> Result<Zval, Error> {
+    let format = format.to_str().unwrap_or_default().to_string();
+    let date = call(
+        "date_create_immutable_from_format",
+        vec![&format, &text.as_str().to_string()],
+    )?;
+    if date.object().is_none() {
+        return Err(unparsed(text));
+    }
+    Ok(date)
+}
+
+fn unparsed(text: &Text) -> Error {
+    Error::unsupported(format!(
+        "The temporal value {} cannot be a DateTimeImmutable.",
+        text.as_str()
+    ))
 }
 
 /// `PHP_DATE_INIT_FORMAT` (php_date.h): the text is read with a format.
@@ -480,9 +500,11 @@ unsafe extern "C" {
     fn php_date_get_immutable_ce() -> *mut zend_class_entry;
     /// `object_init_ex(object, ce)`.
     fn php_date_instantiate(ce: *mut zend_class_entry, object: *mut Zval) -> *mut Zval;
-    /// What `DateTime(Immutable)::__construct()` and `createFromFormat()` run.
+    /// What `DateTime(Immutable)::__construct()` and `createFromFormat()` run,
+    /// on a `php_date_obj *`. It returns `bool` since PHP 8.1 (`int`, 1 or
+    /// 0, before).
     fn php_date_initialize(
-        date: *mut PhpDateObj,
+        date: *mut c_void,
         text: *const c_char,
         text_len: usize,
         format: *const c_char,
