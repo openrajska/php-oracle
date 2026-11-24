@@ -136,6 +136,32 @@ ddev exec -s oracle sqlplus rajska/rajska@localhost/FREEPDB1
 
 The Oracle database is ephemeral. `ddev restart` gives you a clean database.
 
+### The `oracledb` fork
+
+The Rust thin Backend builds on [openrajska/rust-oracledb](https://github.com/openrajska/rust-oracledb),
+our fork of Oracle's `oracledb` crate, pinned to the 26.0.0-beta.6 release
+([ADR 0002](docs/adr/0002-rust-thin-backend-is-the-primary-backend.md),
+condition C17). Its [RAJSKA.md](https://github.com/openrajska/rust-oracledb/blob/rajska/integration/RAJSKA.md)
+is the workflow every fork patch follows and the procedure for upgrading the
+pin.
+
+The Extension depends on an exact commit of the fork's `rajska/integration`
+branch, never on a branch name. Moving `rev` is a commit of its own:
+
+```toml
+oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "<full sha>", version = "=26.0.0-beta.6" }
+```
+
+To work on a patch, clone the fork next to this repository. ddev mounts it,
+and `ddev fork` runs `cargo` in it against the Oracle service:
+
+```bash
+git clone git@github.com:openrajska/rust-oracledb.git ../rust-oracledb
+ddev restart
+ddev fork run --locked --bin create_test_schema   # recreates the rsotest user
+ddev fork test --locked --all-features            # the crate's own suite
+```
+
 ## License
 
 The whole repository is dual-licensed under either of
