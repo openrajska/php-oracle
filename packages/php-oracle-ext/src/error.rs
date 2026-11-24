@@ -27,6 +27,10 @@ pub enum Kind {
     Connection,
     /// The Session is gone (Broken Connection).
     ConnectionLost,
+    /// No Session of the Pool became free within `acquireTimeout`.
+    PoolExhausted,
+    /// A config value the Backend cannot use.
+    Configuration,
     /// A feature that is not available (yet) was reached.
     Unsupported,
     /// A programmer mistake, detected before any Round trip.
@@ -39,6 +43,8 @@ impl Kind {
             Kind::Database => "database",
             Kind::Connection => "connection",
             Kind::ConnectionLost => "connection_lost",
+            Kind::PoolExhausted => "pool_exhausted",
+            Kind::Configuration => "configuration",
             Kind::Unsupported => "unsupported",
             Kind::Usage => "usage",
         }

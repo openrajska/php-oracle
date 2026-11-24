@@ -1192,6 +1192,7 @@ name = "rajska_oracle"
 version = "0.1.0"
 dependencies = [
  "ext-php-rs",
+ "libc",
  "oracledb",
 ]
 
