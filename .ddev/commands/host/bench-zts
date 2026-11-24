@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+## Description: Benchmarks Core against oci8 under FrankenPHP worker mode (PHP ZTS, in Docker)
+## Usage: bench-zts [tag]
+## Example: "ddev bench-zts" or "WORKERS=4 ROUNDS=3 ddev bench-zts zts-4"
+
+exec "$DDEV_APPROOT/packages/php-oracle/bench/zts/run.sh" "$@"
