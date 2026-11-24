@@ -85,7 +85,10 @@ _Avoid_: database version (ambiguous with the schema's version), Oracle version
 
 **Call timeout**:
 The longest a Connection waits for a single Round trip. It does not limit an
-Execution as a whole, which may take several Round trips.
+Execution as a whole, which may take several Round trips. The Backend applies
+it to each read and write on the socket, so a Round trip whose response spans
+many packets (a large fetch, a large LOB) can take longer than the Call timeout
+in all, as long as no single packet does.
 _Avoid_: query timeout, statement timeout
 
 **Statement cache**:
