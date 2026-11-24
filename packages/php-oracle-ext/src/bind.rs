@@ -1,56 +1,246 @@
 //! Binds, read from the `$binds` array as Core passes them: keyed by
-//! placeholder name, holding plain PHP values.
+//! placeholder name, holding plain PHP values (spec #32 §7).
 //!
-//! For now: `int` binds as NUMBER and `string` as VARCHAR2; any other value
-//! is `unsupported`.
+//! Named only: keys are placeholder names without `:`, matched to the SQL's
+//! placeholders case-insensitively. Plain values bind by inference:
+//!
+//! | PHP                         | Binds as                                  |
+//! |-----------------------------|-------------------------------------------|
+//! | `int`                       | NUMBER                                    |
+//! | `float`                     | NUMBER from its shortest round-trip text  |
+//! | `string` ≤ 32767 bytes      | VARCHAR2 (longer: CLOB, not yet)          |
+//! | `bool`                      | BOOLEAN                                   |
+//! | `null`                      | NULL VARCHAR2                             |
+//! | `BackedEnum`                | its backing value, inferred again         |
+//! | `Stringable`                | VARCHAR2                                  |
+//!
+//! Anything else, and every naming mistake, is a `usage` error raised before
+//! any Round trip, naming the fix. Messages name the bind, never its value.
 
-use ext_php_rs::types::ZendHashTable;
-use oracledb::ToDbValue;
+use std::collections::HashMap;
+
+use ext_php_rs::types::{ArrayKey, ZendHashTable, ZendObject, Zval};
+use ext_php_rs::zend::{ClassEntry, ExecutorGlobals, ce};
+use oracledb::{OracleNumber, ToDbValue};
 
 use crate::error::Error;
 
+/// The longest string that binds as VARCHAR2 (PL/SQL's limit).
+const MAX_VARCHAR2: usize = 32767;
+
 enum Value {
+    Null(Option<String>),
     Int(i64),
+    Number(OracleNumber),
     Text(String),
+    Bool(bool),
 }
 
 impl Value {
     fn as_db_value(&self) -> &dyn ToDbValue {
         match self {
+            Value::Null(v) => v,
             Value::Int(v) => v,
+            Value::Number(v) => v,
             Value::Text(v) => v,
+            Value::Bool(v) => v,
         }
     }
 }
 
-/// Owned bind values, alive for the whole execute.
+/// Owned bind values, alive for the whole execute, each under the name the
+/// user wrote.
 pub struct Binds(Vec<(String, Value)>);
 
 impl Binds {
+    /// Reads every bind: its name, then its value by inference.
     pub fn read(binds: &ZendHashTable) -> Result<Self, Error> {
         let mut values = Vec::with_capacity(binds.len());
+        let mut seen: HashMap<String, String> = HashMap::with_capacity(binds.len());
         for (key, zval) in binds {
-            let name = key.to_string();
-            let value = if let Some(v) = zval.long() {
-                Value::Int(v)
-            } else if let Some(v) = zval.str() {
-                Value::Text(v.to_string())
-            } else {
-                return Err(Error::unsupported(format!(
-                    "Bind '{name}': a {} value cannot be bound yet.",
-                    zval.get_type()
+            let name = name(&key)?;
+            if let Some(other) = seen.insert(name.to_uppercase(), name.clone()) {
+                return Err(Error::usage(format!(
+                    "Binds '{other}' and '{name}' differ only in case; placeholder names are case-insensitive, so keep one of them."
                 )));
-            };
+            }
+            let value = infer(&name, zval)?;
             values.push((name, value));
         }
         Ok(Self(values))
     }
 
-    /// The binds as the crate takes them.
-    pub fn params(&self) -> Vec<(&str, &dyn ToDbValue)> {
-        self.0
+    /// The binds as the crate takes them, matched to the statement's
+    /// placeholders (`Statement::bind_names()`). An extra or a missing bind
+    /// fails here, before any Round trip.
+    pub fn matched(&self, placeholders: &[String]) -> Result<Vec<(String, &dyn ToDbValue)>, Error> {
+        let by_name: HashMap<String, &str> = placeholders
             .iter()
-            .map(|(name, value)| (name.as_str(), value.as_db_value()))
-            .collect()
+            .map(|p| (p.to_uppercase(), p.as_str()))
+            .collect();
+        let mut params = Vec::with_capacity(self.0.len());
+        for (name, value) in &self.0 {
+            let Some(placeholder) = by_name.get(&name.to_uppercase()) else {
+                return Err(Error::usage(extra(name, placeholders)));
+            };
+            // Quoted, the crate takes the name exactly as the SQL wrote it.
+            params.push((format!("\"{placeholder}\""), value.as_db_value()));
+        }
+        if params.len() < placeholders.len() {
+            let given: Vec<String> = self.0.iter().map(|(n, _)| n.to_uppercase()).collect();
+            if let Some(missing) = placeholders
+                .iter()
+                .find(|p| !given.contains(&p.to_uppercase()))
+            {
+                return Err(Error::usage(format!(
+                    "Placeholder :{missing} has no bind; add it to the binds, keyed '{}'.",
+                    missing.to_lowercase()
+                )));
+            }
+        }
+        Ok(params)
     }
+}
+
+/// A bind's name: its key, which must be a placeholder name without `:`.
+fn name(key: &ArrayKey<'_>) -> Result<String, Error> {
+    if let ArrayKey::Long(index) = key {
+        return Err(Error::usage(format!(
+            "Bind keys are placeholder names, but key {index} is an integer (is the array a list?); key every value by its placeholder name without ':'. Positional and '?' placeholders are not accepted."
+        )));
+    }
+    let name = key.to_string();
+    if let Some(bare) = name.strip_prefix(':') {
+        return Err(Error::usage(format!(
+            "Bind ':{bare}': write the key without ':', as '{bare}'."
+        )));
+    }
+    Ok(name)
+}
+
+fn extra(name: &str, placeholders: &[String]) -> String {
+    if placeholders.is_empty() {
+        format!(
+            "Bind '{name}' matches no placeholder: the SQL has none. Placeholders are written ':name'; '?' is not accepted."
+        )
+    } else {
+        let list: Vec<String> = placeholders.iter().map(|p| format!(":{p}")).collect();
+        format!(
+            "Bind '{name}' matches no placeholder in the SQL; its placeholders are {}.",
+            list.join(", ")
+        )
+    }
+}
+
+/// Infers how a plain PHP value binds (spec #32 §7).
+fn infer(name: &str, zval: &Zval) -> Result<Value, Error> {
+    let zval = zval.dereference();
+    if zval.is_null() {
+        Ok(Value::Null(None))
+    } else if let Some(v) = zval.long() {
+        Ok(Value::Int(v))
+    } else if let Some(v) = zval.double() {
+        float(name, v)
+    } else if let Some(v) = zval.bool() {
+        Ok(Value::Bool(v))
+    } else if zval.is_string() {
+        text(name, zval)
+    } else if let Some(object) = zval.object() {
+        object_value(name, object)
+    } else if zval.is_array() {
+        Err(Error::usage(format!(
+            "Bind '{name}': an array does not bind by itself; use Json::in() or a typed bind."
+        )))
+    } else {
+        Err(Error::usage(format!(
+            "Bind '{name}': a {} does not bind by itself; use Clob::in() or Blob::in() for a stream, or a typed bind.",
+            zval.get_type()
+        )))
+    }
+}
+
+/// A PHP string, which is bytes: VARCHAR2 when it is UTF-8 text.
+fn text(name: &str, zval: &Zval) -> Result<Value, Error> {
+    let Some(text) = zval.str() else {
+        return Err(Error::usage(format!(
+            "Bind '{name}': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in()."
+        )));
+    };
+    if text.len() > MAX_VARCHAR2 {
+        return Err(Error::unsupported(format!(
+            "Bind '{name}': a string over {MAX_VARCHAR2} bytes binds as a CLOB, which is not implemented yet."
+        )));
+    }
+    Ok(Value::Text(text.to_string()))
+}
+
+/// A float as an exact NUMBER: the decimal its shortest round-trip text
+/// writes, so `0.1` stores `0.1` (C4: the crate would bind BINARY_DOUBLE).
+fn float(name: &str, value: f64) -> Result<Value, Error> {
+    if value == 0.0 {
+        // -0.0 too: NUMBER has no negative zero.
+        return Ok(Value::Int(0));
+    }
+    // Rust's float formatting writes the shortest text that round-trips.
+    let exponent = format!("{value:e}")
+        .rsplit_once('e')
+        .and_then(|(_, e)| e.parse::<i32>().ok());
+    // NUMBER holds 1e-130 <= |x| < 1e126; NaN and ±INF have no exponent.
+    match exponent {
+        Some(e) if value.is_finite() && (-130..=125).contains(&e) => format!("{value}")
+            .parse()
+            .map(Value::Number)
+            .map_err(|_| out_of_number_range(name)),
+        _ => Err(out_of_number_range(name)),
+    }
+}
+
+fn out_of_number_range(name: &str) -> Error {
+    Error::usage(format!(
+        "Bind '{name}': this float is outside NUMBER's range (NaN, INF, or beyond 1e-130..1e126); bind it with BinaryDouble::in()."
+    ))
+}
+
+/// An object: a `BackedEnum` or a `Stringable`. `DateTimeInterface` is
+/// checked first, as Carbon is `Stringable` too.
+fn object_value(name: &str, object: &ZendObject) -> Result<Value, Error> {
+    let is = |class: &str| ClassEntry::try_find(class).is_some_and(|ce| object.instance_of(ce));
+    if is("DateTimeInterface") {
+        return Err(Error::usage(format!(
+            "Bind '{name}': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in()."
+        )));
+    }
+    if is("BackedEnum") {
+        // Read from the property table: get_property() reads for write,
+        // which a readonly property refuses.
+        let backing = object
+            .get_properties()
+            .ok()
+            .and_then(|properties| properties.get("value"))
+            .ok_or_else(|| {
+                Error::usage(format!("Bind '{name}': the enum has no backing value."))
+            })?;
+        return infer(name, backing);
+    }
+    if is("JsonSerializable") {
+        return Err(Error::usage(format!(
+            "Bind '{name}': a JsonSerializable does not bind by itself; use Json::in()."
+        )));
+    }
+    if object.instance_of(ce::stringable()) {
+        let string = object
+            .try_call_method("__toString", vec![])
+            .map_err(|e| Error::usage(format!("Bind '{name}': __toString() failed: {e}.")))?;
+        if ExecutorGlobals::has_exception() {
+            // __toString() threw: that exception goes to the caller as is.
+            return Err(Error::php_exception());
+        }
+        return text(name, &string);
+    }
+    let class = object
+        .get_class_name()
+        .unwrap_or_else(|_| "object".to_string());
+    Err(Error::usage(format!(
+        "Bind '{name}': an object of class {class} does not bind by itself; use Json::in() or a typed bind."
+    )))
 }
