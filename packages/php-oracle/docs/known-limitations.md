@@ -82,6 +82,9 @@ server error, unless this page says otherwise.
 - A LOB bind, or a string over 32767 bytes, costs one Round trip plus one per
   MiB before the statement's own. Its temporary LOB lives while any Cursor or
   `Lob` born of that Execution does.
+- A double-quoted placeholder (`:"Total"`) works in SQL, keyed without the
+  quotes (`['Total' => …]`), but not in a PL/SQL block, where the server
+  refuses it with PLS-00103 (oci8 too). Write `:total` there.
 
 ## Array DML
 
