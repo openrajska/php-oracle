@@ -10,6 +10,13 @@ services:
       - ORACLE_CONNECT_STRING=oracle:1521/FREEPDB1
       - ORACLE_USER=rajska
       - ORACLE_PASSWORD=rajska
+      # TLS e mTLS pelos listeners TCPS de fixtures/tls (`ddev fixtures` os sobe).
+      - ORACLE_TLS_CONNECT_STRING=tcps://oracle:2484/FREEPDB1
+      - ORACLE_MTLS_CONNECT_STRING=tcps://oracle:2485/FREEPDB1
+      # Raiz do CDB, só para ler V$CPOOL_CC_STATS (DRCP) nos testes.
+      - ORACLE_ADMIN_CONNECT_STRING=oracle:1521/FREE
+      - ORACLE_ADMIN_USER=system
+      - ORACLE_ADMIN_PASSWORD=oracle
     volumes:
       - cargo-registry:/usr/local/cargo/registry
       - cargo-target:/var/cache/cargo-target

@@ -12,6 +12,7 @@
 use ext_php_rs::prelude::*;
 
 mod bind;
+mod connect;
 mod connection;
 mod cursor;
 mod error;

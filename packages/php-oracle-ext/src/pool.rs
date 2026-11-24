@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::connect;
 use crate::error::{Error, Kind};
 
 /// The minimum idle time after which an acquired Session is pinged first.
@@ -83,26 +84,82 @@ impl PoolKey {
         })
     }
 
+    /// Fails before any network I/O if the `dsn` or the wallet is one the
+    /// crate would mishandle (spec #32 §11, "Connect parameters").
+    fn check(&self) -> Result<Option<String>, Error> {
+        let config_dir = connect::config_dir(self.config_dir.as_deref());
+        connect::check_dsn(&self.dsn, config_dir.as_deref())?;
+        if let Some(wallet) = &self.wallet_location {
+            connect::check_wallet(wallet)?;
+        }
+        Ok(config_dir)
+    }
+
+    fn user(&self) -> String {
+        connect::user(&self.user, self.proxy_user.as_deref())
+    }
+
+    fn connection_class(&self) -> String {
+        connect::connection_class(self.drcp_connection_class.as_deref(), &self.user)
+    }
+
+    fn connect_timeout(&self) -> Result<Option<Duration>, Error> {
+        connect::connect_timeout(self.connect_timeout).map(Some)
+    }
+
     fn config(&self) -> Result<oracledb::Config, Error> {
-        oracledb::Config::default()
-            .set_credentials(&self.user, &self.password)
+        let config_dir = self.check()?;
+        let mut config = oracledb::Config::default()
+            .set_credentials(&self.user(), &self.password)
             .set_stmtcachesize(self.statement_cache_size()?)
             .set_time_zone(&self.time_zone)
-            .set_connect_string(&self.dsn)
-            .map_err(Error::connect)
+            .set_cclass(self.connection_class())
+            .set_transport_connect_timeout(self.connect_timeout()?);
+        if let Some(dir) = &config_dir {
+            config = config.set_config_dir(dir);
+        }
+        if let Some(wallet) = &self.wallet_location {
+            config = config.set_wallet_location(wallet);
+        }
+        if let Some(password) = &self.wallet_password {
+            config = config.set_wallet_password(password);
+        }
+        config.set_connect_string(&self.dsn).map_err(Error::connect)
     }
 
     fn pool_config(&self) -> Result<oracledb::PoolConfig, Error> {
-        oracledb::PoolConfig::default()
-            .set_credentials(&self.user, &self.password)
+        let config_dir = self.check()?;
+        let mut config = oracledb::PoolConfig::default()
+            .set_credentials(&self.user(), &self.password)
             .set_stmtcachesize(self.statement_cache_size()?)
             .set_min_connections(1)
             .set_connection_increment(1)
             .set_max_connections(self.max_connections()?)
             .set_ping_interval(Some(PING_INTERVAL))
             .set_time_zone(&self.time_zone)
-            .set_connect_string(&self.dsn)
-            .map_err(Error::connect)
+            .set_cclass(self.connection_class())
+            .set_transport_connect_timeout(self.connect_timeout()?);
+        if let Some(dir) = &config_dir {
+            config = config.set_config_dir(dir);
+        }
+        if let Some(wallet) = &self.wallet_location {
+            config = config.set_wallet_location(wallet);
+        }
+        if let Some(password) = &self.wallet_password {
+            config = config.set_wallet_password(password);
+        }
+        config.set_connect_string(&self.dsn).map_err(Error::connect)
+    }
+
+    /// A crate error while opening a Session: a transport connect that ran
+    /// out of `connectTimeout` is ORA-12170.
+    fn connect_error(&self, e: oracledb::Error) -> Error {
+        match e.kind() {
+            oracledb::ErrorKind::CallTimeoutExceeded => {
+                Error::connect_timeout(self.connect_timeout)
+            }
+            _ => Error::connect(e),
+        }
     }
 }
 
@@ -209,7 +266,7 @@ pub fn shutdown() {
 }
 
 fn connect_standalone(key: &PoolKey) -> Result<Lease, Error> {
-    let session = oracledb::connect(key.config()?).map_err(Error::connect)?;
+    let session = oracledb::connect(key.config()?).map_err(|e| key.connect_error(e))?;
     setup(&session)?;
     Ok(Lease {
         session: Some(session),
@@ -231,6 +288,8 @@ pub struct SharedPool {
     gate: Gate,
     max_connections: usize,
     acquire_timeout: Duration,
+    /// `connectTimeout`, in ms, for the error when it runs out.
+    connect_timeout: i64,
     /// The Sessions already set up, by (SID, serial#) from the logon
     /// handshake: a Session is set up once, when it is new. Each keeps its
     /// notes across loans.
@@ -244,12 +303,13 @@ impl SharedPool {
     fn create(key: &PoolKey) -> Result<Self, Error> {
         let max_connections = key.max_connections()?;
         let acquire_timeout = key.acquire_timeout()?;
-        let pool = oracledb::create_pool(key.pool_config()?).map_err(Error::connect)?;
+        let pool = oracledb::create_pool(key.pool_config()?).map_err(|e| key.connect_error(e))?;
         Ok(Self {
             pool,
             gate: Gate::new(max_connections),
             max_connections,
             acquire_timeout,
+            connect_timeout: key.connect_timeout,
             set_up: Mutex::new(HashMap::new()),
             discarded: Mutex::new(Vec::new()),
         })
@@ -257,7 +317,12 @@ impl SharedPool {
 
     fn acquire(self: &Arc<Self>) -> Result<Lease, Error> {
         let permit = self.enter()?;
-        let session = self.pool.acquire().map_err(Error::connect)?;
+        let session = self.pool.acquire().map_err(|e| match e.kind() {
+            oracledb::ErrorKind::CallTimeoutExceeded => {
+                Error::connect_timeout(self.connect_timeout)
+            }
+            _ => Error::connect(e),
+        })?;
         let mut lease = Lease {
             session: Some(session),
             permit: Some(permit),
