@@ -17,7 +17,7 @@ chrono = "0.4.45"
 ext-php-rs = "0.16"
 # Our fork of the crate, pinned to an exact commit (ADR 0002, C17; see
 # CONTRIBUTING.md, "The oracledb fork").
-oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "7d9c4b74b2cd31f08d206693a525a74cd7511bb6", version = "=26.0.0-beta.6" }
+oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "1f6e77a59a43aa276c851bce894a39ddafd88669", version = "=26.0.0-beta.6" }
 
 [dev-dependencies]
 # fork() and waitpid() for the Pool registry's tests.
