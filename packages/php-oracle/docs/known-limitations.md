@@ -10,8 +10,6 @@ These are being fixed in the oracledb fork for v1; until then:
 
 - After `ALTER TYPE … ADD ATTRIBUTE`, values of the evolved type cannot be
   read in any Session (`UnsupportedException`).
-- `RETURNING … INTO` a LOB, an Object or a Collection is refused in SQL with
-  `UnsupportedException`; write the statement inside a PL/SQL block instead.
 - `LobMode::Inline` costs one extra Round trip per non-empty LOB.
 
 ## Sessions and the Pool
@@ -135,6 +133,10 @@ These are being fixed in the oracledb fork for v1; until then:
   a Session keeps the shape it first saw until it ends.
 - Nested tables and VARRAYs are both `Collection`, and the client never
   checks a VARRAY's limit.
+- `RETURNING … INTO` a nested table column fails with
+  `UnsupportedException`, in SQL and in a PL/SQL block: the server sends a
+  reference to the stored rows instead of the elements. Select the column
+  afterwards.
 - Types reached through a public synonym do not resolve: write the owner,
   `SYS.ODCINUMBERLIST`.
 - An Associative array is never NULL in PL/SQL: `Indexed::in($type, null)`
