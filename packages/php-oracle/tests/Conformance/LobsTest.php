@@ -336,40 +336,87 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Values 15: under `lobs: Inline`, a query costs one Round trip more per
-     * non-empty LOB than under `lobs: Locator`, and none for an empty or
-     * NULL one. The Column type stays the LOB type.
+     * Values 15: under `lobs: Inline`, a query of LOBs no larger than the LOB
+     * prefetch size (32767 characters or bytes) costs the Round trips of the
+     * query alone, as under `lobs: Locator` with nothing read: each LOB came
+     * with its locator. A LOB over the prefetch size costs one Round trip
+     * more, and still reads exactly; an empty or NULL one costs none. The
+     * Column types stay the LOB types.
      */
     #[Test]
-    public function inline_costs_one_round_trip_per_non_empty_lob(): void
+    public function inline_lobs_within_the_prefetch_size_cost_no_round_trip_of_their_own(): void
     {
         $connection = $this->connect();
         $sid = self::sid($connection);
         $counter = RoundTripCounter::open();
-        $query = static function (string $sql, LobMode $lobs) use ($connection, $counter, $sid): int {
-            return $counter->during($sid, static function () use ($connection, $sql, $lobs): void {
+        $rows = [];
+        $query = static function (string $sql, LobMode $lobs) use ($connection, $counter, $sid, &$rows): int {
+            return $counter->during($sid, static function () use ($connection, $sql, $lobs, &$rows): void {
                 $cursor = $connection->execute($sql, [], self::options(values: new ValueMapping(lobs: $lobs)))->cursor();
                 self::assertNotNull($cursor);
-                self::assertSame('clob', $cursor->columns()[0]['type'], 'The Column type stays CLOB');
-                $cursor->fetchBatch();
+                $types = array_column($cursor->columns(), 'type');
+                self::assertSame(\array_slice(['clob', 'nClob', 'blob'], 0, \count($types)), $types, 'The Column types stay the LOB types');
+                $rows = $cursor->fetchBatch();
                 $cursor->close();
             });
         };
+        // `Ação 日本 😀😀 `: multibyte text and surrogate pairs.
+        $text = 'A\\00e7\\00e3o \\65e5\\672c \\D83D\\DE00\\D83D\\DE00 ';
+        $chars = static fn (int $count): string => implode(' || ', array_fill(0, intdiv($count, 4000), "to_clob(rpad('x', 4000, 'x'))"))
+            . " || rpad('x', " . ($count % 4000) . ", 'x')";
 
         try {
             foreach ([
-                'empty and NULL' => ['select text_value, binary_value from fx_lobs where id in (2, 3)', 0],
-                'one row, two LOBs' => ['select text_value, binary_value from fx_lobs where id = 1', 2],
+                'five rows of three LOBs' => [
+                    "select to_clob(unistr('$text') || level), to_nclob(unistr('$text') || level),"
+                    . " to_blob(hextoraw('dead' || to_char(level, 'fm0x'))) from dual connect by level <= 5",
+                    0,
+                ],
+                'empty and NULL' => ['select text_value, to_nclob(text_value), binary_value from fx_lobs where id in (2, 3)', 0],
+                'one row, two LOBs' => ['select text_value, to_nclob(text_value), binary_value from fx_lobs where id = 1', 0],
+                'one LOB of 32767 characters' => ['select ' . $chars(32_767) . ' from dual', 0],
+                'one LOB of 32768 characters' => ['select ' . $chars(32_768) . ' from dual', 1],
                 'one LOB of 16 MiB' => ['select text_value from fx_lobs where id = 4', 1],
             ] as $case => [$sql, $extra]) {
                 $query($sql, LobMode::Locator);
                 $locator = $query($sql, LobMode::Locator);
                 $query($sql, LobMode::Inline);
                 self::assertSame($locator + $extra, $query($sql, LobMode::Inline), $case);
+                $inline = $rows;
+
+                if ($case === 'five rows of three LOBs') {
+                    $grins = "\u{1f600}\u{1f600}";
+                    self::assertSame(array_map(
+                        static fn (int $level): array => ["Ação 日本 $grins $level", "Ação 日本 $grins $level", "\xde\xad" . \chr($level)],
+                        range(1, 5),
+                    ), array_map(array_values(...), $inline));
+                } elseif (str_starts_with($case, 'one LOB of 3276')) {
+                    self::assertSame(str_repeat('x', (int) substr($case, 11, 5)), $inline[0][array_key_first($inline[0])], $case);
+                } elseif ($case === 'one LOB of 16 MiB') {
+                    self::assertSame(md5(self::largeText()), md5($inline[0]['TEXT_VALUE']));
+                }
             }
         } finally {
             $counter->close();
         }
+    }
+
+    /**
+     * Values 13: a LOB no larger than the LOB prefetch size came with its
+     * locator, so `readChunk()` reads it with no Round trip.
+     */
+    #[Test]
+    public function a_lob_within_the_prefetch_size_reads_with_no_round_trip(): void
+    {
+        $connection = $this->connect();
+        [$row] = self::rows($connection, 'select text_value, to_nclob(text_value) as national_value, binary_value from fx_lobs where id = 1');
+        $read = [];
+        $trips = $this->roundTrips($connection, static function () use ($row, &$read): void {
+            $read = array_map(self::read(...), array_map(self::lob(...), $row));
+        });
+
+        self::assertSame(['TEXT_VALUE' => self::SMALL, 'NATIONAL_VALUE' => self::SMALL, 'BINARY_VALUE' => "\xde\xad\xbe\xef"], $read);
+        self::assertSame(0, $trips);
     }
 
     /**
