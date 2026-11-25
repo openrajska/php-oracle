@@ -231,10 +231,12 @@ final readonly class FunctionCall
     {
         $value = ($this->run)(Vector::out())->value();
 
-        /** @var list<int|float>|SparseVector|null */
-        return $value === null || \is_array($value) || $value instanceof SparseVector
-            ? $value
-            : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a VECTOR.', 0, null, $this->call->name);
+        if ($value !== null && !\is_array($value) && !$value instanceof SparseVector) {
+            throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a VECTOR.', 0, null, $this->call->name);
+        }
+
+        /** @var list<int|float>|SparseVector|null $value */
+        return $value;
     }
 
     /**
