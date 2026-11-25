@@ -14,7 +14,7 @@ return RectorConfig::configure()
         __DIR__ . '/tests/Harness/Probes',
     ])
     ->withImportNames()
-    ->withPhpSets(php84: true)
+    ->withPhpSets()
     ->withPreparedSets(
         deadCode: true,
         codeQuality: true,
