@@ -10,6 +10,7 @@
             ]
         },
         "no_unused_imports": true,
+        "single_line_empty_body": false,
         "declare_equal_normalize": {
             "space": "single"
         },
@@ -31,6 +32,7 @@
         }
     },
     "exclude": [
-        "tests/Harness/Probes"
+        "tests/Harness/Probes",
+        "stubs"
     ]
 }
