@@ -45,20 +45,23 @@ dataset('inferred', function () {
         }
     }, 'Typ=1 Len=15: 102,114,111,109,32,95,95,116,111,83,116,114,105,110,103', 'from __toString'];
 });
+
 test('a plain value binds as its inferred type', function (mixed $value, string $dump, mixed $readBack): void {
     $connection = $this->connect();
 
-    expect(self::value($connection, 'select dump(:v) from dual', ['v' => $value]))->toBe($dump)
-        ->and(self::value($connection, 'select :v from dual', ['v' => $value]))->toBe($readBack);
+    expect($this->value($connection, 'select dump(:v) from dual', ['v' => $value]))->toBe($dump)
+        ->and($this->value($connection, 'select :v from dual', ['v' => $value]))->toBe($readBack);
 })->with('inferred');
+
 test('a bool binds as boolean', function (): void {
     $connection = $this->connect();
 
-    expect(self::value($connection, 'select dump(:v) from dual', ['v' => true]))->toBe('Typ=252 Len=4: 1,0,0,0')
-        ->and(self::value($connection, 'select dump(:v) from dual', ['v' => false]))->toBe('Typ=252 Len=4: 0,0,0,0')
-        ->and(self::value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => true]))->toBe('yes')
-        ->and(self::value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => false]))->toBe('no');
+    expect($this->value($connection, 'select dump(:v) from dual', ['v' => true]))->toBe('Typ=252 Len=4: 1,0,0,0')
+        ->and($this->value($connection, 'select dump(:v) from dual', ['v' => false]))->toBe('Typ=252 Len=4: 0,0,0,0')
+        ->and($this->value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => true]))->toBe('yes')
+        ->and($this->value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => false]))->toBe('no');
 });
+
 test('a string over 32767 bytes binds as a clob', function (): void {
     $connection = $this->connect();
 
@@ -78,13 +81,13 @@ test('a string over 32767 bytes binds as a clob', function (): void {
                    insert into fx_lobs (id, label, text_value) values (100, 'inferred', :v);
                  end;",
             ['v' => $value, 'type' => Varchar::out()],
-            self::options(autocommit: false),
+            $this->options(autocommit: false),
         )->outValues();
         expect($bound)->toBe(['type' => [$type]], "$bytes bytes");
 
-        [$row] = self::rows($connection, 'select text_value from fx_lobs where id = 100', [], self::options(autocommit: false));
+        [$row] = $this->rows($connection, 'select text_value from fx_lobs where id = 100', [], $this->options(autocommit: false));
         $lob = $row['TEXT_VALUE'];
-        expect($lob)->toBeInstanceOf(DriverLob::class);
+        assert($lob instanceof DriverLob);
         $read = '';
         while (($chunk = $lob->readChunk()) !== '') {
             $read .= $chunk;
@@ -94,56 +97,62 @@ test('a string over 32767 bytes binds as a clob', function (): void {
         $connection->rollback();
     }
 });
+
 test('null binds as null', function (): void {
     $connection = $this->connect();
 
-    expect(self::value($connection, 'select dump(:v) from dual', ['v' => null]))->toBe('NULL')
-        ->and(self::value($connection, 'select :v from dual', ['v' => null]))->toBeNull()
-        ->and(self::value($connection, 'select count(*) from fx_items where name = :v', ['v' => null]))->toBe(0);
+    expect($this->value($connection, 'select dump(:v) from dual', ['v' => null]))->toBe('NULL')
+        ->and($this->value($connection, 'select :v from dual', ['v' => null]))->toBeNull()
+        ->and($this->value($connection, 'select count(*) from fx_items where name = :v', ['v' => null]))->toBe(0);
 });
+
 test('a blocks binds match its placeholders in any order and case', function (): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
         'begin :Total := :a + :b; :Echo := to_char(:b) || :a; end;',
         ['B' => 2, 'echo' => Varchar::out(), 'TOTAL' => Number::out(), 'a' => 40],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['echo' => ['240'], 'TOTAL' => [42]]);
 });
+
 test('the float 0 1 stores exactly 0 1', function (): void {
     $connection = $this->connect();
 
     // Bound as BINARY_DOUBLE (C4), 0.1 would become
     // 0.1000000000000000055511151231257827 once cast to NUMBER.
-    expect(self::value(
+    expect($this->value(
         $connection,
         'select case when cast(:f as number) = 0.1 then 1 else 0 end from dual',
         ['f' => 0.1],
     ))->toBe(1);
-    expect(self::value($connection, 'select :f from dual', ['f' => 0.1]))->toBe('0.1');
+    expect($this->value($connection, 'select :f from dual', ['f' => 0.1]))->toBe('0.1');
 });
+
 test('floats bind exactly across number range', function (): void {
     $connection = $this->connect();
 
     foreach (['1e-130' => 1e-130, '-1.5e-7' => -1.5e-7, '1e30' => 1e30, '9.99e125' => 9.99e125, '0.30000000000000004' => 0.1 + 0.2] as $literal => $float) {
-        expect(self::value(
+        expect($this->value(
             $connection,
             "select case when cast(:f as number) = $literal then 1 else 0 end from dual",
             ['f' => $float],
         ))->toBe(1, $literal);
     }
 });
+
 test('one sql text takes binds of different types with the statement cache on', function (): void {
     $connection = $this->connect(statementCacheSize: 20);
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
 
     foreach ([[1, 1], ['x', 'x'], [2, 2], ['y', 'y'], [2.5, '2.5'], [null, null], [3, 3], [Color::Green, 'green'], [Priority::High, 2], ['z', 'z']] as $i => [$value, $readBack]) {
-        expect(self::value($connection, 'select :v from dual', ['v' => $value]))->toBe($readBack, "bind $i");
+        expect($this->value($connection, 'select :v from dual', ['v' => $value]))->toBe($readBack, "bind $i");
     }
-    expect(self::sid($connection))->toBe($sid);
+    expect($this->sid($connection))->toBe($sid);
 });
+
 test('one sql text takes ever longer text with the statement cache on', function (): void {
     foreach (['first Session', 'second Session'] as $session) {
         $connection = $this->connect(statementCacheSize: 20, standalone: true);
@@ -152,8 +161,8 @@ test('one sql text takes ever longer text with the statement cache on', function
             foreach ($sizes as $bytes) {
                 $text = str_repeat('x', $bytes);
                 foreach (['inferred' => $text, 'typed' => Varchar::in($text)] as $kind => $bind) {
-                    $read = self::value($connection, "select :v from dual -- sizes $i", ['v' => $bind]);
-                    expect($read)->toBeString();
+                    $read = $this->value($connection, "select :v from dual -- sizes $i", ['v' => $bind]);
+                    assert(\is_string($read));
                     // The length first: a failure then shows numbers, not 32 KB of text.
                     expect(\strlen($read))->toBe($bytes, "$session, sizes $i, $kind $bytes");
                     expect($read)->toBe($text);
@@ -162,6 +171,7 @@ test('one sql text takes ever longer text with the statement cache on', function
         }
     }
 });
+
 /**
  * @return iterable<string, array{array<mixed>, string, string}>
  */
@@ -201,17 +211,18 @@ dataset('mistakes', function () {
     yield '? with a list' => [[1], 'select ? from dual', "Positional and '?' placeholders are not accepted"];
     yield '? with a name' => [['v' => 1], 'select ? from dual', "'?' is not accepted"];
 });
+
 test('a bind mistake fails before any round trip naming the fix', function (array $binds, string $sql, string $fix): void {
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
 
     try {
         $roundTrips = $counter->during($sid, function () use ($connection, $sql, $binds, $fix): void {
             try {
                 // @phpstan-ignore argument.type (the mistake is the point)
-                $connection->execute($sql, $binds, self::options());
-                self::fail('The bind mistake ran.');
+                $connection->execute($sql, $binds, $this->options());
+                $this->fail('The bind mistake ran.');
             } catch (UsageException $usageException) {
                 expect($usageException->getMessage())->toContain($fix)
                     ->and($usageException->sql())->toBe($sql);
@@ -223,6 +234,7 @@ test('a bind mistake fails before any round trip naming the fix', function (arra
 
     expect($roundTrips)->toBe(0);
 })->with('mistakes');
+
 test('an exception from to string reaches the caller', function (): void {
     $connection = $this->connect();
     $thrown = new DomainException('from __toString');
@@ -237,11 +249,11 @@ test('an exception from to string reaches the caller', function (): void {
             {
                 throw $this->thrown;
             }
-        }], self::options());
-        self::fail('The bind ran.');
+        }], $this->options());
+        $this->fail('The bind ran.');
     } catch (DomainException $domainException) {
         expect($domainException)->toBe($thrown);
     }
 
-    expect(self::value($connection, 'select :v from dual', ['v' => 1]))->toBe(1);
+    expect($this->value($connection, 'select :v from dual', ['v' => 1]))->toBe(1);
 });

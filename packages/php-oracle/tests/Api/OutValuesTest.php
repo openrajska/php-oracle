@@ -37,9 +37,11 @@ use RuntimeException;
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
 });
+
 afterEach(function (): void {
     $this->connection->close();
 });
+
 test('a block reads its out and in out binds', function (): void {
     $execution = $this->connection->run(
         "begin :total := :a + :b; :greeting := :greeting || ', world'; :ok := :total > 2; end;",
@@ -52,6 +54,7 @@ test('a block reads its out and in out binds', function (): void {
         ->and($execution->out('total')->list())->toBe(['3.5'])
         ->and($execution->out('total')->value())->toBe('3.5');
 });
+
 test('getters narrow and never convert', function (): void {
     $execution = $this->connection->run(
         "begin :fraction := 12.5; :integral := 5; :nothing := null; :text := '5'; end;",
@@ -70,6 +73,7 @@ test('getters narrow and never convert', function (): void {
     assertFails(fn(): int | null => $execution->out('text')->int(), "OUT bind 'text' holds string, not an int.");
     assertFails(fn(): bool | null => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
 });
+
 test('the value mapping decides what a getter finds', function (): void {
     $execution = $this->connection->run(
         'begin :fraction := 12.5; end;',
@@ -79,6 +83,7 @@ test('the value mapping decides what a getter finds', function (): void {
 
     expect($execution->out('fraction')->float())->toBe(12.5);
 });
+
 test('date time and interval read temporal out values', function (): void {
     $sql = "begin
                   :d := date '2026-03-01'; :tz := timestamp '2026-03-01 10:00:00 +05:45';
@@ -101,6 +106,7 @@ test('date time and interval read temporal out values', function (): void {
     expect($string->out('d')->string())->toBe('2026-03-01 00:00:00');
     assertFails(fn(): DateTimeImmutable | null => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
 });
+
 test('array reads objects and collections and fails on a scalar', function (): void {
     $execution = $this->connection->run(
         'begin :point := fx_point(1, 2, :label); :tags := :tags; :map := :map; :none := null; :n := 1; end;',
@@ -121,6 +127,7 @@ test('array reads objects and collections and fails on a scalar', function (): v
     assertFails(fn(): array | null => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
     assertFails(fn(): string | null => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
 });
+
 test('json and vector out values have their mapped types', function (): void {
     $execution = $this->connection->run(
         "begin :doc := :doc; :scalar := json('5'); :dense := :dense; :sparse := :sparse; end;",
@@ -137,9 +144,10 @@ test('json and vector out values have their mapped types', function (): void {
         ->and($execution->out('dense')->array())->toBe([1, 2]);
 
     $sparse = $execution->out('sparse')->value();
-    expect($sparse)->toBeInstanceOf(SparseVector::class)
-        ->and([$sparse->dimensions, $sparse->values])->toBe([4, [2 => 0.5]]);
+    assert($sparse instanceof SparseVector);
+    expect([$sparse->dimensions, $sparse->values])->toBe([4, [2 => 0.5]]);
 });
+
 test('returning into gives one value per row', function (): void {
     $one = $this->connection->run(
         'insert into fx_bind_rows (id, code) values (:id, :code) returning id, code into :new_id, :new_code',
@@ -154,11 +162,12 @@ test('returning into gives one value per row', function (): void {
     $none = $this->connection->run('update fx_items set price = price where id < 0 returning id into :id', ['id' => Number::out()]);
 
     expect($two->out('id')->list())->toEqualCanonicalizing([3, 4])
-        ->and($none->out('id')->list())->toBe([]);
+        ->and($none->out('id')->list())->toBeEmpty();
     assertFails(fn(): int | null => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
     assertFails(fn(): int | null => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
     assertFails(fn(): mixed => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
 });
+
 test('returning into a lob an object or a collection gives one value per row', function (): void {
     $lob = $this->connection->run(
         'update fx_lobs set label = label where id = 1 returning text_value into :t',
@@ -177,6 +186,7 @@ test('returning into a lob an object or a collection gives one value per row', f
         [2, null, null],
     ]);
 });
+
 test('out with an unknown or in only name fails', function (): void {
     $sql = "begin :total := :a; :Label := 'x'; end;";
     $execution = $this->connection->run($sql, ['a' => 1, 'total' => Number::out(), 'Label' => Varchar::inOut(null)]);
@@ -186,12 +196,14 @@ test('out with an unknown or in only name fails', function (): void {
     assertFails(fn(): OutValue => $this->connection->run('begin null; end;')->out('x'), "No OUT bind is named 'x'; the statement has none.");
     assertFails(fn(): OutValue => $this->connection->run('select :v from dual', ['v' => Varchar::in('y')])->out('v'), "Bind 'v' is IN only");
 });
+
 test('out matches the name ignoring case', function (): void {
     $execution = $this->connection->run('begin :TOTAL := 7; end;', ['Total' => Number::out()]);
 
     expect($execution->out('Total')->int())->toBe(7)
         ->and($execution->out('total')->int())->toBe(7);
 });
+
 test('a number string must be a decimal literal', function (): void {
     foreach (['1,5', '1e5', '', ' 1', 'abc', '1.2.3', '0x1A'] as $text) {
         assertFails(fn(): Number => Number::in($text), "Number::in() takes a decimal literal with '.' as the separator, such as '12.30'");
@@ -200,6 +212,7 @@ test('a number string must be a decimal literal', function (): void {
     expect(Number::in('-.5')->value)->toBe('-.5')
         ->and(Number::in('12.')->value)->toBe('12.');
 });
+
 function assertFails(Closure $call, string $message, string | null $sql = null): void
 {
     try {

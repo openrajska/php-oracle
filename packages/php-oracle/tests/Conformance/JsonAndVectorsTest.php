@@ -30,7 +30,7 @@ test('json decodes like json decode with exact numbers', function (): void {
             SQL;
     $connection = $this->connect();
 
-    $exact = self::rows($connection, $sql)[0];
+    $exact = $this->rows($connection, $sql)[0];
     expect(sorted($exact['DOC']))->toBe([
         1 => 'numeric key',
         'big' => '12345678901234567890',
@@ -44,13 +44,14 @@ test('json decodes like json decode with exact numbers', function (): void {
     ])
         ->and(array_slice($exact, 1))->toBe(['SCALAR' => 5, 'TEXT' => 'x', 'NOTHING' => null]);
 
-    $float = self::rows($connection, $sql, options: self::options(values: new ValueMapping(numbers: NumberMode::Float)))[0];
+    $float = $this->rows($connection, $sql, options: $this->options(values: new ValueMapping(numbers: NumberMode::Float)))[0];
     $doc = sorted($float['DOC']);
-    expect($doc)->toBeArray()
-        ->and($doc['list'])->toBe([1, 2.5, ['deep' => null]])
+    assert(\is_array($doc));
+    expect($doc['list'])->toBe([1, 2.5, ['deep' => null]])
         ->and($doc['half'])->toBe(0.5)
         ->and($doc['big'])->toBe('12345678901234567890');
 });
+
 test('json extended scalars follow their column rules', function (): void {
     $sql = <<<'SQL'
             select json_object(
@@ -70,29 +71,30 @@ test('json extended scalars follow their column rules', function (): void {
     Temporals::inZone('America/Sao_Paulo', function () use ($sql): void {
         $connection = $this->connect();
 
-        $objects = sorted(self::rows($connection, $sql)[0]['DOC']);
-        expect($objects)->toBeArray()
-            ->and(array_map(Temporals::shown(...), array_diff_key($objects, ['sparse' => null])))->toBe([
-                'bd' => 0.1,
-                'bf' => 0.1,
-                'bytes' => "\x00\xff",
-                'ds' => '+0Y0M1DT2H3M4S.500000',
-                'ts' => '+2026-03-01 10:00:00.123456 America/Sao_Paulo',
-                'tz' => '+2026-03-01 10:00:00.500000 +05:45',
-                'v' => [1.5, -2.0],
-                'ym' => '+1Y2M0DT0H0M0S.000000',
-            ])
-            ->and($objects['sparse'])->toBeInstanceOf(SparseVector::class)
-            ->and([$objects['sparse']->dimensions, $objects['sparse']->values])->toBe([10, [1 => 1.5, 5 => 0.1]]);
+        $objects = sorted($this->rows($connection, $sql)[0]['DOC']);
+        assert(\is_array($objects));
+        expect(array_map(Temporals::shown(...), array_diff_key($objects, ['sparse' => null])))->toBe([
+            'bd' => 0.1,
+            'bf' => 0.1,
+            'bytes' => "\x00\xff",
+            'ds' => '+0Y0M1DT2H3M4S.500000',
+            'ts' => '+2026-03-01 10:00:00.123456 America/Sao_Paulo',
+            'tz' => '+2026-03-01 10:00:00.500000 +05:45',
+            'v' => [1.5, -2.0],
+            'ym' => '+1Y2M0DT0H0M0S.000000',
+        ]);
+        assert($objects['sparse'] instanceof SparseVector);
+        expect([$objects['sparse']->dimensions, $objects['sparse']->values])->toBe([10, [1 => 1.5, 5 => 0.1]]);
 
-        $strings = sorted(self::rows($connection, $sql, options: self::options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['DOC']);
-        expect($strings)->toBeArray()
-            ->and($strings['ts'])->toBe('2026-03-01 10:00:00.123456789')
+        $strings = sorted($this->rows($connection, $sql, options: $this->options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['DOC']);
+        assert(\is_array($strings));
+        expect($strings['ts'])->toBe('2026-03-01 10:00:00.123456789')
             ->and($strings['tz'])->toBe('2026-03-01 10:00:00.500000000 +05:45');
     });
 });
+
 test('vector columns give lists or sparse vectors', function (): void {
-    $rows = self::rows($this->connect(), 'select v32, v64, v8, vbin, s32, s64, s8, flex from fx_vectors order by id');
+    $rows = $this->rows($this->connect(), 'select v32, v64, v8, vbin, s32, s64, s8, flex from fx_vectors order by id');
 
     expect($rows)->toEqual([
         [
@@ -107,38 +109,40 @@ test('vector columns give lists or sparse vectors', function (): void {
         ],
         array_fill_keys(['V32', 'V64', 'V8', 'VBIN', 'S32', 'S64', 'S8', 'FLEX'], null),
     ]);
-
     // assertEquals compares objects loosely: check the exact types too.
-    expect($rows[0]['V32'])->toBe([1.5, -2.25, 0.1]);
-    expect($rows[0]['S8'])->toBeInstanceOf(SparseVector::class)
+    assert($rows[0]['S8'] instanceof SparseVector);
+    assert($rows[0]['S32'] instanceof SparseVector);
+    expect($rows[0]['V32'])->toBe([1.5, -2.25, 0.1])
         ->and($rows[0]['S8']->values)->toBe([0 => -128, 9 => 127])
-        ->and($rows[0]['S32'])->toBeInstanceOf(SparseVector::class)
         ->and($rows[0]['S32']->values)->toBe([1 => 1.5, 5 => 0.1]);
 });
+
 test('vector columns describe dimensions format and sparseness', function (): void {
-    $cursor = $this->connect()->execute('select v32, v64, v8, vbin, s32, s8, flex from fx_vectors', [], self::options())->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and(array_map(static fn(array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']], $cursor->columns()))->toBe([
-            ['V32', 'vector', 3, 'float32', false],
-            ['V64', 'vector', 3, 'float64', false],
-            ['V8', 'vector', 3, 'int8', false],
-            ['VBIN', 'vector', 16, 'binary', false],
-            ['S32', 'vector', 10, 'float32', true],
-            ['S8', 'vector', 10, 'int8', true],
-            ['FLEX', 'vector', null, null, false],
-        ]);
+    $cursor = $this->connect()->execute('select v32, v64, v8, vbin, s32, s8, flex from fx_vectors', [], $this->options())->cursor();
+    assert($cursor !== null);
+    expect(array_map(static fn(array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']], $cursor->columns()))->toBe([
+        ['V32', 'vector', 3, 'float32', false],
+        ['V64', 'vector', 3, 'float64', false],
+        ['V8', 'vector', 3, 'int8', false],
+        ['VBIN', 'vector', 16, 'binary', false],
+        ['S32', 'vector', 10, 'float32', true],
+        ['S8', 'vector', 10, 'int8', true],
+        ['FLEX', 'vector', null, null, false],
+    ]);
 });
+
 test('an oson id fails loudly', function (): void {
     $connection = $this->connect();
 
     try {
-        self::rows($connection, 'select data from fx_json_docs');
-        self::fail('An OSON id was read.');
+        $this->rows($connection, 'select data from fx_json_docs');
+        $this->fail('An OSON id was read.');
     } catch (UnsupportedException $unsupportedException) {
         expect($unsupportedException->getMessage())->toContain('OSON id');
     }
-    expect(self::rows($connection, "select json_value(data, '$.name') name from fx_json_docs"))->toBe([['NAME' => 'first']]);
+    expect($this->rows($connection, "select json_value(data, '$.name') name from fx_json_docs"))->toBe([['NAME' => 'first']]);
 });
+
 /**
  * @return iterable<string, array{mixed, mixed}>
  */
@@ -169,13 +173,14 @@ dataset('jsonInputs', function () {
     ];
     yield 'null' => [null, null];
 });
+
 test('json in round trips each input kind', function (mixed $input, mixed $expected): void {
     Temporals::inZone('America/Sao_Paulo', function () use ($input, $expected): void {
         $connection = $this->connect();
-        $options = self::options(autocommit: false);
+        $options = $this->options(autocommit: false);
         try {
             $connection->execute('insert into fx_vector_rows (id, doc) values (1, :doc)', ['doc' => Json::in($input)], $options);
-            $read = self::rows($connection, 'select doc from fx_vector_rows', options: $options)[0]['DOC'];
+            $read = $this->rows($connection, 'select doc from fx_vector_rows', options: $options)[0]['DOC'];
         } finally {
             $connection->rollback();
         }
@@ -183,35 +188,38 @@ test('json in round trips each input kind', function (mixed $input, mixed $expec
         expect(Temporals::shown(sorted($read)))->toBe($expected);
     });
 })->with('jsonInputs');
+
 test('json in refuses what json cannot hold', function (): void {
     foreach ([NAN, [INF], fopen('php://memory', 'r')] as $value) {
         try {
             Json::in($value);
-            self::fail('Json::in() took ' . get_debug_type($value));
+            $this->fail('Json::in() took ' . get_debug_type($value));
         } catch (UsageException $e) {
             expect($e->getMessage())->toStartWith('Json::in()');
         }
     }
-    expect(fn() => $this->connect()->execute('select :doc from dual', ['doc' => Json::in(['bytes' => "\xff"])], self::options()))->toThrow(UsageException::class, "Bind 'doc': JSON text must be valid UTF-8");
+    expect(fn() => $this->connect()->execute('select :doc from dual', ['doc' => Json::in(['bytes' => "\xff"])], $this->options()))->toThrow(UsageException::class, "Bind 'doc': JSON text must be valid UTF-8");
 });
+
 test('a float64 vector bind fills a float32 column', function (): void {
     $connection = $this->connect();
-    $options = self::options(autocommit: false);
+    $options = $this->options(autocommit: false);
     try {
         $connection->execute(
             'insert into fx_vector_rows (id, v32, s32) values (1, :dense, :sparse)',
             ['dense' => Vector::in([1.5, -2, 0.1]), 'sparse' => Vector::in(new SparseVector(10, [5 => 0.1, 1 => 1.5]))],
             $options,
         );
-        [$row] = self::rows($connection, 'select v32, s32 from fx_vector_rows', options: $options);
+        [$row] = $this->rows($connection, 'select v32, s32 from fx_vector_rows', options: $options);
     } finally {
         $connection->rollback();
     }
 
-    expect($row['V32'])->toBe([1.5, -2.0, 0.1])
-        ->and($row['S32'])->toBeInstanceOf(SparseVector::class)
-        ->and([$row['S32']->dimensions, $row['S32']->values])->toBe([10, [1 => 1.5, 5 => 0.1]]);
+    expect($row['V32'])->toBe([1.5, -2.0, 0.1]);
+    assert($row['S32'] instanceof SparseVector);
+    expect([$row['S32']->dimensions, $row['S32']->values])->toBe([10, [1 => 1.5, 5 => 0.1]]);
 });
+
 /**
  * @return iterable<string, array{Vector, mixed}>
  */
@@ -225,16 +233,18 @@ dataset('vectorBinds', function () {
     yield 'sparse Int8' => [Vector::in(new SparseVector(4, [3 => -7]), VectorFormat::Int8), new SparseVector(4, [3 => -7])];
     yield 'NULL' => [Vector::in(null), null];
 });
+
 test('vector in round trips each format', function (Vector $bind, mixed $expected): void {
-    $read = self::rows($this->connect(), 'select :v v from dual', ['v' => $bind])[0]['V'];
+    $read = $this->rows($this->connect(), 'select :v v from dual', ['v' => $bind])[0]['V'];
 
     if ($expected instanceof SparseVector) {
-        expect($read)->toBeInstanceOf(SparseVector::class)
-            ->and([$read->dimensions, $read->values])->toBe([$expected->dimensions, $expected->values]);
+        assert($read instanceof SparseVector);
+        expect([$read->dimensions, $read->values])->toBe([$expected->dimensions, $expected->values]);
     } else {
         expect($read)->toBe($expected);
     }
 })->with('vectorBinds');
+
 /**
  * @return iterable<string, array{Vector, string}>
  */
@@ -253,19 +263,22 @@ dataset('vectorMistakes', function () {
     yield 'beyond a byte' => [Vector::in([256], VectorFormat::Binary), 'a BINARY VECTOR holds bytes'];
     yield 'sparse BINARY' => [Vector::in(new SparseVector(8, [0 => 1]), VectorFormat::Binary), 'a sparse VECTOR cannot be BINARY'];
 });
+
 test('vector in checks its values before any round trip', function (Vector $bind, string $message): void {
-    expect(fn() => $this->connect()->execute('select :v from dual', ['v' => $bind], self::options()))->toThrow(UsageException::class, "Bind 'v': $message");
+    expect(fn() => $this->connect()->execute('select :v from dual', ['v' => $bind], $this->options()))->toThrow(UsageException::class, "Bind 'v': $message");
 })->with('vectorMistakes');
+
 test('a sparse vector checks its dimensions and positions', function (): void {
     foreach ([[0, []], [3, [3 => 1.0]], [3, [-1 => 1.0]], [3, ['a' => 1.0]], [3, [0 => '1']]] as [$dimensions, $values]) {
         try {
             new SparseVector($dimensions, $values);
-            self::fail('SparseVector took ' . json_encode([$dimensions, $values]));
+            $this->fail('SparseVector took ' . json_encode([$dimensions, $values]));
         } catch (UsageException $e) {
             expect($e->getMessage())->toStartWith('A SparseVector');
         }
     }
 });
+
 test('json and vector bind in out and in out through plsql', function (): void {
     $execution = $this->connect()->execute(
         "declare
@@ -294,7 +307,7 @@ test('json and vector bind in out and in out through plsql', function (): void {
             'vi' => Vector::in([1, 2], VectorFormat::Int8), 'vo' => Vector::out(), 'vio' => Vector::inOut([0.5]),
             'vnull' => Vector::out(), 'vionull' => Vector::inOut(null),
         ],
-        self::options(),
+        $this->options(),
     );
 
     $values = $execution->outValues();
@@ -308,13 +321,14 @@ test('json and vector bind in out and in out through plsql', function (): void {
         'vo' => [[1, 2]],
         'vnull' => [null],
         'vionull' => [null],
-    ])
-        ->and($sparse)->toBeInstanceOf(SparseVector::class)
-        ->and([$sparse->dimensions, $sparse->values])->toBe([10, [2 => 4.5]]);
+    ]);
+    assert($sparse instanceof SparseVector);
+    expect([$sparse->dimensions, $sparse->values])->toBe([10, [2 => 4.5]]);
 });
+
 test('json and vector come back from returning into', function (): void {
     $connection = $this->connect();
-    $options = self::options(autocommit: false);
+    $options = $this->options(autocommit: false);
     try {
         $execution = $connection->execute(
             'insert into fx_vector_rows (id, v32, s32, doc) values (1, :v, :s, :d) returning v32, s32, doc into :rv, :rs, :rd',
@@ -330,10 +344,11 @@ test('json and vector come back from returning into', function (): void {
 
     $values = $execution->outValues();
     expect($values['rv'])->toBe([[1.0, 2.0, 3.0]])
-        ->and($values['rd'])->toBe([['a' => 1]])
-        ->and($values['rs'][0])->toBeInstanceOf(SparseVector::class)
-        ->and($values['rs'][0]->values)->toBe([4 => 0.5]);
+        ->and($values['rd'])->toBe([['a' => 1]]);
+    assert($values['rs'][0] instanceof SparseVector);
+    expect($values['rs'][0]->values)->toBe([4 => 0.5]);
 });
+
 test('json out values follow the value mapping', function (): void {
     // Dynamic: PL/SQL's own SQL turns the TIMESTAMP into text.
     $sql = <<<'SQL'
@@ -347,16 +362,17 @@ test('json out values follow the value mapping', function (): void {
     $connection = $this->connect();
 
     Temporals::inZone('UTC', function () use ($connection, $sql): void {
-        $default = $connection->execute($sql, ['doc' => Json::out()], self::options())->outValues()['doc'][0];
+        $default = $connection->execute($sql, ['doc' => Json::out()], $this->options())->outValues()['doc'][0];
         $default = sorted($default);
 
-        expect($default)->toBeArray()
-            ->and(array_map(Temporals::shown(...), $default))->toBe(['half' => '0.5', 'ts' => '+2026-03-01 10:00:00.123456 UTC']);
+        assert(\is_array($default));
+        expect(array_map(Temporals::shown(...), $default))->toBe(['half' => '0.5', 'ts' => '+2026-03-01 10:00:00.123456 UTC']);
     });
 
-    $mapped = $connection->execute($sql, ['doc' => Json::out()], self::options(values: new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)))->outValues()['doc'][0];
+    $mapped = $connection->execute($sql, ['doc' => Json::out()], $this->options(values: new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)))->outValues()['doc'][0];
     expect(sorted($mapped))->toBe(['half' => 0.5, 'ts' => '2026-03-01 10:00:00.123456789']);
 });
+
 /**
  * A decoded JSON object with its keys sorted, at every level: the server
  * does not keep their order.

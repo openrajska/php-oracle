@@ -18,11 +18,15 @@ use Rajska\Oracle\Tests\Support\TransactionObserver;
 beforeEach(function (): void {
     $this->connections = [];
 });
+
 afterEach(function (): void {
-    foreach ($this->connections as $connection) {
+    /** @var list<Connection> $connections */
+    $connections = $this->connections;
+    foreach ($connections as $connection) {
         $connection->close();
     }
 });
+
 test('output gives 2500 lines in order then nothing', function (): void {
     $connection = connect();
     $connection->enableOutput();
@@ -43,6 +47,7 @@ test('output gives 2500 lines in order then nothing', function (): void {
     expect($lines)->toBe(array_map(static fn(int $i): string => "line $i", range(1, 2500)))
         ->and($connection->output())->toBeEmpty();
 });
+
 test('lines come back unchanged', function (): void {
     $connection = connect();
     $connection->enableOutput();
@@ -60,18 +65,21 @@ test('lines come back unchanged', function (): void {
 
     expect($connection->output())->toBe([str_repeat('x', 32767), '', '  padded  ', 'ação €', 'in parts']);
 });
+
 test('without enable output output is empty', function (): void {
     $connection = connect();
     $connection->run("begin dbms_output.put_line('lost'); end;");
 
     expect($connection->output())->toBeEmpty();
 });
+
 test('output enabled through raw sql is read', function (): void {
     $connection = connect();
     $connection->run("begin dbms_output.enable(null); dbms_output.put_line('raw'); end;");
 
     expect($connection->output())->toBe(['raw']);
 });
+
 test('enable output starts from an empty buffer', function (): void {
     $connection = connect();
     $connection->run("begin dbms_output.enable(null); dbms_output.put_line('before'); end;");
@@ -81,6 +89,7 @@ test('enable output starts from an empty buffer', function (): void {
 
     expect($connection->output())->toBe(['after']);
 });
+
 test('after disable output output is empty', function (): void {
     $connection = connect();
     $connection->enableOutput();
@@ -91,6 +100,7 @@ test('after disable output output is empty', function (): void {
 
     expect($connection->output())->toBeEmpty();
 });
+
 /**
  * @return iterable<string, array{bool, bool}>
  */
@@ -100,6 +110,7 @@ dataset('releasesAndNextUsers', function () {
     yield 'dropped, next user enables' => [false, true];
     yield 'dropped, next user does not enable' => [false, false];
 });
+
 test('unread output enabled through the api is purged on release', function (bool $close, bool $enable): void {
     $first = fresh();
     $session = session($first);
@@ -119,6 +130,7 @@ test('unread output enabled through the api is purged on release', function (boo
 
     expect($second->output())->toBe($enable ? ['of B'] : []);
 })->with('releasesAndNextUsers');
+
 test('output is purged when a connection is dropped before its cursor', function (): void {
     $first = fresh();
     $session = session($first);
@@ -140,6 +152,7 @@ test('output is purged when a connection is dropped before its cursor', function
     expect(session($second))->toBe($session, "B has A's Session.")
         ->and($second->output())->toBeEmpty();
 });
+
 test('output enabled through raw sql stays with the session', function (): void {
     $first = fresh();
     $first->run("begin dbms_output.enable(null); dbms_output.put_line('left by A'); end;");
@@ -149,6 +162,7 @@ test('output enabled through raw sql stays with the session', function (): void 
 
     expect($second->output())->toBe(['left by A']);
 });
+
 test('on a killed session output fails and the release stays silent', function (bool $close): void {
     $observer = IndependentSession::open();
     try {
@@ -160,7 +174,7 @@ test('on a killed session output fails and the release stays silent', function (
 
         expect(function () use ($connection): void {
             $connection->output();
-            self::fail('output() read from a killed Session.');
+            $this->fail('output() read from a killed Session.');
         })->toThrow(ConnectionLostException::class);
         if ($close) {
             $connection->close();
@@ -171,6 +185,7 @@ test('on a killed session output fails and the release stays silent', function (
     }
     $this->addToAssertionCount(1);
 })->with('closedOrDropped');
+
 /**
  * @return iterable<string, array{bool}>
  */
@@ -178,6 +193,7 @@ dataset('closedOrDropped', function () {
     yield 'close()' => [true];
     yield 'dropped' => [false];
 });
+
 test('output calls never commit an open transaction', function (bool $close): void {
     $observer = TransactionObserver::open();
     try {
@@ -205,6 +221,7 @@ test('output calls never commit an open transaction', function (bool $close): vo
         $observer->close();
     }
 })->with('closedOrDropped');
+
 /**
  * @return iterable<string, array{Closure(Connection): mixed}>
  */
@@ -213,6 +230,7 @@ dataset('outputCalls', function () {
     yield 'output()' => [static fn(Connection $connection): array => $connection->output()];
     yield 'disableOutput()' => [static fn(Connection $connection) => $connection->disableOutput()];
 });
+
 test('output calls after close fail', function (Closure $call): void {
     $connection = connect();
     $connection->enableOutput();
@@ -220,6 +238,7 @@ test('output calls after close fail', function (Closure $call): void {
 
     expect(fn() => $call($connection))->toThrow(UsageException::class, 'The Connection is closed.');
 })->with('outputCalls');
+
 /**
  * A Connection from a Pool only these tests use, one Session big, so
  * each Connection gets the Session the last one released. One Pool for
@@ -230,6 +249,7 @@ function pooled(): Connection
 {
     return Oracle::connect(TestDatabase::fromEnvironment()->config(maxConnections: 1, connectTimeout: 30.062));
 }
+
 /**
  * A pooled Connection whose Session has DBMS_OUTPUT off and empty,
  * whatever an earlier test left in it. tearDown() does not close it.
@@ -241,6 +261,7 @@ function fresh(): Connection
 
     return $connection;
 }
+
 /**
  * The next user of the Session, as the last Connection left it; closed
  * in tearDown().
@@ -253,16 +274,18 @@ function next(): Connection
 
     return $connection;
 }
+
 /**
  * Which Session is behind a Connection: its AUDSID, unique per logon.
  */
 function session(Connection $connection): string
 {
     $session = $connection->select("select sys_context('userenv', 'sessionid') from dual")->value();
-    expect($session)->toBeString();
+    assert(\is_string($session));
 
     return $session;
 }
+
 function connect(): Connection
 {
     $connection = fresh();
@@ -271,10 +294,11 @@ function connect(): Connection
 
     return $connection;
 }
+
 function sid(Connection $connection): int
 {
     $sid = $connection->select("select sys_context('userenv', 'sid') from dual")->value();
-    expect($sid)->toBeString();
+    assert(\is_string($sid));
 
     return (int) $sid;
 }

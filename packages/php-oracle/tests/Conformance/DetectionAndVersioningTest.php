@@ -4,12 +4,11 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\DetectionAndVersioningTest;
 
-use Rajska\Oracle\Tests\Support\ConnectTargets;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
 test('the server version is five part matches version full and costs no round trip', function (): void {
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
 
     try {
@@ -24,8 +23,9 @@ test('the server version is five part matches version full and costs no round tr
     expect($trips)->toBe(0)
         ->and($version)->toBeString()
         ->toMatch('/^\d+\.\d+\.\d+\.\d+\.\d+$/')
-        ->toBe(self::value($connection, "select version_full from product_component_version where product like 'Oracle%'"));
+        ->toBe($this->value($connection, "select version_full from product_component_version where product like 'Oracle%'"));
 });
+
 test('phpversion and php ri report the cargo version', function (): void {
     $manifest = getenv('EXTENSION_CARGO_TOML');
     $manifest = \is_string($manifest) && $manifest !== '' ? $manifest : \dirname(__DIR__, 3) . '/php-oracle-ext/Cargo.toml';
@@ -36,11 +36,11 @@ test('phpversion and php ri report the cargo version', function (): void {
     expect(phpversion('oracledb'))->toBe($cargo);
 
     $process = proc_open(
-        [\PHP_BINARY, '-d', 'extension=' . ConnectTargets::extensionPath(), '--ri', 'oracledb'],
+        [\PHP_BINARY, '--ri', 'oracledb'],
         [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
     );
-    expect($process)->toBeResource();
+    assert(\is_resource($process));
     $info = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);

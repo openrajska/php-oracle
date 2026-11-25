@@ -131,17 +131,4 @@ final class ConnectTargets
         return \is_array($error) && \is_string($error['message'] ?? null) ? $error['message'] : 'unknown error';
     }
 
-    /**
-     * The path of the loaded oracledb library, to load it in a child
-     * process (Linux: /proc/self/maps).
-     */
-    public static function extensionPath(): string
-    {
-        $maps = @file_get_contents('/proc/self/maps');
-        if ($maps === false || preg_match('~(/\S*php_oracledb\S*\.so)\s*$~m', $maps, $m) !== 1) {
-            TestCase::markTestSkipped('Cannot find the loaded oracledb library (needs Linux /proc).');
-        }
-
-        return $m[1];
-    }
 }

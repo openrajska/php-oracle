@@ -25,15 +25,18 @@ use RuntimeException;
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
 });
+
 afterEach(function (): void {
     $this->connection->close();
 });
+
 test('select equals run rows', function (): void {
     $sql = 'select id, name from fx_items where id <= :last order by id';
 
     expect($this->connection->select($sql, ['last' => 3])->all())->toBe($this->connection->run($sql, ['last' => 3])->rows()->all())
         ->and($this->connection->select($sql, ['last' => 1])->all())->toBe([['ID' => 1, 'NAME' => 'Item 0001']]);
 });
+
 test('select is lazy', function (): void {
     $sid = sid();
     $counter = RoundTripCounter::open();
@@ -43,8 +46,8 @@ test('select is lazy', function (): void {
         $cursor = null;
         expect($counter->during($sid, function () use (&$cursor, $options): void {
             $cursor = $this->connection->select('select id from fx_items order by id', [], $options);
-        }))->toBe(1)
-            ->and($cursor)->toBeInstanceOf(Cursor::class);
+        }))->toBe(1);
+        assert($cursor instanceof Cursor);
         // The execute brought the first batch; the second and third
         // batches cost one Round trip each.
         expect($counter->during($sid, function () use ($cursor): void {
@@ -58,6 +61,7 @@ test('select is lazy', function (): void {
         $counter->close();
     }
 });
+
 test('select of an update runs it then fails in rows', function (): void {
     $table = 'tmp_select_' . bin2hex(random_bytes(4));
     $this->connection->run("create table $table (id number)");
@@ -73,6 +77,7 @@ test('select of an update runs it then fails in rows', function (): void {
         $this->connection->run("drop table $table purge");
     }
 });
+
 test('foreach is single pass and continues where it stopped', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -91,8 +96,9 @@ test('foreach is single pass and continues where it stopped', function (): void 
 
     expect($seen)->toBe([0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5])
         ->and(iterator_to_array($cursor))->toBeEmpty()
-        ->and($cursor->all())->toBe([]);
+        ->and($cursor->all())->toBeEmpty();
 });
+
 test('all returns the remaining rows', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -103,8 +109,9 @@ test('all returns the remaining rows', function (): void {
     }
 
     expect($cursor->all())->toBe([['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5]])
-        ->and($cursor->all())->toBe([]);
+        ->and($cursor->all())->toBeEmpty();
 });
+
 test('first and value return the next row then close', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -124,6 +131,7 @@ test('first and value return the next row then close', function (): void {
     $cursor->value();
     assertClosed($cursor);
 });
+
 test('reading after close fails and a double close is fine', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -137,6 +145,7 @@ test('reading after close fails and a double close is fine', function (): void {
 
     assertClosed($cursor);
 });
+
 test('two cursors read interleaved with dml and commit between batches', function (): void {
     $options = new ExecuteOptions(fetchSize: 3);
     $sql = 'select id from fx_items where id <= :last order by id';
@@ -183,6 +192,7 @@ test('two cursors read interleaved with dml and commit between batches', functio
 
     expect($read)->toBe(['a' => range(1, 10), 'b' => range(1, 10)]);
 });
+
 test('two thousand cursors dropped half read raise no ora 01000', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -197,6 +207,7 @@ test('two thousand cursors dropped half read raise no ora 01000', function (): v
 
     expect($this->connection->select('select count(*) from (' . $fiveRows . ')')->value())->toBe(5);
 });
+
 test('columns are column objects before the first row', function (): void {
     $cursor = $this->connection->select(
         "select id, price, to_vector('[1,2,3]', 3, float32) embedding from fx_items where id = 1",
@@ -248,12 +259,13 @@ test('columns are column objects before the first row', function (): void {
 
     $cursor->close();
 });
+
 test('an xmltype column is described and reading it is unsupported', function (): void {
     $cursor = $this->connection->select("select xmltype('<a>1</a>') doc from dual");
     expect($cursor->columns()[0]->type)->toBe(Type::Xmltype)
         ->and(function () use ($cursor): void {
             $cursor->first();
-            self::fail('An XMLTYPE value was read.');
+            $this->fail('An XMLTYPE value was read.');
         })->toThrow(UnsupportedException::class, 'Column DOC: XMLTYPE values cannot be fetched yet.')
         ->and($this->connection->select(<<<'SQL'
                 select to_binary_float(0.1) bf, true flag, hextoraw('00FF') bytes,
@@ -262,6 +274,7 @@ test('an xmltype column is described and reading it is unsupported', function ()
                  where l.id = 1
                 SQL)->first())->toBe(['BF' => 0.1, 'FLAG' => true, 'BYTES' => "\x00\xff", 'CH' => 'a  ', 'LONG_TEXT' => 'long text']);
 });
+
 test('json and vector columns arrive decoded', function (): void {
     $row = $this->connection->select(
         "select json('{\"a\": [1, 0.5]}') doc, v8, s8 from fx_vectors where id = 1",
@@ -269,11 +282,12 @@ test('json and vector columns arrive decoded', function (): void {
         new ExecuteOptions(keyCase: KeyCase::Lower),
     )->first();
 
-    expect($row)->not->toBeNull()
-        ->and($row['doc'])->toBe(['a' => [1, '0.5']])
+    assert($row !== null);
+    expect($row['doc'])->toBe(['a' => [1, '0.5']])
         ->and($row['v8'])->toBe([1, -2, 127])
         ->and($row['s8'])->toEqual(new SparseVector(10, [0 => -128, 9 => 127]));
 });
+
 test('row shape and key case come from the config and execute options override them', function (): void {
     $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(rowShape: RowShape::Assoc, keyCase: KeyCase::Lower));
     $sql = 'select id, name from fx_items where id = 1';
@@ -287,6 +301,7 @@ test('row shape and key case come from the config and execute options override t
         $connection->close();
     }
 });
+
 test('numbers float works per connection and per execution', function (): void {
     $float = new ValueMapping(numbers: NumberMode::Float);
     $sql = 'select 12.5 half, 5 five from dual';
@@ -302,6 +317,7 @@ test('numbers float works per connection and per execution', function (): void {
         $connection->close();
     }
 });
+
 test('ddl runs through run and a compilation error is a warning', function (): void {
     $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
 
@@ -314,6 +330,7 @@ test('ddl runs through run and a compilation error is a warning', function (): v
         $this->connection->run("drop procedure $procedure");
     }
 });
+
 test('after the connection closes its cursor fails even with rows left in its batch', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
@@ -330,12 +347,13 @@ test('after the connection closes its cursor fails even with rows left in its ba
         foreach ($cursor as $row) {
             $served[] = $row;
         }
-        self::fail('foreach after the Connection closed succeeded.');
+        $this->fail('foreach after the Connection closed succeeded.');
     })->toThrow(UsageException::class, 'The Connection is closed.')
         ->and($served)->toBe([], 'No row of the batch is served after the Connection closed.');
     assertClosed($cursor);
     $cursor->close();
 });
+
 function assertClosed(Cursor $cursor): void
 {
     foreach ([
@@ -352,10 +370,11 @@ function assertClosed(Cursor $cursor): void
         }
     }
 }
+
 function sid(): int
 {
     $sid = test()->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-    expect($sid)->toBeString();
+    assert(\is_string($sid));
 
     return (int) $sid;
 }

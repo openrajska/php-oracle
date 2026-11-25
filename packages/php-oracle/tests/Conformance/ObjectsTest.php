@@ -45,8 +45,9 @@ test('object and collection columns arrive as arrays', function (): void {
         ['ID' => 3, 'CENTER' => ['X' => null, 'Y' => null, 'LABEL' => null], 'TAGS' => [], 'OUTLINE' => []],
     ];
 
-    expect(self::rows($this->connect(), 'select * from fx_shapes order by id'))->toBe($shapes);
+    expect($this->rows($this->connect(), 'select * from fx_shapes order by id'))->toBe($shapes);
 });
+
 test('the same arrays arrive through a ref cursor an implicit result and a pipelined function', function (): void {
     $shapes = [
         [
@@ -68,39 +69,41 @@ test('the same arrays arrive through a ref cursor an implicit result and a pipel
     $execution = $connection->execute(
         'begin open :o for select * from fx_shapes order by id; end;',
         ['o' => Cursor::out()],
-        self::options(),
+        $this->options(),
     );
     $cursor = $execution->outValues()['o'][0];
-    expect($cursor)->toBeInstanceOf(DriverCursor::class)
-        ->and(drain($cursor))->toBe($shapes);
+    assert($cursor instanceof DriverCursor);
+    expect(drain($cursor))->toBe($shapes);
 
     $execution = $connection->execute(
         'declare c sys_refcursor; begin open c for select * from fx_shapes order by id; dbms_sql.return_result(c); end;',
         [],
-        self::options(),
+        $this->options(),
     );
     expect(drain($execution->implicitResults()[0]))->toBe($shapes)
-        ->and(self::rows($connection, 'select value(t) as p from table(fx_pipe.points(2)) t'))->toBe([
+        ->and($this->rows($connection, 'select value(t) as p from table(fx_pipe.points(2)) t'))->toBe([
             ['P' => ['X' => 1, 'Y' => 1, 'LABEL' => 'P1']],
             ['P' => ['X' => 2, 'Y' => 4, 'LABEL' => 'P2']],
         ]);
 });
+
 test('attribute keys follow key case', function (): void {
     $connection = $this->connect();
 
-    expect(self::rows(
+    expect($this->rows(
         $connection,
         "select center, fx_point_list(fx_point(0, 0, 'a')) from fx_shapes where id = 1",
-        options: self::options(rowShape: RowShape::List, keyCase: KeyCase::Lower),
+        options: $this->options(rowShape: RowShape::List, keyCase: KeyCase::Lower),
     ))->toBe([[['x' => '1.5', 'y' => -2, 'label' => 'center'], [['x' => 0, 'y' => 0, 'label' => 'a']]]])
-        ->and(self::rows($connection, 'select "FX_Mixed_Point"(1, 2) as p from dual'))->toBe([['P' => ['x' => 1, 'Y' => 2]]]);
+        ->and($this->rows($connection, 'select "FX_Mixed_Point"(1, 2) as p from dual'))->toBe([['P' => ['x' => 1, 'Y' => 2]]]);
 });
+
 test('object and collection columns describe their type', function (): void {
     $connection = $this->connect();
-    $schema = self::value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    expect($schema)->toBeString();
-    $cursor = $connection->execute('select center, tags, outline from fx_shapes', [], self::options())->cursor();
-    expect($cursor)->not->toBeNull();
+    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+    assert(\is_string($schema));
+    $cursor = $connection->execute('select center, tags, outline from fx_shapes', [], $this->options())->cursor();
+    assert($cursor !== null);
 
     $columns = array_map(
         static fn(array $column): array => [$column['type'], $column['objectType']],
@@ -114,13 +117,14 @@ test('object and collection columns describe their type', function (): void {
     ]);
     $cursor->close();
 });
+
 test('attributes follow every value mapping', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         $connection = $this->connect();
         $sql = 'select value from fx_all_scalars_tab order by id';
         $zone = 'America/Sao_Paulo';
 
-        $default = self::rows($connection, $sql);
+        $default = $this->rows($connection, $sql);
         expect(shown(struct($default[0]['VALUE'])))->toBe([
             'C_CHAR' => 'ab   ',
             'C_NCHAR' => 'ç    ',
@@ -141,30 +145,32 @@ test('attributes follow every value mapping', function (): void {
         ])
             ->and($default[1]['VALUE'])->toBe(array_fill_keys(array_keys(allScalars()), null));
 
-        $float = self::rows($connection, $sql, options: self::options(values: new ValueMapping(numbers: NumberMode::Float)));
+        $float = $this->rows($connection, $sql, options: $this->options(values: new ValueMapping(numbers: NumberMode::Float)));
         expect(struct($float[0]['VALUE'])['C_NUMBER'])->toBe(12.5);
 
-        $string = struct(self::rows($connection, $sql, options: self::options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['VALUE']);
+        $string = struct($this->rows($connection, $sql, options: $this->options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['VALUE']);
         expect([$string['C_DATE'], $string['C_TS'], $string['C_TSTZ'], $string['C_TSLTZ']])->toBe(['2026-03-01 10:00:00', '2026-03-01 10:00:00.123456789', '2026-03-01 10:00:00.123456789 +05:45', '2026-03-01 07:00:00.123456789 -03:00']);
         // INTERVALs stay objects.
         expect($string['C_IDS'])->toBeInstanceOf(DateInterval::class);
 
-        $lower = self::rows($connection, $sql, options: self::options(keyCase: KeyCase::Lower));
+        $lower = $this->rows($connection, $sql, options: $this->options(keyCase: KeyCase::Lower));
         expect(array_keys(struct($lower[0]['value'])))->toBe(array_map(strtolower(...), array_keys(allScalars())));
     });
 });
+
 test('a boolean attribute reads as stored', function (): void {
     $connection = $this->connect();
     $built = static fn(string $flag): string => "fx_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
 
     foreach (['true' => true, 'false' => false, 'null' => null] as $flag => $expected) {
-        $plsql = $connection->execute("begin :o := {$built($flag)}; end;", ['o' => Struct::out('fx_all_scalars')], self::options());
+        $plsql = $connection->execute("begin :o := {$built($flag)}; end;", ['o' => Struct::out('fx_all_scalars')], $this->options());
         expect(struct($plsql->outValues()['o'][0])['C_BOOLEAN'])->toBe($expected, "PL/SQL $flag");
 
-        $sql = struct(self::value($connection, "select {$built($flag)} from dual"));
+        $sql = struct($this->value($connection, "select {$built($flag)} from dual"));
         expect($sql['C_BOOLEAN'])->toBe($expected, "SQL $flag");
     }
 });
+
 test('struct collection and indexed round trip in out and in out', function (): void {
     $connection = $this->connect();
 
@@ -177,7 +183,7 @@ test('struct collection and indexed round trip in out and in out', function (): 
             'polygon' => Struct::in('fx_polygon', ['name' => 'tri', 'vertices' => [point(0, 0), point(1, 0), point(0, 1)]]),
             'n' => Number::out(),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
     expect($point['o'])->toBe([['X' => 1, 'Y' => '0.5', 'LABEL' => 'p']])
         ->and($point['io'])->toBe([['X' => 2, 'Y' => 3, 'LABEL' => 'moved']])
@@ -191,7 +197,7 @@ test('struct collection and indexed round trip in out and in out', function (): 
             'tags' => Collection::inOut('fx_string_varray', ['x', 'y']),
             'sum' => Number::out(),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
     expect($collections['reversed'])->toBe([[-3, '2.5', 1]])
         ->and($collections['tags'])->toBe([['x', 'y', 'z']])
@@ -205,15 +211,16 @@ test('struct collection and indexed round trip in out and in out', function (): 
             'io' => Indexed::inOut('fx_object.t_number_map', [1 => 1]),
             'sum' => Number::out(),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
     expect($map['filled'])->toBe([[10 => 1, 20 => 2, 30 => 3]])
         ->and($map['sum'])->toBe([3])
         ->and($map['io'])->toBe([[1 => 1]]);
 });
+
 test('struct and collection bind into sql and come back from returning into', function (): void {
     $connection = $this->connect();
-    $options = self::options(autocommit: false);
+    $options = $this->options(autocommit: false);
     $binds = [
         'id' => 99,
         'center' => Struct::in('fx_point', ['x' => 5, 'y' => 6, 'label' => 'new']),
@@ -252,7 +259,7 @@ test('struct and collection bind into sql and come back from returning into', fu
     foreach ([$returnOutline, "begin $returnOutline; end;"] as $sql) {
         try {
             $connection->execute($sql, ['outline_o' => Collection::out('fx_point_list')], $options);
-            self::fail('RETURNING INTO a nested table column ran.');
+            $this->fail('RETURNING INTO a nested table column ran.');
         } catch (UnsupportedException $e) {
             expect($e->getMessage())->toContain('database object stored in a LOB');
         }
@@ -269,10 +276,11 @@ test('struct and collection bind into sql and come back from returning into', fu
     $connection->execute('delete from fx_shapes where id = 99', [], $options);
 
     expect($connection->execute($insert, $binds, $options)->rowCount())->toBe(1)
-        ->and(self::rows($connection, 'select center, tags, outline from fx_shapes where id = 99', options: $options))->toBe([['CENTER' => ['X' => 5, 'Y' => 6, 'LABEL' => 'new'], 'TAGS' => ['t'], 'OUTLINE' => []]]);
+        ->and($this->rows($connection, 'select center, tags, outline from fx_shapes where id = 99', options: $options))->toBe([['CENTER' => ['X' => 5, 'Y' => 6, 'LABEL' => 'new'], 'TAGS' => ['t'], 'OUTLINE' => []]]);
 
     $connection->rollback();
 });
+
 /**
  * @return iterable<string, array{ValueMapping}>
  */
@@ -280,12 +288,13 @@ dataset('mappings', function () {
     yield 'default' => [new ValueMapping()];
     yield 'String temporals, Float numbers' => [new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)];
 });
+
 test('a fetched value binds back unchanged', function (ValueMapping $values): void {
     Temporals::inZone('Asia/Kathmandu', function () use ($values): void {
         $connection = $this->connect();
-        $options = self::options(values: $values);
-        $value = struct(self::rows($connection, 'select value from fx_all_scalars_tab where id = 1', options: $options)[0]['VALUE']);
-        $shapes = self::rows($connection, 'select center, tags, outline from fx_shapes where id = 1', options: $options)[0];
+        $options = $this->options(values: $values);
+        $value = struct($this->rows($connection, 'select value from fx_all_scalars_tab where id = 1', options: $options)[0]['VALUE']);
+        $shapes = $this->rows($connection, 'select center, tags, outline from fx_shapes where id = 1', options: $options)[0];
 
         $back = $connection->execute(
             'begin :o := :i; :center_o := :center; :tags_o := :tags; :outline_o := :outline; end;',
@@ -302,6 +311,7 @@ test('a fetched value binds back unchanged', function (ValueMapping $values): vo
             ->and([$back['center_o'][0], $back['tags_o'][0], $back['outline_o'][0]])->toBe([$shapes['CENTER'], $shapes['TAGS'], $shapes['OUTLINE']]);
     });
 })->with('mappings');
+
 test('bound attributes reach the server as their types store them', function (): void {
     $value = array_fill_keys(array_keys(allScalars()), null);
     $value['C_NUMBER'] = 0.1;
@@ -314,12 +324,13 @@ test('bound attributes reach the server as their types store them', function ():
     $text = $this->connect()->execute(
         "declare v fx_all_scalars := :i; begin :s := to_char(v.c_number) || '|' || to_char(v.c_date, 'YYYY-MM-DD HH24:MI:SS') || '|' || to_char(v.c_tstz, 'YYYY-MM-DD HH24:MI:SS.FF3 TZH:TZM') || '|' || to_char(sys_extract_utc(v.c_tsltz), 'YYYY-MM-DD HH24:MI:SS') || '|' || case when v.c_boolean then 'T' else 'F' end || '|' || v.c_nchar || '|'; end;",
         ['i' => Struct::in('fx_all_scalars', $value), 's' => Varchar::out()],
-        self::options(),
+        $this->options(),
     )->outValues()['s'][0];
 
     // A CHAR or NCHAR attribute is stored as given, unpadded (C2).
     expect($text)->toBe('.1|2026-03-01 10:00:00|2026-03-01 10:00:00.500 -03:30|2026-03-01 08:00:00|T|ç|');
 });
+
 test('null empty and all null values stay apart in and out', function (): void {
     $nullPoint = ['X' => null, 'Y' => null, 'LABEL' => null];
 
@@ -350,7 +361,7 @@ test('null empty and all null values stay apart in and out', function (): void {
             'reversed_nulls' => Collection::out('fx_number_list'),
             'point_o' => Struct::out('fx_point'), 'null_point_o' => Struct::out('fx_point'),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
 
     expect(array_intersect_key($out, array_flip(['null_sum', 'empty_sum', 'null_is_null', 'all_null_is_null', 'reversed_null', 'reversed_nulls', 'point_o', 'null_point_o'])))->toBe([
@@ -360,6 +371,7 @@ test('null empty and all null values stay apart in and out', function (): void {
         'point_o' => [$nullPoint], 'null_point_o' => [null],
     ]);
 });
+
 test('indexed keeps sparse and negative keys in order and a sparse nested table gives a list', function (): void {
     $out = $this->connect()->execute(
         'begin :o := :i; :sparse := fx_kinds.sparse_numbers; end;',
@@ -368,12 +380,13 @@ test('indexed keeps sparse and negative keys in order and a sparse nested table 
             'o' => Indexed::out('fx_object.t_number_map'),
             'sparse' => Collection::out('fx_number_list'),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
 
     expect($out['o'][0])->toBe([-2147483648 => 4, -5 => 1, 3 => 3, 10 => 2, 2147483647 => 5])
         ->and($out['sparse'][0])->toBe([1, 3, 5]);
 });
+
 /**
  * @return iterable<string, array{string, list<int|string>}>
  */
@@ -382,18 +395,21 @@ dataset('idLists', function () {
     yield 'SYS.ODCIVARCHAR2LIST' => ['sys.odcivarchar2list', array_map(strval(...), range(1, 10000))];
     yield 'a user type' => ['fx_number_list', range(1, 10000)];
 });
+
 test('table of a collection bind takes ten thousand ids', function (string $type, array $ids): void {
+    /** @var list<int|string> $ids */
     $connection = $this->connect();
 
-    expect(self::rows($connection, 'select count(*) as n, sum(column_value) as s from table(:ids)', ['ids' => Collection::in($type, $ids)]))->toBe([['N' => 10000, 'S' => 50005000]]);
+    expect($this->rows($connection, 'select count(*) as n, sum(column_value) as s from table(:ids)', ['ids' => Collection::in($type, $ids)]))->toBe([['N' => 10000, 'S' => 50005000]]);
 
     // fx_items holds ids 1 to 1000.
-    expect(self::rows(
+    expect($this->rows(
         $connection,
         'select count(*) as n, sum(i.id) as s from fx_items i join table(:ids) t on t.column_value = i.id',
         ['ids' => Collection::in($type, $ids)],
     ))->toBe([['N' => 1000, 'S' => 500500]]);
 })->with('idLists');
+
 /**
  * @return iterable<string, array{Bind, string}>
  */
@@ -430,12 +446,13 @@ dataset('mistakes', function () {
     yield 'a string for a timestamp' => [Struct::in('fx_all_scalars', ['C_DATE' => 'today'] + array_fill_keys(array_keys(allScalars()), null)), "Bind 'i', attribute C_DATE: the text is not a DATE as TemporalMode::String writes it, such as '2026-03-01 10:00:00'."];
     yield 'a nested Object of the wrong shape' => [Struct::in('fx_polygon', ['name' => 'p', 'vertices' => [1]]), "Bind 'i', attribute VERTICES, element 0: the value must be an array keyed by attribute name or null."];
 });
+
 test('a mistake fails before any round trip naming the fix', function (Bind $bind, string $message): void {
     $echo = 'begin :o := :i; end;';
 
     $connection = $this->connect();
-    $schema = self::value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    expect($schema)->toBeString();
+    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+    assert(\is_string($schema));
     $message = str_replace(schemaPlaceholder(), $schema, $message);
     \assert($message !== '');
 
@@ -446,18 +463,18 @@ test('a mistake fails before any round trip naming the fix', function (Bind $bin
             'a' => Struct::out('fx_point'), 'b' => Collection::out('fx_number_list'), 'c' => Indexed::out('fx_object.t_number_map'),
             'd' => Struct::out('fx_polygon'), 'e' => Collection::out('fx_string_varray'), 'f' => Struct::out('fx_all_scalars'),
         ],
-        self::options(),
+        $this->options(),
     );
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
 
     try {
-        $trips = $counter->during($sid, static function () use ($connection, $bind, $message, $echo): void {
+        $trips = $counter->during($sid, function () use ($connection, $bind, $message, $echo): void {
             try {
-                $connection->execute($echo, ['i' => $bind, 'o' => Number::out()], self::options());
-                self::fail('The bind was accepted.');
+                $connection->execute($echo, ['i' => $bind, 'o' => Number::out()], $this->options());
+                $this->fail('The bind was accepted.');
             } catch (UsageException $usageException) {
-                self::assertStringStartsWith($message, $usageException->getMessage());
+                expect($usageException->getMessage())->toStartWith($message);
             }
         });
     } finally {
@@ -465,6 +482,7 @@ test('a mistake fails before any round trip naming the fix', function (Bind $bin
     }
     expect($trips)->toBe(0);
 })->with('mistakes');
+
 /**
  * Unquoted parts are case-insensitive, a quoted part is kept.
  *
@@ -478,18 +496,20 @@ dataset('pointNames', function () {
     yield 'schema-qualified' => [schemaPlaceholder() . '.fx_point'];
     yield 'a synonym' => ['fx_point_alias'];
 });
+
 test('a type name resolves under oracle identifier rules', function (string $name): void {
     $echo = 'begin :o := :i; end;';
 
     $connection = $this->connect();
-    $schema = self::value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    expect($schema)->toBeString();
+    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+    assert(\is_string($schema));
     $name = str_replace(schemaPlaceholder(), strtolower($schema), $name);
 
-    $out = $connection->execute($echo, ['i' => Struct::in($name, ['X' => 1, 'Y' => 2, 'LABEL' => 'a']), 'o' => Struct::out($name)], self::options());
+    $out = $connection->execute($echo, ['i' => Struct::in($name, ['X' => 1, 'Y' => 2, 'LABEL' => 'a']), 'o' => Struct::out($name)], $this->options());
 
     expect($out->outValues()['o'])->toBe([['X' => 1, 'Y' => 2, 'LABEL' => 'a']]);
 })->with('pointNames');
+
 test('quoted names and package types resolve and an unknown type fails', function (): void {
     $echo = 'begin :o := :i; end;';
 
@@ -503,7 +523,7 @@ test('quoted names and package types resolve and an unknown type fails', functio
             'r' => Struct::inOut('fx_kinds.t_record', ['id' => -7, 'name' => 'r', 'flag' => true]),
             'n' => Collection::inOut('fx_kinds.t_numbers', [1, 2]),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
     expect($out['o'])->toBe([['x' => 1, 'Y' => 2]])
         ->and($out['r'])->toBe([['ID' => -7, 'NAME' => 'r', 'FLAG' => true]])
@@ -511,25 +531,26 @@ test('quoted names and package types resolve and an unknown type fails', functio
 
     foreach (['fx_mixed_point', 'fx_no_such_type', 'fx_object.no_such_type'] as $unknown) {
         try {
-            $connection->execute($echo, ['i' => Struct::in($unknown, null), 'o' => Number::out()], self::options());
-            self::fail("$unknown resolved.");
+            $connection->execute($echo, ['i' => Struct::in($unknown, null), 'o' => Number::out()], $this->options());
+            $this->fail("$unknown resolved.");
         } catch (QueryException $e) {
             expect($e->getMessage())->toStartWith("Bind 'i': the type ")
                 ->and($e->getMessage())->toEndWith(' does not exist, or this user cannot see it.');
         }
     }
 });
+
 test('describing a type costs round trips only on its first use in a session', function (): void {
     $echoSql = 'begin :o := :i; end;';
 
-    $pool = self::ownPool() + ['maxConnections' => 1];
+    $pool = $this->ownPool() + ['maxConnections' => 1];
     $connection = $this->connect(...$pool);
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
-    $echo = static fn(DriverConnection $connection, string $name): mixed => $connection->execute(
+    $echo = fn(DriverConnection $connection, string $name): mixed => $connection->execute(
         $echoSql,
         ['i' => Collection::in($name, [[1], []]), 'o' => Collection::out($name)],
-        self::options(),
+        $this->options(),
     )->outValues()['o'];
 
     try {
@@ -537,10 +558,10 @@ test('describing a type costs round trips only on its first use in a session', f
         $again = $counter->during($sid, static fn(): mixed => $echo($connection, 'FX_NUMBER_MATRIX'));
         $connection->close();
         $next = $this->connect(...$pool);
-        expect(self::sid($next))->toBe($sid);
+        expect($this->sid($next))->toBe($sid);
         $nextLoan = $counter->during($sid, static fn(): mixed => $echo($next, 'Fx_Number_Matrix'));
         $query = 'select fx_number_matrix(fx_number_list(1)) from dual';
-        $column = $counter->during($sid, static fn(): array => self::rows($next, $query));
+        $column = $counter->during($sid, fn(): array => $this->rows($next, $query));
     } finally {
         $counter->close();
     }
@@ -550,23 +571,24 @@ test('describing a type costs round trips only on its first use in a session', f
         ->and($nextLoan)->toBe(1)
         ->and($column)->toBe(1);
 });
+
 test('after alter type elsewhere a session fails loudly or stays consistent', function (): void {
     $echoSql = 'begin :o := :i; end;';
 
     $type = 'fx_evolving_' . bin2hex(random_bytes(3));
     $connection = $this->connect(standalone: true);
     $other = $this->connect();
-    $connection->execute("create type $type as object (a number)", [], self::options());
+    $connection->execute("create type $type as object (a number)", [], $this->options());
 
     try {
-        $echo = static fn(array $value): mixed => $connection->execute(
+        $echo = fn(array $value): mixed => $connection->execute(
             $echoSql,
             ['i' => Struct::in($type, struct($value)), 'o' => Struct::out($type)],
-            self::options(),
+            $this->options(),
         )->outValues()['o'][0];
         expect($echo(['a' => 1]))->toBe(['A' => 1]);
 
-        $other->execute("alter type $type add attribute (b varchar2(10)) cascade", [], self::options());
+        $other->execute("alter type $type add attribute (b varchar2(10)) cascade", [], $this->options());
 
         $fresh = $this->connect(standalone: true);
         $outcomes = [];
@@ -574,19 +596,19 @@ test('after alter type elsewhere a session fails loudly or stays consistent', fu
         foreach ([
             'bind the old shape' => static fn(): mixed => $echo(['a' => 2]),
             'bind the new shape' => static fn(): mixed => $echo(['a' => 3, 'b' => 'x']),
-            'fetch a value' => fn(): mixed => self::value($connection, "select $type(4, 'y') from dual"),
-            'fetch a value again' => fn(): mixed => self::value($connection, "select $type(4, 'y') from dual"),
-            'still usable' => fn(): mixed => self::value($connection, 'select 1 from dual'),
-            'a new Session fetches' => fn(): mixed => self::value($fresh, "select $type(5, 'z') from dual"),
+            'fetch a value' => fn(): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
+            'fetch a value again' => fn(): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
+            'still usable' => fn(): mixed => $this->value($connection, 'select 1 from dual'),
+            'a new Session fetches' => fn(): mixed => $this->value($fresh, "select $type(5, 'z') from dual"),
             'a new Session binds' => fn(): mixed => $fresh->execute(
                 "declare v $type := :i; begin :o := v.a || v.b; end;",
                 ['i' => Struct::in($type, ['a' => 6, 'b' => 'w']), 'o' => Varchar::out()],
-                self::options(),
+                $this->options(),
             )->outValues()['o'][0],
             'a new Session binds OUT' => fn(): mixed => $fresh->execute(
                 "begin :o := $type(7, 'v'); end;",
                 ['o' => Struct::out($type)],
-                self::options(),
+                $this->options(),
             )->outValues()['o'][0],
         ] as $case => $run) {
             try {
@@ -609,9 +631,10 @@ test('after alter type elsewhere a session fails loudly or stays consistent', fu
         ])
             ->and($messages['fetch a value'] ?? '')->toContain(strtoupper($type) . ' has changed since this connection described it');
     } finally {
-        $other->execute("drop type $type force", [], self::options());
+        $other->execute("drop type $type force", [], $this->options());
     }
 });
+
 test('a varray over its limit fails on the server', function (): void {
     $echo = 'begin :o := :i; end;';
 
@@ -619,13 +642,14 @@ test('a varray over its limit fails on the server', function (): void {
         $this->connect()->execute(
             $echo,
             ['i' => Collection::in('fx_string_varray', array_fill(0, 11, 'x')), 'o' => Collection::out('fx_string_varray')],
-            self::options(),
+            $this->options(),
         );
-        self::fail('The VARRAY took 11 elements.');
+        $this->fail('The VARRAY took 11 elements.');
     } catch (QueryException $queryException) {
         expect($queryException->getCode())->toBe(22165);
     }
 });
+
 /**
  * JSON, VECTOR and LONG cannot be attributes of an Object type at all.
  *
@@ -640,17 +664,19 @@ dataset('laterAttributes', function () {
     yield 'BFILE' => ['fx_bfile_holder(1, null)', 'TDS type code 31'];
     yield 'a region-named TSTZ' => ["fx_tstz_holder(timestamp '2026-03-01 10:00:00 America/Sao_Paulo')", 'time zone region'];
 });
+
 test('a later attribute fails loudly on read', function (string $value, string $named): void {
     $connection = $this->connect();
 
     try {
-        self::rows($connection, "select $value as v from dual");
-        self::fail('The value was read.');
+        $this->rows($connection, "select $value as v from dual");
+        $this->fail('The value was read.');
     } catch (UnsupportedException $unsupportedException) {
         expect($unsupportedException->getMessage())->toContain($named);
     }
-    expect(self::value($connection, 'select 1 from dual'))->toBe(1);
+    expect($this->value($connection, 'select 1 from dual'))->toBe(1);
 })->with('laterAttributes');
+
 test('a later attribute fails loudly on bind and its null reads as null', function (): void {
     $echo = 'begin :o := :i; end;';
 
@@ -660,8 +686,8 @@ test('a later attribute fails loudly on bind and its null reads as null', functi
         $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
         $holder[$attribute] = $value;
         try {
-            $connection->execute($echo, ['i' => Struct::in('fx_lob_holder', $holder), 'o' => Struct::out('fx_lob_holder')], self::options());
-            self::fail("A value for $attribute was bound.");
+            $connection->execute($echo, ['i' => Struct::in('fx_lob_holder', $holder), 'o' => Struct::out('fx_lob_holder')], $this->options());
+            $this->fail("A value for $attribute was bound.");
         } catch (UnsupportedException $e) {
             expect($e->getMessage())->toStartWith("Bind 'i', attribute " . strtoupper($attribute) . ': ')
                 ->and($e->getMessage())->toEndWith(' values in an Object or Collection are not supported yet.');
@@ -669,8 +695,8 @@ test('a later attribute fails loudly on bind and its null reads as null', functi
     }
     foreach (['fx_ref_holder', 'fx_bfile_holder'] as $type) {
         try {
-            $connection->execute($echo, ['i' => Struct::in($type, null), 'o' => Number::out()], self::options());
-            self::fail("$type was bound.");
+            $connection->execute($echo, ['i' => Struct::in($type, null), 'o' => Number::out()], $this->options());
+            $this->fail("$type was bound.");
         } catch (UnsupportedException $e) {
             expect($e->getMessage())->toStartWith("Bind 'i': TDS type code");
         }
@@ -679,30 +705,32 @@ test('a later attribute fails loudly on bind and its null reads as null', functi
     $out = $connection->execute(
         $echo,
         ['i' => Struct::in('fx_lob_holder', ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null]), 'o' => Struct::out('fx_lob_holder')],
-        self::options(),
+        $this->options(),
     );
     expect($out->outValues()['o'])->toBe([['ID' => 1, 'DOC' => null, 'NDOC' => null, 'BIN' => null]]);
 });
+
 test('a subtype instance fails loudly', function (): void {
     $echo = 'begin :o := :i; end;';
 
     $connection = $this->connect();
 
-    expect(self::rows($connection, 'select animal from fx_animals where id = 1'))->toBe([['ANIMAL' => ['NAME' => 'cat']]]);
+    expect($this->rows($connection, 'select animal from fx_animals where id = 1'))->toBe([['ANIMAL' => ['NAME' => 'cat']]]);
     try {
-        self::rows($connection, 'select animal from fx_animals where id = 2');
-        self::fail('The subtype instance was read.');
+        $this->rows($connection, 'select animal from fx_animals where id = 2');
+        $this->fail('The subtype instance was read.');
     } catch (UnsupportedException $unsupportedException) {
         expect($unsupportedException->getMessage())->toContain('FX_ANIMAL holds an instance of an object subtype');
     }
     try {
-        $connection->execute($echo, ['i' => Struct::in('fx_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => Number::out()], self::options());
-        self::fail('The subtype instance was bound.');
+        $connection->execute($echo, ['i' => Struct::in('fx_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => Number::out()], $this->options());
+        $this->fail('The subtype instance was bound.');
     } catch (UnsupportedException $unsupportedException) {
         expect($unsupportedException->getMessage())->toStartWith("Bind 'i': ")
             ->and($unsupportedException->getMessage())->toContain('FX_DOG holds an instance of an object subtype');
     }
 });
+
 test('a collection of collections round trips', function (): void {
     $matrix = [[1, 2], [], null, [null]];
     $points = [5 => point(1, 2), -1 => null];
@@ -713,12 +741,13 @@ test('a collection of collections round trips', function (): void {
             'i' => Collection::in('fx_number_matrix', $matrix), 'o' => Collection::out('fx_number_matrix'),
             'points' => Indexed::in('fx_kinds.t_point_map', $points), 'points_o' => Indexed::out('fx_kinds.t_point_map'),
         ],
-        self::options(),
+        $this->options(),
     )->outValues();
 
     expect($out['o'])->toBe([$matrix])
         ->and($out['points_o'])->toBe([[-1 => null, 5 => ['X' => 1, 'Y' => 2, 'LABEL' => null]]]);
 });
+
 test('an index by varchar2 bind fails loudly', function (): void {
     $connection = $this->connect();
 
@@ -730,13 +759,14 @@ test('an index by varchar2 bind fails loudly', function (): void {
         Collection::out('fx_kinds.t_string_map'),
     ] as $bind) {
         try {
-            $connection->execute('begin :o := fx_kinds.string_map; end;', ['o' => $bind], self::options());
-            self::fail('An INDEX BY VARCHAR2 bind ran.');
+            $connection->execute('begin :o := fx_kinds.string_map; end;', ['o' => $bind], $this->options());
+            $this->fail('An INDEX BY VARCHAR2 bind ran.');
         } catch (UnsupportedException | UsageException $e) {
             expect($e->getMessage())->toContain('INDEX BY VARCHAR2');
         }
     }
 });
+
 /**
  * @return list<array<int|string, mixed>>
  */
@@ -750,27 +780,30 @@ function drain(DriverCursor $cursor): array
 
     return $rows;
 }
+
 /**
  * @return array<string, mixed>
  */
 function struct(mixed $value): array
 {
-    expect($value)->toBeArray()
-        ->and(array_keys($value))->each->toBeString();
+    assert(\is_array($value));
+    expect(array_keys($value))->each->toBeString();
 
     /** @var array<string, mixed> $value */
     return $value;
 }
+
 /**
  * @return list<mixed>
  */
 function elements(mixed $value): array
 {
-    expect($value)->toBeArray()
-        ->and(array_is_list($value))->toBeTrue();
+    assert(\is_array($value));
+    assert(array_is_list($value));
 
     return $value;
 }
+
 /**
  * @return array{x: int, y: int, label: null}
  */
@@ -778,6 +811,7 @@ function point(int $x, int $y): array
 {
     return ['x' => $x, 'y' => $y, 'label' => null];
 }
+
 /**
  * The attributes of fx_all_scalars, keyed as Native shows them.
  *
@@ -790,6 +824,7 @@ function allScalars(): array
         null,
     );
 }
+
 /**
  * @param array<array-key, mixed> $values
  *
@@ -799,6 +834,7 @@ function shown(array $values): array
 {
     return array_map(Temporals::shown(...), $values);
 }
+
 /** Stands for the current schema in data providers. */
 function schemaPlaceholder(): string
 {

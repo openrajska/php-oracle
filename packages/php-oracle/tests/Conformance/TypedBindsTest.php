@@ -64,6 +64,7 @@ dataset('classes', function () {
     yield 'Boolean' => ['boolean', Boolean::in(true), true, Boolean::out(), Boolean::inOut(false), 'not io', true];
     yield 'Raw' => ['raw', Raw::in("\x00\xff\x80"), "\x00\xff\x80", Raw::out(), Raw::inOut("\x01"), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
 });
+
 /**
  * @return iterable<string, array{string, Bind, Bind, Bind}>
  */
@@ -86,6 +87,7 @@ dataset('nulls', function () {
     yield 'IntervalDs' => ['interval day to second', IntervalDs::in(null), IntervalDs::out(), IntervalDs::inOut(null)];
     yield 'IntervalYm' => ['interval year to month', IntervalYm::in(null), IntervalYm::out(), IntervalYm::inOut(null)];
 });
+
 /**
  * Each temporal class, as `classes()`. Values as `Temporals::shown()`
  * writes them, in PHP's zone America/Sao_Paulo.
@@ -112,6 +114,7 @@ dataset('temporalClasses', function () {
     $months->invert = 1;
     yield 'IntervalYm negative' => ['interval year to month', IntervalYm::in($months), '-1Y2M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut($months), 'io', '-1Y2M0DT0H0M0S.000000'];
 });
+
 test('each temporal class binds in out and in out through its plsql type', function (string $plsql, Bind $in, string $out, Bind $outBind, Bind $inOut, string $change, string $changed): void {
     Temporals::inZone('America/Sao_Paulo', function () use ($plsql, $in, $out, $outBind, $inOut, $change, $changed): void {
         $execution = $this->connect()->execute(
@@ -125,7 +128,7 @@ test('each temporal class binds in out and in out through its plsql type', funct
                    p(:i, :o, :io);
                  end;",
             ['i' => $in, 'o' => $outBind, 'io' => $inOut],
-            self::options(),
+            $this->options(),
         );
 
         $values = $execution->outValues();
@@ -135,6 +138,7 @@ test('each temporal class binds in out and in out through its plsql type', funct
         ))->toBe(['o' => [$out], 'io' => [$changed]]);
     });
 })->with('temporalClasses');
+
 test('wall clock types store the wall clock and zoned types the instant', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         $connection = $this->connect();
@@ -159,7 +163,7 @@ test('wall clock types store the wall clock and zoned types the instant', functi
                 'd_out' => Varchar::out(), 't_out' => Varchar::out(),
                 'tz_out' => Varchar::out(), 'ltz_out' => Varchar::out(),
             ],
-            self::options(),
+            $this->options(),
         );
 
         expect($execution->outValues())->toBe([
@@ -170,6 +174,7 @@ test('wall clock types store the wall clock and zoned types the instant', functi
         ]);
     });
 });
+
 /**
  * @return iterable<string, array{Closure(): Bind, non-empty-string}>
  */
@@ -182,14 +187,17 @@ dataset('incompatibleIntervals', function () {
     $fraction->f = 0.5;
     yield 'IntervalYm with a fraction' => [static fn(): IntervalYm => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
 });
+
 test('an incompatible date interval fails when the bind is built', function (Closure $bind, string $message): void {
+    /** @var non-empty-string $message */
     try {
         $bind();
-        self::fail('The interval was accepted.');
+        $this->fail('The interval was accepted.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toStartWith($message);
     }
 })->with('incompatibleIntervals');
+
 test('each class binds in out and in out through its plsql type', function (string $plsql, Bind $in, mixed $out, Bind $outBind, Bind $inOut, string $change, mixed $changed): void {
     $connection = $this->connect();
 
@@ -204,7 +212,7 @@ test('each class binds in out and in out through its plsql type', function (stri
                p(:i, :o, :io);
              end;",
         ['i' => $in, 'o' => $outBind, 'io' => $inOut],
-        self::options(),
+        $this->options(),
     );
 
     $values = $execution->outValues();
@@ -212,6 +220,7 @@ test('each class binds in out and in out through its plsql type', function (stri
     assertSameValue($out, $values['o'][0]);
     assertSameValue($changed, $values['io'][0]);
 })->with('classes');
+
 test('each class binds null', function (string $plsql, Bind $in, Bind $out, Bind $inOut): void {
     $connection = $this->connect();
 
@@ -225,15 +234,16 @@ test('each class binds null', function (string $plsql, Bind $in, Bind $out, Bind
                p(:i, :o, :io);
              end;",
         ['i' => $in, 'o' => $out, 'io' => $inOut],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['o' => [null], 'io' => [null]]);
 })->with('nulls');
+
 test('a rowid binds in out and in out', function (): void {
     $connection = $this->connect();
-    $rowid = self::value($connection, 'select rowidtochar(rowid) from fx_items where id = 1');
-    expect($rowid)->toBeString();
+    $rowid = $this->value($connection, 'select rowidtochar(rowid) from fx_items where id = 1');
+    assert(\is_string($rowid));
 
     $execution = $connection->execute(
         'declare
@@ -247,11 +257,12 @@ test('a rowid binds in out and in out', function (): void {
                p(:i, :o, :io);
              end;',
         ['i' => Rowid::in($rowid), 'o' => Rowid::out(), 'io' => Rowid::inOut($rowid), 'name' => Varchar::out()],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['o' => [$rowid], 'io' => [$rowid], 'name' => ['Item 0001']]);
 });
+
 /**
  * Same value and PHP type; NaN equals NaN.
  */
@@ -265,52 +276,56 @@ function assertSameValue(mixed $expected, mixed $actual): void
     }
     expect($actual)->toBe($expected);
 }
+
 test('insert returning into gives the one row', function (): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
         'insert into fx_bind_rows (id, name) values (:id, :name) returning id, name into :rid, :rname',
         ['id' => 7, 'name' => 'seven', 'rid' => Number::out(), 'rname' => Varchar::out()],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->rowCount())->toBe(1)
         ->and($execution->outValues())->toBe(['rid' => [7], 'rname' => ['seven']]);
 });
+
 test('update returning into gives every row', function (): void {
     $connection = $this->connect();
 
     $two = $connection->execute(
         'update fx_items set price = price where id in (1, 2) returning id, name into :id, :name',
         ['id' => Number::out(), 'name' => Varchar::out()],
-        self::options(),
+        $this->options(),
     )->outValues();
     $none = $connection->execute(
         'update fx_items set price = price where id < 0 returning id into :id',
         ['id' => Number::out()],
-        self::options(),
+        $this->options(),
     )->outValues();
 
     expect($two['id'])->toEqualCanonicalizing([1, 2])
         ->and($two['name'])->toEqualCanonicalizing(['Item 0001', 'Item 0002'])
         ->and($none)->toBe(['id' => []]);
 });
+
 test('returning reads the longest sql varchar2', function (): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
         "update fx_items set price = price where id = 1 returning rpad('x', 4000, 'x') into :name",
         ['name' => Varchar::out()],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['name' => [str_repeat('x', 4000)]]);
 });
+
 test('varchar2 binds over 4000 bytes work in sql on a standard database', function (): void {
     $connection = $this->connect();
     try {
-        $connection->execute("select cast('x' as varchar2(4001)) from dual", [], self::options());
-        self::fail('The database has max_string_size = EXTENDED; this case needs STANDARD.');
+        $connection->execute("select cast('x' as varchar2(4001)) from dual", [], $this->options());
+        $this->fail('The database has max_string_size = EXTENDED; this case needs STANDARD.');
     } catch (QueryException $queryException) {
         expect($queryException->getCode())->toBe(910);
     }
@@ -318,25 +333,26 @@ test('varchar2 binds over 4000 bytes work in sql on a standard database', functi
     foreach ([4000, 4001, 32767] as $bytes) {
         $text = str_repeat('y', $bytes);
         foreach (['inferred' => $text, 'typed' => Varchar::in($text)] as $kind => $bind) {
-            expect(self::value($connection, 'select length(:v) from dual', ['v' => $bind]))->toBe($bytes, "$kind $bytes")
-                ->and(self::value($connection, 'select :v from dual', ['v' => $bind]))->toBe($text, "$kind $bytes");
+            expect($this->value($connection, 'select length(:v) from dual', ['v' => $bind]))->toBe($bytes, "$kind $bytes")
+                ->and($this->value($connection, 'select :v from dual', ['v' => $bind]))->toBe($text, "$kind $bytes");
         }
     }
 
     $returned = $connection->execute(
         'update fx_items set price = price where id = 1 returning name || :v into :o',
         ['v' => str_repeat('y', 8000), 'o' => Varchar::out()],
-        self::options(),
+        $this->options(),
     )->outValues();
     expect($returned)->toBe(['o' => ['Item 0001' . str_repeat('y', 8000)]]);
 
     try {
-        $connection->execute('insert into fx_bind_rows (name) values (:v)', ['v' => Varchar::in(str_repeat('y', 4001))], self::options());
-        self::fail('A 4001-byte value went into a 4000-byte column.');
+        $connection->execute('insert into fx_bind_rows (name) values (:v)', ['v' => Varchar::in(str_repeat('y', 4001))], $this->options());
+        $this->fail('A 4001-byte value went into a 4000-byte column.');
     } catch (QueryException $queryException) {
         expect($queryException->getCode())->toBe(12899);
     }
 });
+
 test('a varchar out holds 32767 bytes', function (): void {
     $connection = $this->connect();
 
@@ -346,11 +362,12 @@ test('a varchar out holds 32767 bytes', function (): void {
                :multibyte := rpad(unistr('\\00e7'), 16383, unistr('\\00e7'));
              end;",
         ['ascii' => Varchar::out(), 'multibyte' => Varchar::out()],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['ascii' => [str_repeat('a', 32767)], 'multibyte' => [str_repeat('ç', 16383)]]);
 });
+
 test('a varchar in out grows to 32767 bytes', function (): void {
     $connection = $this->connect();
 
@@ -360,39 +377,42 @@ test('a varchar in out grows to 32767 bytes', function (): void {
                :from_a := rpad(:from_a, 32767, 'b');
              end;",
         ['from_null' => Varchar::inOut(null), 'from_a' => Varchar::inOut('a')],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['from_null' => [str_repeat('b', 32767)], 'from_a' => ['a' . str_repeat('b', 32766)]]);
 });
+
 test('a char matches a blank padded char', function (): void {
     $connection = $this->connect();
     $sql = "select count(*) from (select cast('AB' as char(5)) code from dual) where code = :code";
 
-    expect(self::value($connection, $sql, ['code' => Char::in('AB')]))->toBe(1)
-        ->and(self::value($connection, $sql, ['code' => 'AB']))->toBe(0)
-        ->and(self::value($connection, $sql, ['code' => Varchar::in('AB')]))->toBe(0)
-        ->and(self::value($connection, 'select dump(:code) from dual', ['code' => Char::in('AB')]))->toBe('Typ=96 Len=2: 65,66');
+    expect($this->value($connection, $sql, ['code' => Char::in('AB')]))->toBe(1)
+        ->and($this->value($connection, $sql, ['code' => 'AB']))->toBe(0)
+        ->and($this->value($connection, $sql, ['code' => Varchar::in('AB')]))->toBe(0)
+        ->and($this->value($connection, 'select dump(:code) from dual', ['code' => Char::in('AB')]))->toBe('Typ=96 Len=2: 65,66');
 });
+
 test('a char out keeps the padding it has', function (): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
         "declare c char(5) := 'AB'; n nchar(4) := n'\u{e7}'; begin :c := c; :n := n; end;",
         ['c' => Char::out(), 'n' => NChar::out()],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['c' => ['AB   '], 'n' => ['ç   ']]);
 });
+
 test('nvarchar and nchar round trip multibyte text', function (): void {
     $connection = $this->connect();
 
     foreach (['ç', '日本', '😀', 'ç日😀'] as $text) {
         foreach ([NVarchar::in($text), NChar::in($text)] as $bind) {
             $name = $bind::class;
-            expect(self::value($connection, 'select :v from dual', ['v' => $bind]))->toBe($text, $name);
-            $dump = self::value($connection, 'select dump(:v, 1016) from dual', ['v' => $bind]);
+            expect($this->value($connection, 'select :v from dual', ['v' => $bind]))->toBe($text, $name);
+            $dump = $this->value($connection, 'select dump(:v, 1016) from dual', ['v' => $bind]);
             expect($dump)->toBeString()
                 ->toContain('CharacterSet=AL16UTF16');
         }
@@ -400,35 +420,39 @@ test('nvarchar and nchar round trip multibyte text', function (): void {
         $execution = $connection->execute(
             'begin :o := :i; :io := :io || :i; end;',
             ['i' => NVarchar::in($text), 'o' => NVarchar::out(), 'io' => NVarchar::inOut($text)],
-            self::options(),
+            $this->options(),
         );
         expect($execution->outValues())->toBe(['o' => [$text], 'io' => [$text . $text]]);
     }
 });
+
 test('a number string is exact under any nls', function (): void {
     // Standalone: a pooled Session would keep the ALTER SESSION.
     $connection = $this->connect(standalone: true);
-    $connection->execute("alter session set nls_numeric_characters = ',.'", [], self::options());
+    $connection->execute("alter session set nls_numeric_characters = ',.'", [], $this->options());
 
-    expect(self::value($connection, 'select dump(:v) from dual', ['v' => Number::in('12.30')]))->toBe('Typ=2 Len=3: 193,13,31')
-        ->and(self::value($connection, 'select case when :v = 12.3 then 1 else 0 end from dual', ['v' => Number::in('12.30')]))->toBe(1)
-        ->and(self::value($connection, 'select :v from dual', ['v' => Number::in('-.50')]))->toBe('-0.5')
-        ->and(self::value($connection, 'select :v from dual', ['v' => Number::in('12345678901234567890.123456789')]))->toBe('12345678901234567890.123456789');
+    expect($this->value($connection, 'select dump(:v) from dual', ['v' => Number::in('12.30')]))->toBe('Typ=2 Len=3: 193,13,31')
+        ->and($this->value($connection, 'select case when :v = 12.3 then 1 else 0 end from dual', ['v' => Number::in('12.30')]))->toBe(1)
+        ->and($this->value($connection, 'select :v from dual', ['v' => Number::in('-.50')]))->toBe('-0.5')
+        ->and($this->value($connection, 'select :v from dual', ['v' => Number::in('12345678901234567890.123456789')]))->toBe('12345678901234567890.123456789');
 });
+
 test('out value keys keep the users case', function (): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
         'begin :TOTAL := 1; :name := 2; :Mixed := 3; end;',
         ['total' => Number::out(), 'NAME' => Number::out(), 'mIxEd' => Number::inOut(0)],
-        self::options(),
+        $this->options(),
     );
 
     expect($execution->outValues())->toBe(['total' => [1], 'NAME' => [2], 'mIxEd' => [3]]);
 });
+
 test('out values follow the column mapping under every value mapping', function (): void {
     Temporals::inZone('America/Sao_Paulo', outValuesFollowTheColumnMapping(...));
 });
+
 function outValuesFollowTheColumnMapping(): void
 {
     $connection = test()->connect();
@@ -472,8 +496,8 @@ function outValuesFollowTheColumnMapping(): void
                 if ($lobs === LobMode::Inline) {
                     expect($lob)->toBe('a', $lobs->value);
                 } else {
-                    expect($lob)->toBeInstanceOf(DriverLob::class, $lobs->value)
-                        ->and($lob->readChunk())->toBe('a');
+                    assert($lob instanceof DriverLob);
+                    expect($lob->readChunk())->toBe('a');
                 }
                 $temporal = [];
                 foreach (['d', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym'] as $name) {
@@ -516,6 +540,7 @@ function outValuesFollowTheColumnMapping(): void
         }
     }
 }
+
 /**
  * @return iterable<string, array{Bind, string}>
  */
@@ -525,16 +550,17 @@ dataset('typedMistakes', function () {
     // Text or bytes over 32767 are a LONG bind: UnsupportedException,
     // in ScopeTest.
 });
+
 test('a typed bind mistake fails before any round trip', function (Bind $bind, string $fix): void {
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
 
     try {
         $roundTrips = $counter->during($sid, function () use ($connection, $bind, $fix): void {
             try {
-                $connection->execute('begin :v := :v; end;', ['v' => $bind], self::options());
-                self::fail('The bind mistake ran.');
+                $connection->execute('begin :v := :v; end;', ['v' => $bind], $this->options());
+                $this->fail('The bind mistake ran.');
             } catch (UsageException $usageException) {
                 expect($usageException->getMessage())->toContain("Bind 'v'")
                     ->and($usageException->getMessage())->toContain($fix);

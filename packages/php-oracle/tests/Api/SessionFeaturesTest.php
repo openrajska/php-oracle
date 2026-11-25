@@ -15,11 +15,15 @@ use Rajska\Oracle\Tracing;
 beforeEach(function (): void {
     $this->connections = [];
 });
+
 afterEach(function (): void {
-    foreach ($this->connections as $connection) {
+    /** @var list<Connection> $connections */
+    $connections = $this->connections;
+    foreach ($connections as $connection) {
         $connection->close();
     }
 });
+
 test('trace replaces the tracing the session reports', function (): void {
     $connection = connect(tracing: new Tracing(module: 'billing', action: 'close month'));
     expect(tracing($connection))->toBe(['billing', 'close month', null]);
@@ -28,12 +32,14 @@ test('trace replaces the tracing the session reports', function (): void {
 
     expect(tracing($connection))->toBe(['reports', null, 'user-42']);
 });
+
 test('trace after close fails', function (): void {
     $connection = connect();
     $connection->close();
 
     expect(fn() => $connection->trace(new Tracing(module: 'late')))->toThrow(UsageException::class, 'The Connection is closed.');
 });
+
 test('the config call timeout throws timeout exception', function (): void {
     $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
 
@@ -44,6 +50,7 @@ test('the config call timeout throws timeout exception', function (): void {
     })
         ->and($connection->select('select 1 from dual')->value())->toBe(1);
 });
+
 test('the execute options timeout applies to one execution only', function (): void {
     $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
     $oneSecond = 'begin fx_pool.sleep(1); end;';
@@ -54,6 +61,7 @@ test('the execute options timeout applies to one execution only', function (): v
 
     expect(fn(): mixed => $connection->select($cpuBound)->value())->toThrow(TimeoutException::class);
 });
+
 test('a new acquire uses its own configs call timeout', function (): void {
     $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
     $oneSecond = 'begin fx_pool.sleep(1); end;';
@@ -66,6 +74,7 @@ test('a new acquire uses its own configs call timeout', function (): void {
     $second = connect(...$pool, callTimeout: 0.5);
     expect(fn(): mixed => $second->select($cpuBound)->value())->toThrow(TimeoutException::class);
 });
+
 function connect(mixed ...$fields): Connection
 {
     $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(...$fields));
@@ -74,6 +83,7 @@ function connect(mixed ...$fields): Connection
 
     return $connection;
 }
+
 /**
  * Module, action and client identifier, as the Session reports them.
  *

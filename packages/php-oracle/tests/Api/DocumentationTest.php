@@ -105,6 +105,7 @@ beforeAll(function (): void {
 
     runAll([...$drop, ...$schema]);
 });
+
 afterAll(function (): void {
     $drop = [
         'drop procedure if exists unfinished_procedure',
@@ -119,6 +120,7 @@ afterAll(function (): void {
 
     runAll($drop);
 });
+
 /**
  * @return iterable<string, array{string}>
  */
@@ -135,6 +137,7 @@ dataset('examples', function () {
         }
     }
 });
+
 test('the example runs', function (string $code): void {
     $connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
     $file = (string) tempnam(sys_get_temp_dir(), 'example');
@@ -152,6 +155,7 @@ test('the example runs', function (string $code): void {
 
     $this->addToAssertionCount(1);
 })->with('examples');
+
 function script(string $code): string
 {
     preg_match_all('/^\s*use\s+[\w\\\\]*?(\w+)(?:\s+as\s+(\w+))?;/m', $code, $uses, PREG_SET_ORDER);
@@ -165,6 +169,7 @@ function script(string $code): string
 
     return "<?php\n\ndeclare(strict_types=1);\n\n$imports\n$code";
 }
+
 /**
  * Every public class of Core by short name, except the root `Cursor`
  * (an example names the bind class `Cursor` far more often).
@@ -186,6 +191,7 @@ function publicClasses(): array
 
     return $classes;
 }
+
 /**
  * @param list<string> $statements
  */

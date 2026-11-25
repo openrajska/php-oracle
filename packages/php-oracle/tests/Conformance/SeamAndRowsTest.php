@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Conformance\SeamAndRowsTest;
 
 use Rajska\Oracle\Driver\DriverCursor;
+use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\KeyCase;
@@ -23,7 +24,7 @@ test('bind values never reach the sql text', function (): void {
 
     $connection = $this->connect();
     foreach ($statements as $sql) {
-        $connection->execute($sql, ['v' => $value], self::options());
+        $connection->execute($sql, ['v' => $value], $this->options());
     }
 
     $observer = IndependentSession::open();
@@ -42,6 +43,7 @@ test('bind values never reach the sql text', function (): void {
     }
     expect($leaks)->toBeEmpty();
 });
+
 test('every statement kind returns a complete execution', function (): void {
     $connection = $this->connect();
     $table = 'tmp_kinds_' . bin2hex(random_bytes(4));
@@ -54,7 +56,7 @@ test('every statement kind returns a complete execution', function (): void {
     ];
 
     foreach ($kinds as $kind => [$sql, $count, $query]) {
-        $execution = $connection->execute($sql, [], self::options());
+        $execution = $connection->execute($sql, [], $this->options());
         expect($execution->rowCount())->toBe($count, $kind)
             ->and($execution->cursor() instanceof DriverCursor)->toBe($query, $kind)
             ->and($execution->outValues())->toBe([], $kind)
@@ -62,30 +64,33 @@ test('every statement kind returns a complete execution', function (): void {
             ->and($execution->warning())->toBeNull($kind);
     }
 });
+
 test('native keys are as oracle reports them lower keys are lowercase and list rows follow column order', function (): void {
     $connection = $this->connect();
     $sql = 'select 1 as one, 2 as "Two", 3 as "three" from dual';
 
-    expect(self::rows($connection, $sql))->toBe([['ONE' => 1, 'Two' => 2, 'three' => 3]])
-        ->and(self::rows($connection, $sql, options: self::options(keyCase: KeyCase::Lower)))->toBe([['one' => 1, 'two' => 2, 'three' => 3]])
-        ->and(self::rows($connection, $sql, options: self::options(rowShape: RowShape::List)))->toBe([[1, 2, 3]]);
+    expect($this->rows($connection, $sql))->toBe([['ONE' => 1, 'Two' => 2, 'three' => 3]])
+        ->and($this->rows($connection, $sql, options: $this->options(keyCase: KeyCase::Lower)))->toBe([['one' => 1, 'two' => 2, 'three' => 3]])
+        ->and($this->rows($connection, $sql, options: $this->options(rowShape: RowShape::List)))->toBe([[1, 2, 3]]);
 });
+
 test('duplicate column names under assoc fail at cursor open with a hint', function (): void {
     $connection = $this->connect();
     $cases = [
-        'select 1 as a, 2 as a from dual' => self::options(),
-        'select 1 as a, 2 as "a" from dual' => self::options(keyCase: KeyCase::Lower),
+        'select 1 as a, 2 as a from dual' => $this->options(),
+        'select 1 as a, 2 as "a" from dual' => $this->options(keyCase: KeyCase::Lower),
     ];
 
     foreach ($cases as $sql => $options) {
-        expect(fn(): array => $connection->execute($sql, [], $options))->toThrow(function (UsageException $usageException) use ($sql): void {
+        expect(fn(): DriverExecution => $connection->execute($sql, [], $options))->toThrow(function (UsageException $usageException) use ($sql): void {
             expect($usageException->getMessage())->toContain('alias', 'RowShape::List')
                 ->and($usageException->sql())->toBe($sql);
         });
     }
 
-    expect(self::rows($connection, 'select 1 as a, 2 as a from dual', options: self::options(rowShape: RowShape::List)))->toBe([[1, 2]]);
+    expect($this->rows($connection, 'select 1 as a, 2 as a from dual', options: $this->options(rowShape: RowShape::List)))->toBe([[1, 2]]);
 });
+
 test('columns describe every field before the first row also for an empty result', function (): void {
     $connection = $this->connect();
     $schema = strtoupper(TestDatabase::fromEnvironment()->user);
@@ -104,35 +109,35 @@ test('columns describe every field before the first row also for an empty result
                  where 1 = 0
                 SQL,
         [],
-        self::options(),
+        $this->options(),
     )->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and($cursor->columns())->toBe([
-            column('ID', 'number', nullable: false, precision: 10, scale: 0),
-            column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
-            column('NAME', 'varchar', nullable: false, maxSize: 100),
-            column('CREATED_AT', 'date', nullable: false),
-            column('ROWID', 'rowid', nullable: false),
-            column('UNCONSTRAINED', 'number'),
-            column('FLOAT53', 'number', precision: 53),
-            column('CH', 'char', maxSize: 5),
-            column('NCH', 'nChar', maxSize: 5),
-            column('NV', 'nVarchar', maxSize: 10),
-            column('R', 'raw', maxSize: 16),
-            column('TS', 'timestamp', scale: 3),
-            column('TSTZ', 'timestampTz', scale: 6),
-            column('TSLTZ', 'timestampLtz', scale: 9),
-            column('IDS', 'intervalDs', precision: 3, scale: 2),
-            column('IYM', 'intervalYm', precision: 4),
-            column('BF', 'binaryFloat'),
-            column('BD', 'binaryDouble'),
-            column('B', 'boolean'),
-            column('UR', 'urowid'),
-            column('CL', 'clob'),
-            column('NCL', 'nClob'),
-            column('BL', 'blob'),
-        ])
-        ->and($cursor->fetchBatch())->toBe([]);
+    assert($cursor !== null);
+    expect($cursor->columns())->toBe([
+        column('ID', 'number', nullable: false, precision: 10, scale: 0),
+        column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
+        column('NAME', 'varchar', nullable: false, maxSize: 100),
+        column('CREATED_AT', 'date', nullable: false),
+        column('ROWID', 'rowid', nullable: false),
+        column('UNCONSTRAINED', 'number'),
+        column('FLOAT53', 'number', precision: 53),
+        column('CH', 'char', maxSize: 5),
+        column('NCH', 'nChar', maxSize: 5),
+        column('NV', 'nVarchar', maxSize: 10),
+        column('R', 'raw', maxSize: 16),
+        column('TS', 'timestamp', scale: 3),
+        column('TSTZ', 'timestampTz', scale: 6),
+        column('TSLTZ', 'timestampLtz', scale: 9),
+        column('IDS', 'intervalDs', precision: 3, scale: 2),
+        column('IYM', 'intervalYm', precision: 4),
+        column('BF', 'binaryFloat'),
+        column('BD', 'binaryDouble'),
+        column('B', 'boolean'),
+        column('UR', 'urowid'),
+        column('CL', 'clob'),
+        column('NCL', 'nClob'),
+        column('BL', 'blob'),
+    ])
+        ->and($cursor->fetchBatch())->toBeEmpty();
 
     $cursor = $connection->execute(
         <<<'SQL'
@@ -144,67 +149,70 @@ test('columns describe every field before the first row also for an empty result
                   from dual
                 SQL,
         [],
-        self::options(),
+        $this->options(),
     )->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and($cursor->columns())->toBe([
-            column('J', 'json'),
-            column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
-            column('FLEXIBLE', 'vector'),
-            column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
-            column('POINT', 'object', objectType: "$schema.FX_POINT"),
-            column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
-            column('NESTED', 'cursor'),
-            column('LOCATOR', 'bfile'),
-        ]);
+    assert($cursor !== null);
+    expect($cursor->columns())->toBe([
+        column('J', 'json'),
+        column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
+        column('FLEXIBLE', 'vector'),
+        column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
+        column('POINT', 'object', objectType: "$schema.FX_POINT"),
+        column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
+        column('NESTED', 'cursor'),
+        column('LOCATOR', 'bfile'),
+    ]);
     $cursor->close();
 });
+
 test('columns describe long columns and follow the key case', function (): void {
     $connection = $this->connect();
 
     // A table holds one LONG or LONG RAW column at most.
     $suffix = bin2hex(random_bytes(4));
-    $connection->execute("create table tmp_long_$suffix (text long)", [], self::options());
+    $connection->execute("create table tmp_long_$suffix (text long)", [], $this->options());
 
     try {
-        $connection->execute("create table tmp_long_raw_$suffix (bytes long raw)", [], self::options());
+        $connection->execute("create table tmp_long_raw_$suffix (bytes long raw)", [], $this->options());
         try {
             $cursor = $connection->execute(
                 "select t.text, b.bytes from tmp_long_$suffix t cross join tmp_long_raw_$suffix b",
                 [],
-                self::options(keyCase: KeyCase::Lower),
+                $this->options(keyCase: KeyCase::Lower),
             )->cursor();
-            expect($cursor)->not->toBeNull()
-                ->and($cursor->columns())->toBe([column('text', 'long'), column('bytes', 'longRaw')]);
+            assert($cursor !== null);
+            expect($cursor->columns())->toBe([column('text', 'long'), column('bytes', 'longRaw')]);
             $cursor->close();
         } finally {
-            $connection->execute("drop table tmp_long_raw_$suffix purge", [], self::options());
+            $connection->execute("drop table tmp_long_raw_$suffix purge", [], $this->options());
         }
     } finally {
-        $connection->execute("drop table tmp_long_$suffix purge", [], self::options());
+        $connection->execute("drop table tmp_long_$suffix purge", [], $this->options());
     }
 });
+
 test('a bfile column is described and only fetching it fails', function (): void {
-    $cursor = $this->connect()->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') f from dual", [], self::options())->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and($cursor->columns()[0]['type'])->toBe('bfile')
+    $cursor = $this->connect()->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') f from dual", [], $this->options())->cursor();
+    assert($cursor !== null);
+    expect($cursor->columns()[0]['type'])->toBe('bfile')
         ->and(fn() => $cursor->fetchBatch())->toThrow(UnsupportedException::class);
 });
+
 test('after close the connections cursors fail as use after close and the next owner is unaffected', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 1];
+    $fields = $this->ownPool() + ['maxConnections' => 1];
     $connection = $this->connect(...$fields);
-    $session = self::session($connection);
+    $session = $this->session($connection);
     $sql = 'select level as n from dual connect by level <= 3';
-    $cursor = $connection->execute($sql, [], self::options(fetchSize: 1))->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and($cursor->fetchBatch())->toBe([['N' => 1]]);
+    $cursor = $connection->execute($sql, [], $this->options(fetchSize: 1))->cursor();
+    assert($cursor !== null);
+    expect($cursor->fetchBatch())->toBe([['N' => 1]]);
 
     $connection->close();
 
     foreach (['fetchBatch()' => $cursor->fetchBatch(...), 'columns()' => $cursor->columns(...)] as $call => $read) {
         try {
             $read();
-            self::fail("$call after close() succeeded.");
+            $this->fail("$call after close() succeeded.");
         } catch (UsageException $e) {
             expect($e->getMessage())->toBe('The Connection is closed.', $call);
         }
@@ -212,9 +220,10 @@ test('after close the connections cursors fail as use after close and the next o
     $cursor->close();
 
     $next = $this->connect(...$fields);
-    expect(self::session($next))->toBe($session)
-        ->and(self::rows($next, $sql, [], self::options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
+    expect($this->session($next))->toBe($session)
+        ->and($this->rows($next, $sql, [], $this->options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
 });
+
 /**
  * @return array<string, mixed>
  */

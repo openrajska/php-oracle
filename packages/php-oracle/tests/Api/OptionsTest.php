@@ -20,10 +20,12 @@ dataset('invalidValues', function () {
     yield 'timeout NAN' => ['timeout', NAN];
     yield 'timeout INF' => ['timeout', INF];
 });
+
 test('execute options reject invalid values with usage exception', function (string $field, float | int $value): void {
     // @phpstan-ignore argument.type (the named field goes through as given)
     expect(fn(): ExecuteOptions => new ExecuteOptions(...[$field => $value]))->toThrow(UsageException::class, $field);
 })->with('invalidValues');
+
 /**
  * @return iterable<string, array{string, float|int}>
  */
@@ -40,10 +42,12 @@ dataset('invalidConfigValues', function () {
     yield 'maxConnections -1' => ['maxConnections', -1];
     yield 'statementCacheSize -1' => ['statementCacheSize', -1];
 });
+
 test('connection config rejects invalid values with configuration exception', function (string $field, float | int $value): void {
     // @phpstan-ignore argument.type (the named field goes through as given)
     expect(fn(): ConnectionConfig => new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]))->toThrow(ConfigurationException::class, $field);
 })->with('invalidConfigValues');
+
 test('connection config validates without the extension', function (): void {
     $autoload = \dirname(__DIR__, 2) . '/vendor/autoload.php';
     $code = <<<'PHP'
@@ -61,7 +65,7 @@ test('connection config validates without the extension', function (): void {
             echo json_encode(['loaded' => extension_loaded('oracledb'), 'messages' => $messages]);
             PHP;
     $process = proc_open([\PHP_BINARY, '-r', $code, '--', $autoload], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-    expect($process)->toBeResource();
+    assert(\is_resource($process));
     $output = (string) stream_get_contents($pipes[1]);
     $errors = (string) stream_get_contents($pipes[2]);
     fclose($pipes[1]);
@@ -71,14 +75,15 @@ test('connection config validates without the extension', function (): void {
     /** @var array{loaded: bool, messages: list<string>} $result */
     $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
     if ($result['loaded']) {
-        self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
+        $this->markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
     }
     expect($result['messages'])->toBe([
         'ConnectionConfig: maxConnections must be at least 1, got 0.',
         'ConnectionConfig: statementCacheSize must be 0 (no Statement cache) or more, got -1.',
         'ConnectionConfig: connectTimeout must be a positive number of seconds, got 0.',
     ]);
-});
+})->skip('Needs a PHP without the oracledb extension.');
+
 test('valid values are kept', function (): void {
     $config = new ConnectionConfig('localhost/FREEPDB1', 'u', 'p', connectTimeout: 0.5, maxConnections: 1, acquireTimeout: 2, statementCacheSize: 0, callTimeout: 1.5, fetchSize: 1);
     $options = new ExecuteOptions(fetchSize: 1, timeout: 0.25);

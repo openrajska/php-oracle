@@ -27,33 +27,36 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use RuntimeException;
 
 beforeEach(function (): void {
-    $this->observer = IndependentSession::open();
+    $this->independentSession = IndependentSession::open();
     $this->counter = RoundTripCounter::open();
-    clear($this->observer);
+    clear($this->independentSession);
 });
+
 afterEach(function (): void {
-    clear($this->observer);
+    clear($this->independentSession);
     $this->counter->close();
-    $this->observer->close();
+    $this->independentSession->close();
 });
+
 test('a thousand valid rows take one round trip', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $rows = valid(1000);
 
     $arrayDml = null;
-    $trips = $this->counter->during($sid, static function () use ($connection, $rows, $insert, &$arrayDml): void {
-        $arrayDml = $connection->executeMany($insert, $rows, self::options());
+    $trips = $this->counter->during($sid, function () use ($connection, $rows, $insert, &$arrayDml): void {
+        $arrayDml = $connection->executeMany($insert, $rows, $this->options());
     });
 
+    assert($arrayDml instanceof DriverArrayDml);
     expect($trips)->toBe(1)
-        ->and($arrayDml)->toBeInstanceOf(DriverArrayDml::class)
         ->and($arrayDml->rowCount())->toBe(1000)
-        ->and($arrayDml->outValues())->toBe([])
-        ->and(committed($this->observer))->toBe(1000);
+        ->and($arrayDml->outValues())->toBeEmpty()
+        ->and(committed($this->independentSession))->toBe(1000);
 });
+
 test('rows bind by name whatever the order and case of their keys', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -66,8 +69,9 @@ test('rows bind by name whatever the order and case of their keys', function ():
     ]);
 
     expect($arrayDml->rowCount())->toBe(3)
-        ->and($this->observer->select('select id, code, qty from fx_batch_rows order by id'))->toBe([['ID' => '1', 'CODE' => 'one', 'QTY' => '10'], ['ID' => '2', 'CODE' => 'two', 'QTY' => '20'], ['ID' => '3', 'CODE' => 'three', 'QTY' => '30']]);
+        ->and($this->independentSession->select('select id, code, qty from fx_batch_rows order by id'))->toBe([['ID' => '1', 'CODE' => 'one', 'QTY' => '10'], ['ID' => '2', 'CODE' => 'two', 'QTY' => '20'], ['ID' => '3', 'CODE' => 'three', 'QTY' => '30']]);
 });
+
 test('failing rows under autocommit give one array dml exception and apply nothing', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -79,26 +83,28 @@ test('failing rows under autocommit give one array dml exception and apply nothi
         ->and($e->getCode())->toBe(1)
         ->and($e->getMessage())->toStartWith('3 of 10 rows failed; first: row 3: ORA-00001: ')
         ->and($e->sql())->toBe($insert)
-        ->and(committed($this->observer))->toBe(0)
-        ->and(self::value($connection, 'select count(*) from fx_batch_rows'))->toBe(0);
+        ->and(committed($this->independentSession))->toBe(0)
+        ->and($this->value($connection, 'select count(*) from fx_batch_rows'))->toBe(0);
 });
+
 test('failing rows inside a transaction keep the earlier work uncommitted', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
-    $connection->execute('insert into fx_tx_rows (id) values (1)', [], self::options(autocommit: false));
+    $connection->execute('insert into fx_tx_rows (id) values (1)', [], $this->options(autocommit: false));
 
     $e = failing(static fn(): DriverArrayDml => many($connection, $insert, withBadRows(), autocommit: false));
 
     expect(failures($e))->toBe([[3, 1], [5, 1400], [7, 2290]])
-        ->and(self::value($connection, 'select count(*) from fx_batch_rows'))->toBe(0)
-        ->and(self::value($connection, 'select count(*) from fx_tx_rows'))->toBe(1)
-        ->and($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0');
+        ->and($this->value($connection, 'select count(*) from fx_batch_rows'))->toBe(0)
+        ->and($this->value($connection, 'select count(*) from fx_tx_rows'))->toBe(1)
+        ->and($this->independentSession->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0');
 
     $connection->commit();
-    expect($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('1')
-        ->and(committed($this->observer))->toBe(0);
+    expect($this->independentSession->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('1')
+        ->and(committed($this->independentSession))->toBe(0);
 });
+
 test('only duplicates still give an array dml exception', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -111,8 +117,9 @@ test('only duplicates still give an array dml exception', function (): void {
 
     expect($e::class)->toBe(ArrayDmlException::class)
         ->and(failures($e))->toBe([[1, 1], [3, 1]])
-        ->and(committed($this->observer))->toBe(0);
+        ->and(committed($this->independentSession))->toBe(0);
 });
+
 test('returning gives one list per row in order', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -142,6 +149,7 @@ test('returning gives one list per row in order', function (): void {
             return $ids;
         }, $ids))->toBe([[3, 4], [], [1, 2, 3, 4]]);
 });
+
 test('returning lobs objects and collections gives one list per row', function (): void {
     $connection = $this->connect();
 
@@ -170,6 +178,7 @@ test('returning lobs objects and collections gives one list per row', function (
         ]);
     $connection->rollback();
 });
+
 test('a plsql out bind gives one value per row in order', function (): void {
     $connection = $this->connect();
 
@@ -182,22 +191,24 @@ test('a plsql out bind gives one value per row in order', function (): void {
     expect($arrayDml->rowCount())->toBe(0)
         ->and($arrayDml->outValues())->toBe(['doubled' => [[2], [4], [6]], 'name' => [['a1'], ['b2'], ['c3']]]);
 });
+
 test('no rows make no round trip', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
 
     $arrayDml = null;
     $trips = $this->counter->during($sid, static function () use ($connection, $insert, &$arrayDml): void {
         $arrayDml = many($connection, $insert, []);
     });
 
+    assert($arrayDml instanceof DriverArrayDml);
     expect($trips)->toBe(0)
-        ->and($arrayDml)->toBeInstanceOf(DriverArrayDml::class)
         ->and($arrayDml->rowCount())->toBe(0)
         ->and($arrayDml->outValues())->toBeEmpty();
 });
+
 /**
  * @return iterable<string, array{string, list<array<string, mixed>>, string}>
  */
@@ -218,28 +229,32 @@ dataset('refusals', function () {
     yield 'a bind error' => [$insert, [$row(1), $row([2])], "Row 1: Bind 'id': an array does not bind by itself; use Json::in() or a typed bind."];
     yield 'a missing placeholder' => [$insert, [['id' => 1, 'code' => 'a']], "Placeholder :QTY has no bind; add it to the binds, keyed 'qty'."];
 });
-test('a refused array dml fails before any round trip', function (string $sql, array $rows, string $message): void {
-    $connection = $this->connect();
-    $sid = self::sid($connection);
 
-    $trips = $this->counter->during($sid, static function () use ($connection, $sql, $rows, $message): void {
+test('a refused array dml fails before any round trip', function (string $sql, array $rows, string $message): void {
+    /** @var list<array<string, mixed>> $rows */
+    $connection = $this->connect();
+    $sid = $this->sid($connection);
+
+    $trips = $this->counter->during($sid, function () use ($connection, $sql, $rows, $message): void {
         try {
             many($connection, $sql, $rows);
-            self::fail('The Array DML ran.');
+            $this->fail('The Array DML ran.');
         } catch (UsageException $usageException) {
-            self::assertSame($message, $usageException->getMessage());
+            expect($usageException->getMessage())->toBe($message);
         }
     });
 
     expect($trips)->toBe(0);
 })->with('refusals');
+
 test('a row that is not an array is refused', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
     // @phpstan-ignore argument.type (what a caller without static analysis may pass)
-    expect(fn() => $connection->executeMany($insert, [['id' => 1, 'code' => 'a', 'qty' => 1], 2], self::options()))->toThrow(UsageException::class, 'Row 1 is not an array; each row is an array of binds keyed by placeholder name.');
+    expect(fn() => $connection->executeMany($insert, [['id' => 1, 'code' => 'a', 'qty' => 1], 2], $this->options()))->toThrow(UsageException::class, 'Row 1 is not an array; each row is an array of binds keyed by placeholder name.');
 });
+
 test('implicit results are refused once the block ran', function (): void {
     $connection = $this->connect();
     $block = 'declare c sys_refcursor; begin insert into fx_tx_rows (id) values (:id); open c for select :id from dual; dbms_sql.return_result(c); end;';
@@ -248,17 +263,18 @@ test('implicit results are refused once the block ran', function (): void {
     foreach ([false, true] as $autocommit) {
         expect(function () use ($connection, $block, $autocommit): void {
             many($connection, $block, [['id' => 1], ['id' => 2]], $autocommit);
-            self::fail('The Implicit results came back.');
+            $this->fail('The Implicit results came back.');
         })->toThrow(UsageException::class, $refused . " The block's rows are undone.")
-            ->and(self::value($connection, 'select count(*) from fx_tx_rows'))->toBe(0);
+            ->and($this->value($connection, 'select count(*) from fx_tx_rows'))->toBe(0);
     }
-    expect($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0', 'nothing committed');
+    expect($this->independentSession->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0', 'nothing committed');
 });
+
 test('under autocommit a plsql block takes one more round trip for its commit', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $block = 'begin insert into fx_tx_rows (id) values (:id); end;';
     $ids = static fn(int $from): array => array_map(static fn(int $id): array => ['id' => $id], range($from, $from + 99));
     many($connection, $block, $ids(1));
@@ -268,9 +284,10 @@ test('under autocommit a plsql block takes one more round trip for its commit', 
 
     expect($dml)->toBe(1)
         ->and($plsql)->toBe(2)
-        ->and(committed($this->observer))->toBe(100)
-        ->and($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('200');
+        ->and(committed($this->independentSession))->toBe(100)
+        ->and($this->independentSession->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('200');
 });
+
 test('a long string makes its column clob', function (): void {
     $connection = $this->connect();
 
@@ -283,6 +300,7 @@ test('a long string makes its column clob', function (): void {
 
     expect($arrayDml->outValues())->toBe(['length' => [[5], [20000], [null], [null]]]);
 });
+
 test('nulls take their columns type and ints and floats bind as an exact number', function (): void {
     $connection = $this->connect();
 
@@ -297,9 +315,10 @@ test('nulls take their columns type and ints and floats bind as an exact number'
         ['n' => null, 'copy' => Number::out()],
     ]);
 
-    expect($this->observer->select('select id, qty, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'QTY' => null, 'NOTE' => null], ['ID' => '2', 'QTY' => '5', 'NOTE' => null], ['ID' => '3', 'QTY' => null, 'NOTE' => null]])
+    expect($this->independentSession->select('select id, qty, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'QTY' => null, 'NOTE' => null], ['ID' => '2', 'QTY' => '5', 'NOTE' => null], ['ID' => '3', 'QTY' => null, 'NOTE' => null]])
         ->and($exact->outValues())->toBe(['copy' => [[1], ['0.1'], [null]]]);
 });
+
 test('objects collections and associative arrays bind per row', function (): void {
     $connection = $this->connect();
     $block = 'begin fx_object.move_point(:point, 1, 2); :sum := fx_object.sum_numbers(:numbers) + fx_object.sum_map(:map); end;';
@@ -321,31 +340,33 @@ test('objects collections and associative arrays bind per row', function (): voi
     $changed['point'] = Struct::inOut('fx_polygon', null);
     try {
         many($connection, $block, [$row(1), $changed]);
-        self::fail('The Object type changed down the column.');
+        $this->fail('The Object type changed down the column.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toStartWith("Row 1, bind 'point': Struct::inOut('fx_polygon'), but row 0 made the column Struct::inOut('fx_point');");
     }
 });
+
 test('a block failing at a row leaves nothing applied', function (): void {
     $connection = $this->connect();
     $block = 'begin insert into fx_tx_rows (id) values (:id); end;';
     foreach ([true, false] as $autocommit) {
         if (!$autocommit) {
-            $connection->execute('insert into fx_batch_rows (id, code, qty) values (1, :code, 1)', ['code' => 'a'], self::options(autocommit: false));
+            $connection->execute('insert into fx_batch_rows (id, code, qty) values (1, :code, 1)', ['code' => 'a'], $this->options(autocommit: false));
         }
         try {
             many($connection, $block, [['id' => 1], ['id' => 2], ['id' => 1], ['id' => 3]], $autocommit);
-            self::fail('The duplicate was inserted.');
+            $this->fail('The duplicate was inserted.');
         } catch (UniqueViolationException $e) {
             expect($e->getMessage())->toStartWith('ORA-00001: ');
         }
-        expect(self::value($connection, 'select count(*) from fx_tx_rows'))->toBe(0);
+        expect($this->value($connection, 'select count(*) from fx_tx_rows'))->toBe(0);
     }
 
-    expect(self::value($connection, 'select count(*) from fx_batch_rows'))->toBe(1, 'the earlier work')
-        ->and(committed($this->observer))->toBe(0)
-        ->and($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0');
+    expect($this->value($connection, 'select count(*) from fx_batch_rows'))->toBe(1, 'the earlier work')
+        ->and(committed($this->independentSession))->toBe(0)
+        ->and($this->independentSession->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('0');
 });
+
 test('more failing rows than the server lists fail the call and apply nothing', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -357,42 +378,45 @@ test('more failing rows than the server lists fail the call and apply nothing', 
 
     try {
         many($connection, $insert, $rows);
-        self::fail('The rows were inserted.');
+        $this->fail('The rows were inserted.');
     } catch (QueryException $queryException) {
         expect($queryException)->not->toBeInstanceOf(ArrayDmlException::class)
             ->and($queryException->getMessage())->toBe('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.');
     }
 
-    expect(self::value($connection, 'select count(*) from fx_batch_rows'))->toBe(0)
-        ->and(committed($this->observer))->toBe(0);
+    expect($this->value($connection, 'select count(*) from fx_batch_rows'))->toBe(0)
+        ->and(committed($this->independentSession))->toBe(0);
 });
+
 test('inside a transaction an array dml takes one more round trip for its savepoint', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
 
     $trips = $this->counter->during($sid, static fn(): DriverArrayDml => many($connection, $insert, valid(100), autocommit: false));
 
     expect($trips)->toBe(2)
-        ->and(self::value($connection, 'select count(*) from fx_batch_rows'))->toBe(100)
-        ->and(committed($this->observer))->toBe(0);
+        ->and($this->value($connection, 'select count(*) from fx_batch_rows'))->toBe(100)
+        ->and(committed($this->independentSession))->toBe(0);
 });
+
 test('a placeholder written twice is refused before any round trip', function (): void {
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
 
-    $trips = $this->counter->during($sid, static function () use ($connection): void {
+    $trips = $this->counter->during($sid, function () use ($connection): void {
         try {
             many($connection, 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
-            self::fail('The Array DML ran.');
+            $this->fail('The Array DML ran.');
         } catch (UnsupportedException $unsupportedException) {
-            self::assertSame('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.', $unsupportedException->getMessage());
+            expect($unsupportedException->getMessage())->toBe('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.');
         }
     });
 
     expect($trips)->toBe(0);
 });
+
 /**
  * Ten valid rows but 3 (a duplicate id: ORA-00001), 5 (a NULL code:
  * ORA-01400) and 7 (a negative qty: ORA-02290).
@@ -408,6 +432,7 @@ function withBadRows(): array
 
     return $rows;
 }
+
 /**
  * @param Closure(): mixed $call
  */
@@ -420,6 +445,7 @@ function failing(Closure $call): ArrayDmlException
     }
     throw new RuntimeException('No ArrayDmlException.');
 }
+
 /**
  * @return list<array{int, int}>
  */
@@ -431,6 +457,7 @@ function failures(ArrayDmlException $e): array
         return [$row->index, $row->code];
     }, $e->rows());
 }
+
 /**
  * @return list<array{id: int, code: string, qty: int}>
  */
@@ -438,6 +465,7 @@ function valid(int $count): array
 {
     return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
 }
+
 /**
  * How many fx_batch_rows rows another Session sees: committed ones only.
  */
@@ -445,12 +473,14 @@ function committed(IndependentSession $observer): int
 {
     return (int) $observer->select('select count(*) as n from fx_batch_rows')[0]['N'];
 }
+
 function clear(IndependentSession $observer): void
 {
     $observer->execute('delete from fx_batch_rows');
     $observer->execute('delete from fx_tx_rows');
     $observer->commit();
 }
+
 /**
  * @param list<list<mixed>> $lists
  *
@@ -462,7 +492,7 @@ function contents(array $lists): array
         if ($lob === null) {
             return null;
         }
-        expect($lob)->toBeInstanceOf(DriverLob::class);
+        assert($lob instanceof DriverLob);
         $contents = '';
         while (($chunk = $lob->readChunk()) !== '') {
             $contents .= $chunk;
@@ -471,6 +501,7 @@ function contents(array $lists): array
         return $contents;
     }, $list), $lists);
 }
+
 /**
  * @param list<array<string, mixed>> $rows
  */

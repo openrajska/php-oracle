@@ -20,15 +20,17 @@ use RuntimeException;
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
 });
+
 afterEach(function (): void {
     $this->connection->close();
 });
+
 test('a lob column reads its contents', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
     $row = $this->connection->select('select id, text_value, binary_value from fx_lobs where id = 1')->first();
-    expect($row)->not->toBeNull()
-        ->and($row['ID'])->toBe(1);
+    assert($row !== null);
+    expect($row['ID'])->toBe(1);
 
 
     $text = lob($row['TEXT_VALUE']);
@@ -40,6 +42,7 @@ test('a lob column reads its contents', function (): void {
     expect($binary->type())->toBe(LobType::Blob)
         ->and($binary->contents())->toBe("\xde\xad\xbe\xef");
 });
+
 test('contents and stream go on from where the last read stopped', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
@@ -49,9 +52,10 @@ test('contents and stream go on from where the last read stopped', function (): 
         ->and($lob->contents())->toBeEmpty()
         ->and(stream_get_contents($lob->stream()))->toBe('');
 });
+
 test('stream reads the 16 mib clob and blob exactly', function (): void {
     $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
-    expect($row)->not->toBeNull();
+    assert($row !== null);
 
     $text = lob($row['TEXT_VALUE'])->stream();
     $hash = hash_init('md5');
@@ -68,6 +72,7 @@ test('stream reads the 16 mib clob and blob exactly', function (): void {
     $binary = lob($row['BINARY_VALUE'])->stream();
     expect(md5((string) stream_get_contents($binary)))->toBe(md5(largeBinary()));
 });
+
 test('a 100 mib lob streams with flat memory', function (): void {
     $lob = $this->connection->run(<<<'SQL'
         declare
@@ -92,8 +97,8 @@ test('a 100 mib lob streams with flat memory', function (): void {
           :l := l;
         end;
         SQL, ['l' => Blob::out()])->out('l')->lob();
-    expect($lob)->not->toBeNull()
-        ->and($lob->size())->toBe(100 * 1024 * 1024);
+    assert($lob !== null);
+    expect($lob->size())->toBe(100 * 1024 * 1024);
 
     $expected = hash_init('md5');
     $mebibyte = largeBinary(1);
@@ -119,6 +124,7 @@ test('a 100 mib lob streams with flat memory', function (): void {
         ->and(hash_final($hash))->toBe(hash_final($expected))
         ->and($peak - $start)->toBeLessThan(32 * 1024 * 1024, 'Resident set growth while streaming 100 MiB');
 })->group('slow');
+
 test('an empty lob is a lob of size 0 and null is null', function (): void {
     $rows = $this->connection->select('select text_value, binary_value from fx_lobs where id in (2, 3) order by id')->all();
 
@@ -130,9 +136,10 @@ test('an empty lob is a lob of size 0 and null is null', function (): void {
             ->and($rows[1][$column])->toBeNull();
     }
 });
+
 test('after close a lob and its stream fail', function (): void {
     $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
-    expect($row)->not->toBeNull();
+    assert($row !== null);
     $lob = lob($row['TEXT_VALUE']);
     $stream = lob($row['BINARY_VALUE'])->stream();
     $readBytes = \strlen((string) fread($stream, 8192));
@@ -148,12 +155,13 @@ test('after close a lob and its stream fail', function (): void {
     ] as $call => $read) {
         try {
             $read();
-            self::fail("$call after close() worked.");
+            $this->fail("$call after close() worked.");
         } catch (UsageException $e) {
             expect($e->getMessage())->toBe('The Connection is closed.', $call);
         }
     }
 });
+
 test('out value lob reads a lob out bind', function (): void {
     $execution = $this->connection->run(
         "begin :c := to_clob('text'); :n := to_nclob(unistr('\\65e5\\672c')); :b := to_blob(hextoraw('0102')); :none := null; end;",
@@ -162,18 +170,19 @@ test('out value lob reads a lob out bind', function (): void {
 
     expect($execution->out('c')->lob()?->contents())->toBe('text');
     $national = $execution->out('n')->lob();
-    expect($national)->not->toBeNull()
-        ->and([$national->type(), $national->contents()])->toBe([LobType::NClob, "\u{65e5}\u{672c}"])
+    assert($national !== null);
+    expect([$national->type(), $national->contents()])->toBe([LobType::NClob, "\u{65e5}\u{672c}"])
         ->and($execution->out('b')->lob()?->contents())->toBe("\x01\x02")
         ->and($execution->out('none')->lob())->toBeNull();
 
     try {
         $execution->out('c')->string();
-        self::fail('string() read a Lob.');
+        $this->fail('string() read a Lob.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toEndWith('not a string. Read it with lob().');
     }
 });
+
 test('lob binds write strings and streams', function (): void {
     $text = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
@@ -188,8 +197,8 @@ test('lob binds write strings and streams', function (): void {
         ['text' => Clob::in($file), 'binary' => Blob::in("\x00\xff")],
     );
     $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 100')->first();
-    expect($row)->not->toBeNull()
-        ->and(lob($row['TEXT_VALUE'])->contents())->toBe(str_repeat($text . "\n", 100_000))
+    assert($row !== null);
+    expect(lob($row['TEXT_VALUE'])->contents())->toBe(str_repeat($text . "\n", 100_000))
         ->and(lob($row['BINARY_VALUE'])->contents())->toBe("\x00\xff");
 
     $this->connection->rollback();
@@ -197,12 +206,14 @@ test('lob binds write strings and streams', function (): void {
     expect($this->connection->function('fx_lob.text_length', ['p_text' => NClob::in($text . ' 😀')])->number())->toBe(10)
         ->and($this->connection->run("begin :c := :c || '!'; end;", ['c' => Clob::inOut($text)])->out('c')->lob()?->contents())->toBe($text . '!');
 });
+
 test('a string over 32767 bytes binds as a clob', function (): void {
     $long = str_repeat('ç', 20_000);
 
     expect($this->connection->function('fx_lob.text_length', ['p_text' => $long])->number())->toBe(20_000)
         ->and($this->connection->run('begin :out := :v; end;', ['v' => $long, 'out' => Clob::out()])->out('out')->lob()?->contents())->toBe($long);
 });
+
 test('inline lobs are strings', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
@@ -218,30 +229,31 @@ test('inline lobs are strings', function (): void {
     expect($execution->out('c')->string())->toBe('text');
     try {
         $execution->out('c')->lob();
-        self::fail('lob() read a string.');
+        $this->fail('lob() read a string.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toEndWith('Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().');
     }
 });
+
 test('the lob terminals of a function call', function (): void {
     $text = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
     $clob = $this->connection->function('fx_call.f_clob')->clob();
-    expect($clob)->toBeInstanceOf(Lob::class)
-        ->and($clob->contents())->toBe($text);
+    assert($clob instanceof Lob);
+    expect($clob->contents())->toBe($text);
 
     $nclob = $this->connection->function('fx_call.f_nclob')->nclob();
-    expect($nclob)->toBeInstanceOf(Lob::class)
-        ->and([$nclob->type(), $nclob->contents()])->toBe([LobType::NClob, $text]);
+    assert($nclob instanceof Lob);
+    expect([$nclob->type(), $nclob->contents()])->toBe([LobType::NClob, $text]);
 
     $blob = $this->connection->function('fx_call.f_blob')->blob();
-    expect($blob)->toBeInstanceOf(Lob::class)
-        ->and($blob->contents())->toBe("\xde\xad\xbe\xef")
+    assert($blob instanceof Lob);
+    expect($blob->contents())->toBe("\xde\xad\xbe\xef")
         ->and($this->connection->function('fx_call.f_clob', ['p_null' => true])->clob())->toBeNull();
 
     $empty = $this->connection->function('fx_call.f_blob', ['p_empty' => true])->blob();
-    expect($empty)->toBeInstanceOf(Lob::class)
-        ->and($empty->size())->toBe(0);
+    assert($empty instanceof Lob);
+    expect($empty->size())->toBe(0);
 
     $inline = new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline));
     expect($this->connection->function('fx_call.f_clob', [], $inline)->clob())->toBe($text)
@@ -250,12 +262,14 @@ test('the lob terminals of a function call', function (): void {
         ->and($this->connection->function('fx_call.f_nclob', ['p_empty' => true], $inline)->nclob())->toBe('')
         ->and($this->connection->function('fx_call.f_blob', ['p_null' => true], $inline)->blob())->toBeNull();
 });
+
 function lob(mixed $value): Lob
 {
-    expect($value)->toBeInstanceOf(Lob::class);
+    assert($value instanceof Lob);
 
     return $value;
 }
+
 /**
  * This process's resident set size, in bytes (Linux).
  */
@@ -268,6 +282,7 @@ function residentSetSize(): int
 
     return (int) $match[1] * 1024;
 }
+
 /**
  * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
  */
@@ -281,6 +296,7 @@ function largeText(): string
 
     return $text;
 }
+
 /**
  * Bytes where the one at offset k is k mod 256 (fx_lobs row 4's BLOB is
  * 16 MiB of them).

@@ -55,19 +55,21 @@ test('number maps to int or the canonical exact string', function (): void {
             SQL;
 
     $connection = $this->connect();
-    expect(self::rows($connection, $sql))->toBe([$expected]);
+    expect($this->rows($connection, $sql))->toBe([$expected]);
 
-    $connection->execute("alter session set nls_numeric_characters = ',.'", [], self::options());
-    expect(self::rows($connection, $sql))->toBe([$expected]);
+    $connection->execute("alter session set nls_numeric_characters = ',.'", [], $this->options());
+    expect($this->rows($connection, $sql))->toBe([$expected]);
 });
+
 test('numbers float maps a non integral number to a float', function (): void {
-    $float = self::options(values: new ValueMapping(numbers: NumberMode::Float));
+    $float = $this->options(values: new ValueMapping(numbers: NumberMode::Float));
 
-    expect(self::rows($this->connect(), 'select 12.5 half, 5 five, 0.1 tenth, cast(null as number) nothing from dual', options: $float))->toBe([['HALF' => 12.5, 'FIVE' => 5, 'TENTH' => 0.1, 'NOTHING' => null]]);
+    expect($this->rows($this->connect(), 'select 12.5 half, 5 five, 0.1 tenth, cast(null as number) nothing from dual', options: $float))->toBe([['HALF' => 12.5, 'FIVE' => 5, 'TENTH' => 0.1, 'NOTHING' => null]]);
 });
+
 test('date and timestamp give the wall clock in phps zone', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
-        $row = self::rows($this->connect(), <<<'SQL'
+        $row = $this->rows($this->connect(), <<<'SQL'
                 select date '2026-03-01' + 1/24 + 2/1440 + 3/86400 d,
                        cast(timestamp '2026-03-01 10:00:00' as timestamp(0)) t0,
                        cast(timestamp '2026-03-01 10:00:00.123456' as timestamp(6)) t6,
@@ -92,23 +94,25 @@ test('date and timestamp give the wall clock in phps zone', function (): void {
         ]);
     });
 });
+
 test('the wall clock round trips bc years included', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         $connection = $this->connect();
         foreach (['-4712-01-01 12:00:00', '-0001-12-31 23:59:59', '0001-01-01 00:00:00', '9999-12-31 23:59:59'] as $text) {
             $stored = "to_date('$text', 'SYYYY-MM-DD HH24:MI:SS')";
-            $fetched = self::value($connection, "select $stored from dual");
-            expect($fetched)->toBeInstanceOf(DateTimeImmutable::class);
+            $fetched = $this->value($connection, "select $stored from dual");
+            assert($fetched instanceof DateTimeImmutable);
 
             foreach ([Date::in($fetched), Timestamp::in($fetched)] as $bind) {
-                expect(self::value($connection, "select case when :v = $stored then 1 else 0 end from dual", ['v' => $bind]))->toBe(1, $text)
-                    ->and(Temporals::shown(self::value($connection, 'select :v from dual', ['v' => $bind])))->toBe(Temporals::shown($fetched), $text);
+                expect($this->value($connection, "select case when :v = $stored then 1 else 0 end from dual", ['v' => $bind]))->toBe(1, $text)
+                    ->and(Temporals::shown($this->value($connection, 'select :v from dual', ['v' => $bind])))->toBe(Temporals::shown($fetched), $text);
             }
         }
     });
 });
+
 test('tstz keeps its own offset', function (): void {
-    $row = self::rows($this->connect(), <<<'SQL'
+    $row = $this->rows($this->connect(), <<<'SQL'
             select timestamp '2026-03-01 10:00:00.5 -03:00' minus3,
                    timestamp '2026-03-01 10:00:00.123456789 +05:45' plus545,
                    timestamp '2026-03-01 10:00:00 +00:00' zero,
@@ -125,6 +129,7 @@ test('tstz keeps its own offset', function (): void {
         'NOTHING' => null,
     ]);
 });
+
 test('timestamp tz in stores the objects offset', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         $connection = $this->connect();
@@ -136,32 +141,34 @@ test('timestamp tz in stores the objects offset', function (): void {
             '+2026-03-01 10:00:00.000000 +00:00' => new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('UTC')),
         ];
         foreach ($cases as $expected => $date) {
-            $stored = self::value($connection, "select to_char(:v, $format) from dual", ['v' => TimestampTz::in($date)]);
+            $stored = $this->value($connection, "select to_char(:v, $format) from dual", ['v' => TimestampTz::in($date)]);
             expect($stored)->toBe(ltrim(substr($expected, 1)), $expected)
-                ->and(Temporals::shown(self::value($connection, 'select :v from dual', ['v' => TimestampTz::in($date)])))->toBe($expected);
+                ->and(Temporals::shown($this->value($connection, 'select :v from dual', ['v' => TimestampTz::in($date)])))->toBe($expected);
         }
     });
 });
+
 test('a tstz offset with seconds fails before any round trip', function (): void {
     $connection = $this->connect();
     $lmt = new DateTimeImmutable('1890-01-01 00:00:00', new DateTimeZone('America/Sao_Paulo'));
     expect($lmt->getOffset() % 60)->not->toBe(0);
 
     try {
-        $connection->execute('select :v from dual', ['v' => TimestampTz::in($lmt)], self::options());
-        self::fail('An offset with seconds was bound.');
+        $connection->execute('select :v from dual', ['v' => TimestampTz::in($lmt)], $this->options());
+        $this->fail('An offset with seconds was bound.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toContain("Bind 'v'")
             ->and($usageException->getMessage())->toContain('whole minutes');
     }
 
     // As the Instant (TSLTZ) or the Wall clock, the same date binds.
-    expect(self::value($connection, "select to_char(sys_extract_utc(cast(:v as timestamp with time zone)), 'YYYY-MM-DD HH24:MI:SS') from dual", ['v' => TimestampLtz::in($lmt)]))->toBe('1890-01-01 03:06:28');
+    expect($this->value($connection, "select to_char(sys_extract_utc(cast(:v as timestamp with time zone)), 'YYYY-MM-DD HH24:MI:SS') from dual", ['v' => TimestampLtz::in($lmt)]))->toBe('1890-01-01 03:06:28');
 });
+
 test('tsltz gives the instant in phps zone', function (): void {
     foreach (['America/Sao_Paulo' => '+2026-03-01 10:00:00.250000 America/Sao_Paulo', 'Asia/Tokyo' => '+2026-03-01 22:00:00.250000 Asia/Tokyo'] as $zone => $expected) {
         Temporals::inZone($zone, function () use ($expected): void {
-            $row = self::rows($this->connect(), <<<'SQL'
+            $row = $this->rows($this->connect(), <<<'SQL'
                     select cast(timestamp '2026-03-01 13:00:00.25 +00:00' as timestamp with local time zone) instant,
                            cast(null as timestamp with local time zone) nothing
                       from dual
@@ -171,25 +178,27 @@ test('tsltz gives the instant in phps zone', function (): void {
         });
     }
 });
+
 test('the session time zone is phps zone by name', function (): void {
     Temporals::inZone('America/New_York', function (): void {
         $connection = $this->connect();
-        expect(self::value($connection, 'select sessiontimezone from dual'))->toBe('America/New_York')
-            ->and(self::rows($connection, <<<'SQL'
+        expect($this->value($connection, 'select sessiontimezone from dual'))->toBe('America/New_York')
+            ->and($this->rows($connection, <<<'SQL'
                     select to_char(from_tz(timestamp '2026-01-15 12:00:00', sessiontimezone), 'TZH:TZM') winter,
                            to_char(from_tz(timestamp '2026-07-15 12:00:00', sessiontimezone), 'TZH:TZM') summer
                       from dual
                     SQL)[0])->toBe(['WINTER' => '-05:00', 'SUMMER' => '-04:00']);
         // CURRENT_TIMESTAMP carries the zone's region name, so its offset
         // is read on the server.
-        expect(self::value($connection, "select to_char(current_timestamp, 'TZH:TZM') from dual"))->toBe(new DateTimeImmutable('now')->format('P'));
+        expect($this->value($connection, "select to_char(current_timestamp, 'TZH:TZM') from dual"))->toBe(new DateTimeImmutable('now')->format('P'));
     });
     Temporals::inZone('UTC', function (): void {
-        expect(self::value($this->connect(), 'select sessiontimezone from dual'))->toBe('UTC');
+        expect($this->value($this->connect(), 'select sessiontimezone from dual'))->toBe('UTC');
     });
 });
+
 test('intervals give date intervals', function (): void {
-    $row = self::rows($this->connect(), <<<'SQL'
+    $row = $this->rows($this->connect(), <<<'SQL'
             select interval '3 04:05:06.789' day to second ds,
                    interval '-3 04:05:06.123456789' day(2) to second(9) negative_ds,
                    interval '2-5' year to month ym,
@@ -208,6 +217,7 @@ test('intervals give date intervals', function (): void {
         'NO_YM' => null,
     ]);
 });
+
 test('temporals string gives nls independent iso text', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         // Standalone: a pooled Session would keep the ALTER SESSION.
@@ -223,7 +233,7 @@ test('temporals string gives nls independent iso text', function (): void {
                        cast(null as date) nothing
                   from dual
                 SQL;
-        $string = self::options(values: new ValueMapping(temporals: TemporalMode::String));
+        $string = $this->options(values: new ValueMapping(temporals: TemporalMode::String));
         $expected = [
             'D' => '2026-03-01 01:00:00',
             'T0' => '2026-03-01 10:00:00.000000000',
@@ -235,19 +245,20 @@ test('temporals string gives nls independent iso text', function (): void {
             'NOTHING' => null,
         ];
 
-        expect(array_map(Temporals::shown(...), self::rows($connection, $sql, options: $string)[0]))->toBe($expected);
+        expect(array_map(Temporals::shown(...), $this->rows($connection, $sql, options: $string)[0]))->toBe($expected);
 
         $connection->execute(
             "alter session set nls_date_format = 'DD/MON/RR HH:MI' nls_timestamp_format = 'DD.MM.YYYY FF3' nls_timestamp_tz_format = 'TZR DD.MM.YYYY' nls_numeric_characters = ',.' nls_date_language = 'GERMAN'",
             [],
-            self::options(),
+            $this->options(),
         );
-        expect(array_map(Temporals::shown(...), self::rows($connection, $sql, options: $string)[0]))->toBe($expected)
-            ->and(Temporals::shown(self::rows($connection, $sql)[0]['T9']))->toBe('+2026-03-01 10:00:00.123456 America/Sao_Paulo');
+        expect(array_map(Temporals::shown(...), $this->rows($connection, $sql, options: $string)[0]))->toBe($expected)
+            ->and(Temporals::shown($this->rows($connection, $sql)[0]['T9']))->toBe('+2026-03-01 10:00:00.123456 America/Sao_Paulo');
     });
 });
+
 test('binary float and double give floats nan and infinities included', function (): void {
-    $row = self::rows($this->connect(), <<<'SQL'
+    $row = $this->rows($this->connect(), <<<'SQL'
             select to_binary_float(0.1) bf, to_binary_double(0.1) bd,
                    to_binary_float(-12.5) negative_bf, to_binary_double('1e300') huge_bd,
                    binary_float_nan bf_nan, binary_double_nan bd_nan,
@@ -271,23 +282,25 @@ test('binary float and double give floats nan and infinities included', function
         ->and($row['BD_NAN'])->toBeFloat()
         ->toBeNan();
 });
+
 test('nan and infinities round trip', function (): void {
     $connection = $this->connect();
     foreach (['Nan' => NAN, 'Inf' => INF, '-Inf' => -INF] as $stored => $value) {
         foreach ([BinaryFloat::in($value), BinaryDouble::in($value)] as $bind) {
-            $row = self::rows($connection, 'select :v value, to_char(:v) text from dual', ['v' => $bind])[0];
+            $row = $this->rows($connection, 'select :v value, to_char(:v) text from dual', ['v' => $bind])[0];
 
-            expect($row['TEXT'])->toBe($stored, $bind->type->value)
-                ->and($row['VALUE'])->toBeFloat()
-                ->and(is_nan($row['VALUE']) ? 'NAN' : (string) $row['VALUE'])->toBe(is_nan($value) ? 'NAN' : (string) $value, $bind->type->value);
+            expect($row['TEXT'])->toBe($stored, $bind->type->value);
+            assert(\is_float($row['VALUE']));
+            expect(is_nan($row['VALUE']) ? 'NAN' : (string) $row['VALUE'])->toBe(is_nan($value) ? 'NAN' : (string) $value, $bind->type->value);
         }
     }
-    expect(self::value($connection, 'select :v from dual', ['v' => BinaryFloat::in(0.1)]))->toBe(0.1)
-        ->and(self::value($connection, 'select :v from dual', ['v' => BinaryDouble::in(0.1)]))->toBe(0.1);
+    expect($this->value($connection, 'select :v from dual', ['v' => BinaryFloat::in(0.1)]))->toBe(0.1)
+        ->and($this->value($connection, 'select :v from dual', ['v' => BinaryDouble::in(0.1)]))->toBe(0.1);
 });
+
 test('char raw rowid boolean and long map as stated', function (): void {
     $connection = $this->connect();
-    $row = self::rows($connection, <<<'SQL'
+    $row = $this->rows($connection, <<<'SQL'
             select cast('ab' as char(5)) ch, cast(unistr('\00e7b') as nchar(4)) nch,
                    hextoraw('00FF10') bytes, true yes, false no,
                    i.rowid rid, cast(i.rowid as varchar2(18)) rid_text,
@@ -297,8 +310,8 @@ test('char raw rowid boolean and long map as stated', function (): void {
               from fx_items i
              where i.id = 1
             SQL)[0];
-    expect($row['RID'])->toBeString()
-        ->and(strlen($row['RID']))->toBe(18)
+    assert(\is_string($row['RID']));
+    expect($row['RID'])->toHaveLength(18)
         ->and($row)->toBe([
             'CH' => 'ab   ',
             'NCH' => 'çb  ',
@@ -314,17 +327,18 @@ test('char raw rowid boolean and long map as stated', function (): void {
             'NO_RID' => null,
             'NO_URID' => null,
         ])
-        ->and(self::value($connection, 'select id from fx_items where rowid = :r', ['r' => Rowid::in($row['RID'])]))->toBe(1);
+        ->and($this->value($connection, 'select id from fx_items where rowid = :r', ['r' => Rowid::in($row['RID'])]))->toBe(1);
 
     // An index-organized table's ROWID is a UROWID: its text, which
     // finds the row again.
-    $urowid = self::rows($connection, 'select rowid urid, cast(rowid as varchar2(4000)) urid_text from fx_iot')[0];
-    expect($urowid['URID'])->toBeString()
-        ->toBe($urowid['URID_TEXT'])
-        ->and(self::value($connection, 'select label from fx_iot where rowid = :r', ['r' => Rowid::in($urowid['URID'])]))->toBe('one')
-        ->and(self::rows($connection, 'select id, text from fx_long_rows order by id'))->toBe([['ID' => 1, 'TEXT' => 'long text'], ['ID' => 2, 'TEXT' => null]])
-        ->and(self::rows($connection, 'select id, bytes from fx_long_raw_rows order by id'))->toBe([['ID' => 1, 'BYTES' => "\x00\xff\x10"], ['ID' => 2, 'BYTES' => null]]);
+    $urowid = $this->rows($connection, 'select rowid urid, cast(rowid as varchar2(4000)) urid_text from fx_iot')[0];
+    assert(\is_string($urowid['URID']));
+    expect($urowid['URID'])->toBe($urowid['URID_TEXT'])
+        ->and($this->value($connection, 'select label from fx_iot where rowid = :r', ['r' => Rowid::in($urowid['URID'])]))->toBe('one')
+        ->and($this->rows($connection, 'select id, text from fx_long_rows order by id'))->toBe([['ID' => 1, 'TEXT' => 'long text'], ['ID' => 2, 'TEXT' => null]])
+        ->and($this->rows($connection, 'select id, bytes from fx_long_raw_rows order by id'))->toBe([['ID' => 1, 'BYTES' => "\x00\xff\x10"], ['ID' => 2, 'BYTES' => null]]);
 });
+
 test('values are identical under unusual nls settings', function (): void {
     Temporals::inZone('America/Sao_Paulo', function (): void {
         // Standalone: a pooled Session would keep the ALTER SESSION.
@@ -341,10 +355,10 @@ test('values are identical under unusual nls settings', function (): void {
                   from dual
                 SQL;
         $binds = ['n' => Number::in('12.30')];
-        $float = self::options(values: new ValueMapping(numbers: NumberMode::Float));
-        $read = static fn(DriverOptions | null $options = null): array => array_map(
+        $float = $this->options(values: new ValueMapping(numbers: NumberMode::Float));
+        $read = fn(DriverOptions | null $options = null): array => array_map(
             Temporals::shown(...),
-            self::rows($connection, $sql, $binds, $options)[0],
+            $this->rows($connection, $sql, $binds, $options)[0],
         );
         $before = [$read(), $read($float)];
         expect($before[0])->toBe([
@@ -367,7 +381,7 @@ test('values are identical under unusual nls settings', function (): void {
                         nls_date_language = 'GERMAN' nls_territory = 'GERMANY' nls_language = 'GERMAN'
                     SQL,
             [],
-            self::options(),
+            $this->options(),
         );
 
         // Only the server's own TO_CHAR follows the NLS settings.

@@ -9,6 +9,7 @@ use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\Indexed;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Cursor;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -28,9 +29,11 @@ use Rajska\Oracle\ValueMapping;
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
 });
+
 afterEach(function (): void {
     $this->connection->close();
 });
+
 test('a procedure reads its out and in out parameters by name', function (): void {
     $execution = $this->connection->procedure('fx_call.echo', [
         'p_num' => 21,
@@ -43,6 +46,7 @@ test('a procedure reads its out and in out parameters by name', function (): voi
         ->and($execution->out('o_label')->string())->toBe('default')
         ->and($execution->out('IO_TEXT')->string())->toBe('hi!');
 });
+
 test('a repeated call binds its own values and a colliding name is still refused', function (): void {
     foreach ([21 => 42, 5 => 10] as $number => $doubled) {
         $execution = $this->connection->procedure('fx_call.echo', [
@@ -60,23 +64,25 @@ test('a repeated call binds its own values and a colliding name is still refused
             'o_label' => Varchar::out(),
             'io_text' => Varchar::inOut('hi'),
         ]);
-        self::fail('A name with a NUL byte ran.');
+        $this->fail('A name with a NUL byte ran.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toStartWith("Call name 'fx_call.echo\0p_num' is not valid");
     }
 });
+
 test('a procedure gives a complete execution', function (): void {
     $execution = $this->connection->procedure('fx_call.grow', ['io_text' => Varchar::inOut('a'), 'p_length' => 3]);
 
     expect($execution->affected())->toBe(0)
         ->and($execution->warning())->toBeNull()
-        ->and(fn(): array => $execution->rows())->toThrow(function (UsageException $usageException): void {
+        ->and(fn(): Cursor => $execution->rows())->toThrow(function (UsageException $usageException): void {
             expect($usageException->getMessage())->toStartWith('The statement is not a query')
                 ->and($usageException->sql())->toBe('BEGIN fx_call.grow(io_text => :b1, p_length => :b2); END;')
                 ->and($usageException->call())->toBe('fx_call.grow');
         })
         ->and($execution->out('io_text')->string())->toBe('aaa');
 });
+
 test('the json and vector terminals return the mapped value', function (): void {
     expect($this->connection->function('fx_json_vector.f_json')->json())->toBe(['a' => [1, '2.5']])
         ->and($this->connection->function('fx_json_vector.f_json', [], new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float)))->json())->toBe(['a' => [1, 2.5]])
@@ -85,9 +91,10 @@ test('the json and vector terminals return the mapped value', function (): void 
         ->and($this->connection->function('fx_json_vector.f_vector', ['p_null' => true])->vector())->toBeNull();
 
     $sparse = $this->connection->function('fx_json_vector.f_sparse')->vector();
-    expect($sparse)->toBeInstanceOf(SparseVector::class)
-        ->and([$sparse->dimensions, $sparse->values])->toBe([10, [3 => -1]]);
+    assert($sparse instanceof SparseVector);
+    expect([$sparse->dimensions, $sparse->values])->toBe([10, [3 => -1]]);
 });
+
 /**
  * @return iterable<string, array{string, string, mixed}>
  */
@@ -102,10 +109,12 @@ dataset('scalarTerminals', function () {
     yield 'boolean' => ['boolean', 'fx_call.f_boolean', true];
     yield 'raw' => ['raw', 'fx_call.f_raw', "\x00\xff\x10"];
 });
+
 test('a scalar terminal returns the mapped value and null for null', function (string $terminal, string $function, mixed $expected): void {
     expect($this->connection->function($function)->{$terminal}())->toBe($expected)
         ->and($this->connection->function($function, ['p_null' => true])->{$terminal}())->toBeNull();
 })->with('scalarTerminals');
+
 test('the object and collection terminals return arrays', function (): void {
     expect($this->connection->function('fx_object.make_point', ['p_x' => Number::in('1.5'), 'p_y' => -2, 'p_label' => 'p'])->struct('fx_point'))->toBe(['X' => '1.5', 'Y' => -2, 'LABEL' => 'p'])
         ->and($this->connection->function('fx_object.make_polygon', ['p_name' => 'tri', 'p_sides' => 1], new ExecuteOptions(keyCase: KeyCase::Lower))->struct('FX_POLYGON'))->toBe(['name' => 'tri', 'vertices' => [['x' => 1, 'y' => 0, 'label' => 'v1']]])
@@ -118,6 +127,7 @@ test('the object and collection terminals return arrays', function (): void {
     // A PL/SQL Associative array is never NULL: a NULL comes in empty.
     expect($this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', null)])->indexed('fx_object.t_number_map'))->toBe([]);
 });
+
 test('an object terminal of the wrong kind fails naming the fix', function (): void {
     expect(fn() => $this->connection->function('fx_object.split_csv', ['p_csv' => 'a'])->struct('fx_string_varray'))->toThrow(function (UsageException $usageException): void {
         expect($usageException->getMessage())->toStartWith('The return value of fx_object.split_csv: ')
@@ -125,6 +135,7 @@ test('an object terminal of the wrong kind fails naming the fix', function (): v
             ->and($usageException->call())->toBe('fx_object.split_csv');
     });
 });
+
 test('the temporal terminals return the mapped value', function (): void {
     $string = new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String));
     $cases = [
@@ -151,6 +162,7 @@ test('the temporal terminals return the mapped value', function (): void {
         }
     });
 });
+
 test('the number terminal follows the value mapping', function (): void {
     expect($this->connection->function('fx_call.f_number', ['p_value' => 42])->number())->toBe(42)
         ->and($this->connection->function('fx_call.f_number', ['p_value' => Number::in('12.5')])->number())->toBe('12.5')
@@ -161,12 +173,14 @@ test('the number terminal follows the value mapping', function (): void {
         )->number())->toBe(12.5)
         ->and($this->connection->function('fx_call.f_number', ['p_value' => null])->number())->toBeNull();
 });
+
 test('the rowid terminal returns the rowid text', function (): void {
     $rowid = $this->connection->select('select rowidtochar(rowid) from fx_items where id = 1')->value();
 
     expect($this->connection->function('fx_call.f_rowid')->rowid())->toBe($rowid)
         ->and($this->connection->function('fx_call.f_rowid', ['p_null' => true])->rowid())->toBeNull();
 });
+
 test('a call reads varchar2 values of the largest size', function (): void {
     $ascii = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'x', 'p_length' => 32767, 'o_str' => Varchar::out()]);
     $multibyte = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'ç', 'p_length' => 16383, 'o_str' => Varchar::out()]);
@@ -179,6 +193,7 @@ test('a call reads varchar2 values of the largest size', function (): void {
         expect($grown->out('io_text')->string())->toBe(str_repeat('a', 32767));
     }
 });
+
 test('a failing call carries its name and generated block', function (): void {
     $calls = [
         'BEGIN fx_call.fail(p_value => :b1); END;' => fn(): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
@@ -187,7 +202,7 @@ test('a failing call carries its name and generated block', function (): void {
     foreach ($calls as $sql => $call) {
         try {
             $call();
-            self::fail("$sql did not fail.");
+            $this->fail("$sql did not fail.");
         } catch (QueryException $e) {
             expect($e->getCode())->toBe(20046)
                 ->and($e->getMessage())->toStartWith('ORA-20046: fx_call.')
@@ -202,6 +217,7 @@ test('a failing call carries its name and generated block', function (): void {
             ->and($usageException->call())->toBe('fx_call.echo');
     });
 });
+
 test('a call after close fails', function (): void {
     $function = $this->connection->function('fx_call.f_number', ['p_value' => 1]);
     $this->connection->close();
@@ -217,6 +233,7 @@ test('a call after close fails', function (): void {
         });
     }
 });
+
 test('a bind error names the parameter', function (): void {
     $calls = [
         fn(): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new DateTimeImmutable()]),
@@ -225,13 +242,14 @@ test('a bind error names the parameter', function (): void {
     foreach ($calls as $call) {
         try {
             $call();
-            self::fail('A DateTimeImmutable was bound.');
+            $this->fail('A DateTimeImmutable was bound.');
         } catch (UsageException $e) {
             expect($e->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in().")
                 ->and((string) $e->call())->toStartWith('fx_call.');
         }
     }
 });
+
 test('a bound value never appears in a call error', function (): void {
     $secret = 'zq46secret';
     $calls = [
@@ -243,7 +261,7 @@ test('a bound value never appears in a call error', function (): void {
     foreach ($calls as $kind => $call) {
         try {
             $call();
-            self::fail("$kind: '$secret' was taken for a number.");
+            $this->fail("$kind: '$secret' was taken for a number.");
         } catch (OracleException $e) {
             expect($e->getMessage())->not->toContain($secret)
                 ->and($e->getTraceAsString())->not->toContain($secret)
@@ -251,14 +269,16 @@ test('a bound value never appears in a call error', function (): void {
         }
     }
 });
+
 test('a quoted mixed case name and a schema qualified name work', function (): void {
     $schema = $this->connection->select("select sys_context('userenv', 'current_schema') from dual")->value();
-    expect($schema)->toBeString()
-        ->and($this->connection->function('"FX_Mixed_Case"', ['"pValue"' => 21])->number())->toBe(42)
+    assert(\is_string($schema));
+    expect($this->connection->function('"FX_Mixed_Case"', ['"pValue"' => 21])->number())->toBe(42)
         ->and($this->connection->function("$schema.\"FX_Mixed_Case\"", ['"pValue"' => 4])->number())->toBe(8)
         ->and($this->connection->function("$schema.fx_call.f_number", ['P_VALUE' => 3])->number())->toBe(3)
         ->and($this->connection->function('FX_SCALAR.Greet', ['p_name' => 'you'])->varchar())->toBe('Hello, you!');
 });
+
 /**
  * @return iterable<string, array{string, array<mixed>, string}>
  */
@@ -285,9 +305,10 @@ dataset('invalidNames', function () {
     yield 'one parameter twice' => ['fx_call.echo', ['p_num' => 1, 'P_NUM' => 2], "Parameters 'p_num' and 'P_NUM' name the same parameter; keep one of them."];
     yield 'one parameter quoted and not' => ['fx_call.echo', ['p_num' => 1, '"P_NUM"' => 2], "Parameters 'p_num' and '\"P_NUM\"' name the same parameter"];
 });
+
 test('an invalid name fails before any round trip', function (string $name, array $binds, string $message): void {
     $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-    expect($sid)->toBeString();
+    assert(\is_string($sid));
     $counter = RoundTripCounter::open();
 
     try {
@@ -298,14 +319,14 @@ test('an invalid name fails before any round trip', function (string $name, arra
             fn(): FunctionCall => $this->connection->function($name, $binds),
         ];
         foreach ($calls as $call) {
-            $trips = $counter->during((int) $sid, static function () use ($call, $name, $message): void {
+            $trips = $counter->during((int) $sid, function () use ($call, $name, $message): void {
                 try {
                     $call();
-                    self::fail("'$name' was accepted.");
+                    $this->fail("'$name' was accepted.");
                 } catch (UsageException $usageException) {
-                    self::assertStringContainsString($message, $usageException->getMessage());
-                    self::assertSame($name, $usageException->call());
-                    self::assertNull($usageException->sql());
+                    expect($usageException->getMessage())->toContain($message)
+                        ->and($usageException->call())->toBe($name)
+                        ->and($usageException->sql())->toBeNull();
                 }
             });
             expect($trips)->toBe(0);

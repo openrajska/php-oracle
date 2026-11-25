@@ -22,15 +22,19 @@ beforeEach(function (): void {
     $this->tnsAdmin = getenv('TNS_ADMIN');
     $this->directories = [];
 });
+
 afterEach(function (): void {
     putenv($this->tnsAdmin === false ? 'TNS_ADMIN' : "TNS_ADMIN=$this->tnsAdmin");
-    foreach ($this->directories as $directory) {
+    /** @var list<string> $directories */
+    $directories = $this->directories;
+    foreach ($directories as $directory) {
         foreach (glob("$directory/*") ?: [] as $file) {
             unlink($file);
         }
         rmdir($directory);
     }
 });
+
 /**
  * @return iterable<string, array{string, string}>
  */
@@ -43,6 +47,7 @@ dataset('easyConnectPlusParameters', function () {
     yield 'ssl_server_dn_match' => ['?ssl_server_dn_match=on', 'host name'];
     yield 'an unknown one' => ['?expire_time=1', 'ConnectionConfig fields'];
 });
+
 test('easy connect plus parameters are rejected before any network io', function (string $parameters, string $instead): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
@@ -51,6 +56,7 @@ test('easy connect plus parameters are rejected before any network io', function
     expect($exception->getMessage())->toContain('Easy Connect Plus')
         ->and($exception->getMessage())->toContain($instead);
 })->with('easyConnectPlusParameters');
+
 /**
  * @return iterable<string, array{string, string}>
  */
@@ -61,6 +67,7 @@ dataset('rejectedKeys', function () {
     yield 'POOL_PURITY' => ['(CONNECT_DATA=(POOL_PURITY=SELF))', 'no purity setting'];
     yield 'TRANSPORT_CONNECT_TIMEOUT' => ['(TRANSPORT_CONNECT_TIMEOUT=5)', 'connectTimeout'];
 });
+
 test('a descriptor key the backend would ignore is rejected before any network io', function (string $setting, string $instead): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
@@ -70,6 +77,7 @@ test('a descriptor key the backend would ignore is rejected before any network i
     expect($exception->getMessage())->toContain("The dsn sets $key")
         ->and($exception->getMessage())->toContain($instead);
 })->with('rejectedKeys');
+
 test('a tns alias whose entry sets a rejected key is rejected before any network io', function (): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
@@ -85,6 +93,7 @@ test('a tns alias whose entry sets a rejected key is rejected before any network
     $exception = rejected('NOWHERE_PLUS');
     expect($exception->getMessage())->toContain('Easy Connect Plus');
 });
+
 /**
  * @return iterable<string, array{string}>
  */
@@ -94,6 +103,7 @@ dataset('dsnForms', function () {
     yield 'TNS alias from configDir' => ['configDir'];
     yield 'TNS alias from $TNS_ADMIN' => ['TNS_ADMIN'];
 });
+
 test('every dsn form connects', function (string $form): void {
     $easy = TestDatabase::fromEnvironment()->connectString;
     $fields = match ($form) {
@@ -109,15 +119,16 @@ test('every dsn form connects', function (string $form): void {
 
     $connection = $this->connect(...[...$fields, 'standalone' => true]);
 
-    expect(self::value($connection, 'select 1 from dual'))->toBe(1);
+    expect($this->value($connection, 'select 1 from dual'))->toBe(1);
 })->with('dsnForms');
+
 test('an unroutable host fails within connect timeout', function (bool $standalone): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
     $started = microtime(true);
     try {
         $this->connect(dsn: $nowhere, connectTimeout: 1.5, standalone: $standalone);
-        self::fail('connect() to an unroutable host succeeded.');
+        $this->fail('connect() to an unroutable host succeeded.');
     } catch (ConnectionException $connectionException) {
         $elapsed = microtime(true) - $started;
         expect($connectionException->getCode())->toBe(12170, $connectionException->getMessage())
@@ -126,6 +137,7 @@ test('an unroutable host fails within connect timeout', function (bool $standalo
             ->toBeLessThan(4.0);
     }
 })->with('pooledAndStandalone');
+
 /**
  * @return iterable<string, array{bool}>
  */
@@ -133,16 +145,18 @@ dataset('pooledAndStandalone', function () {
     yield 'pooled' => [false];
     yield 'standalone' => [true];
 });
+
 test('tls through a private ca connects with its pem wallet', function (bool $standalone): void {
     $connection = $this->connect(
         dsn: ConnectTargets::variable('ORACLE_TLS_CONNECT_STRING'),
         walletLocation: ConnectTargets::wallet('ca'),
         standalone: $standalone,
-        connectTimeout: self::ownPool()['connectTimeout'],
+        connectTimeout: $this->ownPool()['connectTimeout'],
     );
 
     expect(protocol($connection))->toBe('tcps');
 })->with('pooledAndStandalone');
+
 /**
  * mTLS, with the client's certificate and key in ewallet.pem (and the
  * private CA).
@@ -155,22 +169,24 @@ dataset('mtlsWallets', function () {
     yield 'encrypted key, pooled' => ['mtls-encrypted', ConnectTargets::WALLET_PASSWORD, false];
     yield 'encrypted key, standalone' => ['mtls-encrypted', ConnectTargets::WALLET_PASSWORD, true];
 });
+
 test('mtls connects with the clients pem wallet', function (string $wallet, string | null $walletPassword, bool $standalone): void {
     $connection = $this->connect(
         dsn: ConnectTargets::variable('ORACLE_MTLS_CONNECT_STRING'),
         walletLocation: ConnectTargets::wallet($wallet),
         walletPassword: $walletPassword,
         standalone: $standalone,
-        connectTimeout: self::ownPool()['connectTimeout'],
+        connectTimeout: $this->ownPool()['connectTimeout'],
     );
 
     expect(protocol($connection))->toBe('tcps');
 })->with('mtlsWallets');
+
 test('the server certificate is verified against the roots and the host name', function (): void {
     $dsn = ConnectTargets::variable('ORACLE_TLS_CONNECT_STRING');
     try {
         $this->connect(dsn: $dsn, standalone: true);
-        self::fail('TLS to a private CA connected without its wallet.');
+        $this->fail('TLS to a private CA connected without its wallet.');
     } catch (ConnectionException $connectionException) {
         expect($connectionException->getMessage())->toContain('UnknownIssuer');
     }
@@ -187,11 +203,12 @@ test('the server certificate is verified against the roots and the host name', f
             walletLocation: ConnectTargets::wallet('ca'),
             standalone: true,
         );
-        self::fail('TLS connected to a host name the certificate does not name.');
+        $this->fail('TLS connected to a host name the certificate does not name.');
     } catch (ConnectionException $connectionException) {
         expect($connectionException->getMessage())->toContain('certificate not valid for name');
     }
 });
+
 /**
  * @return iterable<string, array{string}>
  */
@@ -199,6 +216,7 @@ dataset('unreadableWallets', function () {
     yield 'cwallet.sso' => ['sso'];
     yield 'ewallet.p12' => ['p12'];
 });
+
 test('a wallet that is not pem fails with conversion instructions', function (string $wallet): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
@@ -208,6 +226,7 @@ test('a wallet that is not pem fails with conversion instructions', function (st
         ->and($exception->getMessage())->toContain('openssl pkcs12 -in')
         ->and($exception->getMessage())->toContain('-out ');
 })->with('unreadableWallets');
+
 test('a wallet location without any wallet is a configuration error', function (): void {
     $nowhere = '192.0.2.1:1521/FREEPDB1';
 
@@ -215,17 +234,19 @@ test('a wallet location without any wallet is a configuration error', function (
 
     expect($exception->getMessage())->toContain('No ewallet.pem');
 });
+
 test('proxy user connects as the proxy client', function (bool $standalone): void {
     $user = strtoupper(TestDatabase::fromEnvironment()->user);
     $client = "{$user}_CLIENT";
 
-    $connection = $this->connect(proxyUser: $client, standalone: $standalone, connectTimeout: self::ownPool()['connectTimeout']);
+    $connection = $this->connect(proxyUser: $client, standalone: $standalone, connectTimeout: $this->ownPool()['connectTimeout']);
 
-    expect(self::rows(
+    expect($this->rows(
         $connection,
         "select sys_context('userenv', 'session_user') as session_user, sys_context('userenv', 'proxy_user') as proxy_user from dual",
     ))->toBe([['SESSION_USER' => $client, 'PROXY_USER' => $user]]);
 })->with('pooledAndStandalone');
+
 /**
  * @return iterable<string, array{string, bool}>
  */
@@ -235,24 +256,26 @@ dataset('drcpTargets', function () {
     yield '(SERVER=POOLED), pooled' => ['(SERVER=POOLED)', false];
     yield '(SERVER=POOLED), standalone' => ['(SERVER=POOLED)', true];
 });
+
 test('drcp connects through the dsn', function (string $how, bool $standalone): void {
     $easy = TestDatabase::fromEnvironment()->connectString;
     $dsn = $how === ':pooled'
         ? "$easy:pooled"
         : str_replace('(SERVICE_NAME=', '(SERVER=POOLED)(SERVICE_NAME=', ConnectTargets::descriptor($easy));
 
-    $connection = $this->connect(dsn: $dsn, standalone: $standalone, connectTimeout: self::ownPool()['connectTimeout']);
+    $connection = $this->connect(dsn: $dsn, standalone: $standalone, connectTimeout: $this->ownPool()['connectTimeout']);
 
-    expect(self::value($connection, "select server from v\$session where sid = sys_context('userenv', 'sid')"))->toBe('POOLED');
+    expect($this->value($connection, "select server from v\$session where sid = sys_context('userenv', 'sid')"))->toBe('POOLED');
     try {
-        $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41a'], self::options(autocommit: false));
-        $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41b'], self::options(autocommit: false));
-        self::fail('The duplicate insert succeeded.');
+        $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41a'], $this->options(autocommit: false));
+        $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41b'], $this->options(autocommit: false));
+        $this->fail('The duplicate insert succeeded.');
     } catch (UniqueViolationException $uniqueViolationException) {
         expect($uniqueViolationException->getMessage())->not->toContain('ORA-03301')
             ->and($uniqueViolationException->getMessage())->not->toContain('DRCP41');
     }
 })->with('drcpTargets');
+
 test('two processes without a class share one drcp connection class', function (): void {
     $user = strtoupper(TestDatabase::fromEnvironment()->user);
     $before = drcpClasses($user);
@@ -265,18 +288,21 @@ test('two processes without a class share one drcp connection class', function (
         $before = $after;
     }
 
-    expect($classes)->toBe([["$user.RAJSKA:{user()}"], ["$user.RAJSKA:{user()}"]]);
+    $osUser = user();
+    expect($classes)->toBe([["$user.RAJSKA:$osUser"], ["$user.RAJSKA:$osUser"]]);
 });
+
 test('drcp connection class names the class', function (): void {
     $user = strtoupper(TestDatabase::fromEnvironment()->user);
     $before = drcpClasses($user);
 
     $connection = $this->connect(dsn: TestDatabase::fromEnvironment()->connectString . ':pooled', drcpConnectionClass: 'RAJSKA41', standalone: true);
-    self::value($connection, 'select 1 from dual');
+    $this->value($connection, 'select 1 from dual');
 
     $after = drcpClasses($user);
     expect($after["$user.RAJSKA41"] ?? 0)->toBeGreaterThan($before["$user.RAJSKA41"] ?? 0);
 });
+
 test('secrets never appear in dumps messages or traces', function (): void {
     $password = 'Pa55-' . bin2hex(random_bytes(6));
     $walletPassword = 'Wa11et-' . bin2hex(random_bytes(6));
@@ -292,6 +318,7 @@ test('secrets never appear in dumps messages or traces', function (): void {
     $exception = failedConnect($config);
     expect($exception->getCode())->toBe(1017)->and([$dumped, $exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($password)->not->toContain($walletPassword);
 });
+
 test('the adapter holds a configs password no longer than the config', function (): void {
     $password = 'Pa55-' . bin2hex(random_bytes(6));
     $config = TestDatabase::fromEnvironment()->config(password: $password, standalone: true);
@@ -303,6 +330,7 @@ test('the adapter holds a configs password no longer than the config', function 
 
     expect(adapterHolds($password))->toBeFalse();
 });
+
 function adapterHolds(string $secret): bool
 {
     $holds = static function (mixed $value) use (&$holds, $secret): bool {
@@ -322,6 +350,7 @@ function adapterHolds(string $secret): bool
 
     return $holds(new ReflectionClass(ExtensionDriver::class)->getStaticProperties());
 }
+
 test('a wrong wallet password is a configuration error that shows no secret', function (): void {
     $password = TestDatabase::fromEnvironment()->password;
     $walletPassword = 'Wa11et-' . bin2hex(random_bytes(6));
@@ -337,6 +366,7 @@ test('a wrong wallet password is a configuration error that shows no secret', fu
     $this->assertStringContainsStringIgnoringCase('wallet', $exception->getMessage());
     expect([$exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($password)->not->toContain($walletPassword);
 });
+
 function failedConnect(ConnectionConfig $config): Throwable
 {
     try {
@@ -346,6 +376,7 @@ function failedConnect(ConnectionConfig $config): Throwable
     }
     throw new RuntimeException('connect() succeeded.');
 }
+
 function rejected(string $dsn, mixed ...$fields): ConfigurationException
 {
     $started = microtime(true);
@@ -358,6 +389,7 @@ function rejected(string $dsn, mixed ...$fields): ConfigurationException
         return $configurationException;
     }
 }
+
 /**
  * A new directory holding a tnsnames.ora with these entries.
  *
@@ -378,14 +410,17 @@ function tnsnames(array $entries): string
 
     return $directory;
 }
+
 function user(): string
 {
     return TestDatabase::fromEnvironment()->user;
 }
+
 function protocol(DriverConnection $connection): mixed
 {
     return test()->value($connection, "select sys_context('userenv', 'network_protocol') from dual");
 }
+
 /**
  * Requests per DRCP connection class of this user, read from the CDB
  * root.
@@ -401,6 +436,7 @@ function drcpClasses(string $user): array
 
     return $classes;
 }
+
 /**
  * Connects in a child PHP process, as a second FPM worker would, and
  * runs one query there.
@@ -416,9 +452,9 @@ function runChild(string $dsn): void
             $connection->close();
             echo 'connected';
             PHP;
-    $command = [\PHP_BINARY, '-d', 'extension=' . ConnectTargets::extensionPath(), '-r', $code, $autoload, $dsn];
+    $command = [\PHP_BINARY, '-r', $code, $autoload, $dsn];
     $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-    expect($process)->toBeResource();
+    assert(\is_resource($process));
     $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);

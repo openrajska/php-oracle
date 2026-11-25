@@ -21,18 +21,19 @@ beforeEach(function (): void {
     clear($this->observer);
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
 });
+
 afterEach(function (): void {
     $this->connection->close();
     clear($this->observer);
     $this->observer->close();
 });
+
 test('run many gives an array dml and commits under autocommit', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $arrayDml = $this->connection->runMany($insert, valid(3));
 
-    expect($arrayDml)->toBeInstanceOf(ArrayDml::class)
-        ->and($arrayDml->affected())->toBe(3)
+    expect($arrayDml->affected())->toBe(3)
         ->and($arrayDml)->toHaveCount(3)
         ->and(committed($this->observer))->toBe(3);
 
@@ -40,6 +41,7 @@ test('run many gives an array dml and commits under autocommit', function (): vo
     expect($updated->count())->toBe(2)
         ->and($updated->affected())->toBe(5);
 });
+
 test('out gives one out value per row in order', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -59,6 +61,7 @@ test('out gives one out value per row in order', function (): void {
         ->and($ids[0]->int())->toBe(3)
         ->and(array_map(static fn(OutValue $value): string | null => $value->string(), $block->out('label')))->toBe(['a1', 'b2']);
 });
+
 test('out with an unknown or an in only name fails', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -67,7 +70,7 @@ test('out with an unknown or an in only name fails', function (): void {
     foreach (['missing' => "No OUT bind is named 'missing'; they are 'label'.", 'PREFIX' => "Bind 'prefix' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back."] as $name => $message) {
         expect(function () use ($arrayDml, $name): void {
             $arrayDml->out($name);
-            self::fail("out('$name') did not fail.");
+            $this->fail("out('$name') did not fail.");
         })->toThrow(UsageException::class, $message);
     }
 
@@ -76,6 +79,7 @@ test('out with an unknown or an in only name fails', function (): void {
         ->and($empty->affected())->toBe(0)
         ->and(fn() => $empty->out('anything'))->toThrow(UsageException::class, "No OUT bind is named 'anything'; the statement has none.");
 });
+
 test('failing rows inside begin undo only that call', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -89,7 +93,7 @@ test('failing rows inside begin undo only that call', function (): void {
 
     try {
         $this->connection->runMany($insert, $rows);
-        self::fail('The bad rows were inserted.');
+        $this->fail('The bad rows were inserted.');
     } catch (ArrayDmlException $arrayDmlException) {
         expect($arrayDmlException->getCode())->toBe(1)
             ->and($arrayDmlException->sql())->toBe($insert)
@@ -103,6 +107,7 @@ test('failing rows inside begin undo only that call', function (): void {
     expect(committed($this->observer))->toBe(2)
         ->and($this->observer->select('select count(*) as n from fx_tx_rows')[0]['N'])->toBe('1');
 });
+
 test('a bound value never appears in a run many error', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
@@ -114,7 +119,7 @@ test('a bound value never appears in a run many error', function (): void {
     foreach ($calls as $kind => $call) {
         try {
             $call();
-            self::fail("$kind: the rows were inserted.");
+            $this->fail("$kind: the rows were inserted.");
         } catch (OracleException $e) {
             expect($e->getMessage())->not->toContain($secret)
                 ->and($e->getTraceAsString())->not->toContain($secret)
@@ -127,12 +132,14 @@ test('a bound value never appears in a run many error', function (): void {
         }
     }
 });
+
 test('run many after close fails', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $this->connection->close();
     expect(fn() => $this->connection->runMany($insert, []))->toThrow(UsageException::class, 'The Connection is closed.');
 });
+
 /**
  * @return list<array{id: int, code: string, qty: int}>
  */
@@ -140,10 +147,12 @@ function valid(int $count): array
 {
     return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
 }
+
 function committed(IndependentSession $observer): int
 {
     return (int) $observer->select('select count(*) as n from fx_batch_rows')[0]['N'];
 }
+
 function clear(IndependentSession $observer): void
 {
     $observer->execute('delete from fx_batch_rows');

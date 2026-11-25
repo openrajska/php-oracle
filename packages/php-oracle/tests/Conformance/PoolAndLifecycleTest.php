@@ -25,17 +25,18 @@ test('two connects give two sessions that do not see each others uncommitted cha
     $first = $this->connect();
     $second = $this->connect();
 
-    expect(self::sid($second))->not->toBe(self::sid($first));
+    expect($this->sid($second))->not->toBe($this->sid($first));
 
     $first->execute(
         "update fx_items set name = 'changed by the first' where id = 1",
         [],
-        self::options(autocommit: false),
+        $this->options(autocommit: false),
     );
 
-    expect(self::value($first, 'select name from fx_items where id = 1'))->toBe('changed by the first')
-        ->and(self::value($second, 'select name from fx_items where id = 1'))->toBe('Item 0001');
+    expect($this->value($first, 'select name from fx_items where id = 1'))->toBe('changed by the first')
+        ->and($this->value($second, 'select name from fx_items where id = 1'))->toBe('Item 0001');
 });
+
 test('commit makes the work visible to another session', function (): void {
     $connection = $this->connect();
     $observer = IndependentSession::open();
@@ -44,7 +45,7 @@ test('commit makes the work visible to another session', function (): void {
         $connection->execute(
             "insert into fx_batch_rows (id, code, qty) values (35001, 'commit', 1)",
             [],
-            self::options(autocommit: false),
+            $this->options(autocommit: false),
         );
         $connection->commit();
 
@@ -55,29 +56,32 @@ test('commit makes the work visible to another session', function (): void {
         $observer->close();
     }
 });
+
 test('rollback undoes the work', function (): void {
     $connection = $this->connect();
     $connection->execute(
         "insert into fx_batch_rows (id, code, qty) values (35002, 'rollback', 1)",
         [],
-        self::options(autocommit: false),
+        $this->options(autocommit: false),
     );
 
     $connection->rollback();
 
-    expect(self::value($connection, 'select count(*) from fx_batch_rows where id = 35002'))->toBe(0);
+    expect($this->value($connection, 'select count(*) from fx_batch_rows where id = 35002'))->toBe(0);
 });
+
 test('the server version has five parts', function (): void {
     expect($this->connect()->serverVersion())->toMatch('/^\d+\.\d+\.\d+\.\d+\.\d+$/');
 });
-test('a standalone connection starts clean and logs off', function (): void {
-    $fields = self::ownPool() + ['standalone' => true];
-    $first = $this->connect(...$fields);
-    expect(self::value($first, 'select fx_pool.bump_counter from dual'))->toBe(1)
-        ->and(self::value($first, 'select fx_pool.bump_counter from dual'))->toBe(2);
 
-    $session = self::value($first, "select sys_context('userenv', 'sessionid') from dual");
-    expect($session)->toBeString();
+test('a standalone connection starts clean and logs off', function (): void {
+    $fields = $this->ownPool() + ['standalone' => true];
+    $first = $this->connect(...$fields);
+    expect($this->value($first, 'select fx_pool.bump_counter from dual'))->toBe(1)
+        ->and($this->value($first, 'select fx_pool.bump_counter from dual'))->toBe(2);
+
+    $session = $this->value($first, "select sys_context('userenv', 'sessionid') from dual");
+    assert(\is_string($session));
 
     $first->close();
 
@@ -91,25 +95,27 @@ test('a standalone connection starts clean and logs off', function (): void {
         $observer->close();
     }
     $second = $this->connect(...$fields);
-    expect(self::value($second, "select sys_context('userenv', 'sessionid') from dual"))->not->toBe($session)
-        ->and(self::value($second, 'select fx_pool.bump_counter from dual'))->toBe(1);
+    expect($this->value($second, "select sys_context('userenv', 'sessionid') from dual"))->not->toBe($session)
+        ->and($this->value($second, 'select fx_pool.bump_counter from dual'))->toBe(1);
 });
+
 test('standalone connections are not held to max connections', function (): void {
-    $fields = self::ownPool() + ['standalone' => true, 'maxConnections' => 1, 'acquireTimeout' => 0.25];
+    $fields = $this->ownPool() + ['standalone' => true, 'maxConnections' => 1, 'acquireTimeout' => 0.25];
     $first = $this->connect(...$fields);
     $second = $this->connect(...$fields);
 
-    expect(self::sid($second))->not->toBe(self::sid($first));
+    expect($this->sid($second))->not->toBe($this->sid($first));
 });
+
 test('at max connections a connect fails as pool exhausted after acquire timeout and succeeds after a release', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
+    $fields = $this->ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
     $held = $this->connect(...$fields);
-    $sid = self::sid($held);
+    $sid = $this->sid($held);
 
     $started = hrtime(true);
     try {
         $this->connect(...$fields);
-        self::fail('A second Session came out of a Pool of one.');
+        $this->fail('A second Session came out of a Pool of one.');
     } catch (PoolExhaustedException) {
         $waited = (hrtime(true) - $started) / 1e9;
         expect($waited)->toBeGreaterThanOrEqual(0.25)
@@ -118,18 +124,20 @@ test('at max connections a connect fails as pool exhausted after acquire timeout
 
     $held->close();
 
-    expect(self::sid($this->connect(...$fields)))->toBe($sid);
+    expect($this->sid($this->connect(...$fields)))->toBe($sid);
 });
+
 test('the pool grows one session at a time up to max connections', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 3, 'acquireTimeout' => 0.25];
+    $fields = $this->ownPool() + ['maxConnections' => 3, 'acquireTimeout' => 0.25];
     $sids = [];
     for ($i = 0; $i < 3; ++$i) {
-        $sids[] = self::sid($this->connect(...$fields));
+        $sids[] = $this->sid($this->connect(...$fields));
     }
 
     expect(array_unique($sids))->toHaveCount(3)
         ->and(fn() => $this->connect(...$fields))->toThrow(PoolExhaustedException::class);
 });
+
 /**
  * @return iterable<string, array{array<string, mixed>}>
  */
@@ -141,52 +149,56 @@ dataset('fieldsOutsideThePoolKey', function () {
     yield 'callTimeout' => [['callTimeout' => 30]];
     yield 'fetchSize' => [['fetchSize' => 7]];
 });
+
 test('configs differing only outside the pool key share one pool', function (array $difference): void {
-    $fields = self::ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
+    $fields = $this->ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
     $held = $this->connect(...$fields);
-    $sid = self::sid($held);
+    $sid = $this->sid($held);
 
     try {
         $this->connect(...$difference, ...$fields);
-        self::fail('The config got a Pool of its own.');
+        $this->fail('The config got a Pool of its own.');
     } catch (PoolExhaustedException) {
         $this->addToAssertionCount(1);
     }
 
     $held->close();
 
-    expect(self::sid($this->connect(...$difference, ...$fields)))->toBe($sid);
+    expect($this->sid($this->connect(...$difference, ...$fields)))->toBe($sid);
 })->with('fieldsOutsideThePoolKey');
+
 test('a different statement cache size or password gives another pool', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
+    $fields = $this->ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
     $held = $this->connect(...$fields);
 
-    expect(self::sid($this->connect(...['statementCacheSize' => 7] + $fields)))->not->toBe(self::sid($held));
+    expect($this->sid($this->connect(...['statementCacheSize' => 7] + $fields)))->not->toBe($this->sid($held));
 
     $held->close();
     try {
         // The first Pool's Session is free now: a shared Pool would hand
         // it over, while a Pool of its own logs on and fails.
         $this->connect(...['password' => 'not-the-password'] + $fields);
-        self::fail('A wrong password got a Session.');
+        $this->fail('A wrong password got a Session.');
     } catch (ConnectionException $connectionException) {
         expect($connectionException::class)->toBe(ConnectionException::class)
             ->and($connectionException->getCode())->toBe(1017);
     }
 });
+
 test('connections held at once never share a session', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 2];
+    $fields = $this->ownPool() + ['maxConnections' => 2];
     $first = $this->connect(...$fields);
     $second = $this->connect(...$fields);
 
-    expect(self::sid($second))->not->toBe(self::sid($first));
+    expect($this->sid($second))->not->toBe($this->sid($first));
 });
+
 test('a session idle for 60 seconds is pinged on acquire and dropped if the ping fails', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 2];
+    $fields = $this->ownPool() + ['maxConnections' => 2];
     $live = $this->connect(...$fields);
     $killed = $this->connect(...$fields);
-    $liveSid = self::sid($live);
-    $killedSid = self::sid($killed);
+    $liveSid = $this->sid($live);
+    $killedSid = $this->sid($killed);
     $live->close();
     $killed->close();
 
@@ -200,9 +212,10 @@ test('a session idle for 60 seconds is pinged on acquire and dropped if the ping
 
     sleep(61);
 
-    $sids = [self::sid($this->connect(...$fields)), self::sid($this->connect(...$fields))];
+    $sids = [$this->sid($this->connect(...$fields)), $this->sid($this->connect(...$fields))];
     expect($sids)->toContain($liveSid);
 })->group('slow');
+
 /**
  * @return iterable<string, array{string, bool}>
  */
@@ -211,11 +224,12 @@ dataset('releases', function () {
     yield 'close()' => ['close', false];
     yield 'a Standalone Connection' => ['close', true];
 });
-test('a release rolls back and never commits', function (string $release, bool $standalone): void {
-    $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config(...self::ownPool(), standalone: $standalone));
-    $connection->execute("update fx_items set name = 'uncommitted' where id = 41", [], self::options(autocommit: false));
 
-    expect(self::locked(41))->toBeTrue('The update holds the row.');
+test('a release rolls back and never commits', function (string $release, bool $standalone): void {
+    $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config(...$this->ownPool(), standalone: $standalone));
+    $connection->execute("update fx_items set name = 'uncommitted' where id = 41", [], $this->options(autocommit: false));
+
+    expect($this->locked(41))->toBeTrue('The update holds the row.');
 
     if ($release === 'destroy') {
         unset($connection);
@@ -223,7 +237,7 @@ test('a release rolls back and never commits', function (string $release, bool $
         $connection->close();
     }
 
-    expect(self::locked(41))->toBeFalse('The Release rolled back.');
+    expect($this->locked(41))->toBeFalse('The Release rolled back.');
     $observer = IndependentSession::open();
     try {
         expect($observer->select('select name from fx_items where id = 41'))->toBe([['NAME' => 'Item 0041']]);
@@ -231,6 +245,7 @@ test('a release rolls back and never commits', function (string $release, bool $
         $observer->close();
     }
 })->with('releases');
+
 /**
  * @return iterable<string, array{Closure(DriverConnection): mixed}>
  */
@@ -242,47 +257,51 @@ dataset('connectionCalls', function () {
     yield 'trace()' => [static fn(DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
     yield 'serverVersion()' => [static fn(DriverConnection $c): string => $c->serverVersion()];
 });
+
 test('every call after close fails as usage', function (Closure $call): void {
     $connection = $this->connect();
     $connection->close();
 
     expect(function () use ($call, $connection): void {
         $call($connection);
-        self::fail('A call after close() succeeded.');
+        $this->fail('A call after close() succeeded.');
     })->toThrow(UsageException::class, 'The Connection is closed.');
     $connection->close();
 })->with('connectionCalls');
+
 test('a live cursor delays the release and freeing it then rolls back', function (): void {
     $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config());
-    $connection->execute("update fx_items set name = 'uncommitted' where id = 42", [], self::options(autocommit: false));
+    $connection->execute("update fx_items set name = 'uncommitted' where id = 42", [], $this->options(autocommit: false));
 
-    $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2, autocommit: false))->cursor();
-    expect($cursor)->not->toBeNull()
-        ->and($cursor->fetchBatch())->toBe([['N' => 1], ['N' => 2]]);
+    $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], $this->options(fetchSize: 2, autocommit: false))->cursor();
+    assert($cursor !== null);
+    expect($cursor->fetchBatch())->toBe([['N' => 1], ['N' => 2]]);
 
     unset($connection);
 
-    expect(self::locked(42))->toBeTrue('The Cursor keeps the Connection, and its transaction.')
+    expect($this->locked(42))->toBeTrue('The Cursor keeps the Connection, and its transaction.')
         ->and($cursor->fetchBatch())->toBe([['N' => 3], ['N' => 4]])
         ->and($cursor->fetchBatch())->toBe([['N' => 5]])
-        ->and($cursor->fetchBatch())->toBe([]);
+        ->and($cursor->fetchBatch())->toBeEmpty();
 
     unset($cursor);
 
-    expect(self::locked(42))->toBeFalse('Freeing the last Cursor released the Connection, rolling back.');
+    expect($this->locked(42))->toBeFalse('Freeing the last Cursor released the Connection, rolling back.');
 });
+
 test('package state survives a pooled release', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 1];
+    $fields = $this->ownPool() + ['maxConnections' => 1];
     $first = $this->connect(...$fields);
-    $session = self::session($first);
-    expect(self::value($first, 'select fx_pool.bump_counter from dual'))->toBe(1);
+    $session = $this->session($first);
+    expect($this->value($first, 'select fx_pool.bump_counter from dual'))->toBe(1);
     $first->close();
 
     $second = $this->connect(...$fields);
 
-    expect(self::session($second))->toBe($session)
-        ->and(self::value($second, 'select fx_pool.bump_counter from dual'))->toBe(2);
+    expect($this->session($second))->toBe($session)
+        ->and($this->value($second, 'select fx_pool.bump_counter from dual'))->toBe(2);
 });
+
 /**
  * @return iterable<string, array{bool}>
  */
@@ -290,28 +309,29 @@ dataset('kills', function () {
     yield 'kill immediate' => [true];
     yield 'kill' => [false];
 });
+
 test('a killed session makes the connection broken and never comes back', function (bool $immediate): void {
-    $fields = self::ownPool() + ['maxConnections' => 1];
+    $fields = $this->ownPool() + ['maxConnections' => 1];
 
     // The Session's second loan: the crate ends the first one with a
     // request-boundary rollback of its own, which would hide a Session
     // going back to the Pool.
     $this->connect(...$fields)->close();
     $connection = $this->connect(...$fields);
-    $session = self::session($connection);
-    $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2))->cursor();
-    expect($cursor)->not->toBeNull();
+    $session = $this->session($connection);
+    $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], $this->options(fetchSize: 2))->cursor();
+    assert($cursor !== null);
     $cursor->fetchBatch();
-    self::kill($connection, $immediate);
+    $this->kill($connection, $immediate);
 
     try {
-        self::value($connection, 'select 1 from dual');
-        self::fail('A call on a killed Session succeeded.');
+        $this->value($connection, 'select 1 from dual');
+        $this->fail('A call on a killed Session succeeded.');
     } catch (ConnectionLostException $connectionLostException) {
         $this->assertStringStartsNotWith('Connection is broken: ', $connectionLostException->getMessage());
     }
     foreach ([
-        'execute()' => static fn(): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
+        'execute()' => fn(): DriverExecution => $connection->execute('select 1 from dual', [], $this->options()),
         'commit()' => $connection->commit(...),
         'rollback()' => $connection->rollback(...),
         'serverVersion()' => $connection->serverVersion(...),
@@ -320,7 +340,7 @@ test('a killed session makes the connection broken and never comes back', functi
     ] as $what => $call) {
         try {
             $call();
-            self::fail("$what on a Broken Connection succeeded.");
+            $this->fail("$what on a Broken Connection succeeded.");
         } catch (ConnectionLostException $later) {
             expect($later->getCode())->toBe($connectionLostException->getCode(), $what)
                 ->and($later->getMessage())->toBe('Connection is broken: ' . $connectionLostException->getMessage(), $what);
@@ -331,8 +351,9 @@ test('a killed session makes the connection broken and never comes back', functi
     $connection->close();
 
     $next = $this->connect(...$fields);
-    expect(self::session($next))->not->toBe($session);
+    expect($this->session($next))->not->toBe($session);
 })->with('kills');
+
 /**
  * @param callable(): bool $condition
  */

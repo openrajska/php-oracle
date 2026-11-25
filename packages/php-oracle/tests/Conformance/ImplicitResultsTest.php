@@ -18,7 +18,7 @@ use Rajska\Oracle\ValueMapping;
 test('two implicit results come in order next to an out value and read interleaved', function (): void {
     $report = 'begin fx_cursor.implicit_results(:n); select count(*) into :total from fx_items; end;';
 
-    $execution = $this->connect()->execute($report, ['n' => 4, 'total' => Number::out()], self::options(fetchSize: 2));
+    $execution = $this->connect()->execute($report, ['n' => 4, 'total' => Number::out()], $this->options(fetchSize: 2));
 
     expect($execution->outValues())->toBe(['total' => [1000]]);
     [$items, $categories] = results($execution, 2);
@@ -32,15 +32,17 @@ test('two implicit results come in order next to an out value and read interleav
         ->and($categories->fetchBatch())->toBe([['ID' => 5, 'NAME' => '日本']])
         ->and([$categories->fetchBatch(), $items->fetchBatch()])->toBe([[], []]);
 });
+
 test('each implicit result reads on its own', function (): void {
     $connection = $this->connect();
-    $execution = $connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options());
+    $execution = $connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], $this->options());
     $categories = results($execution, 2)[1];
     unset($execution);
 
     expect(array_column(drain($categories), 'ID'))->toBe([1, 2, 3, 4, 5])
-        ->and(self::value($connection, 'select 1 from dual'))->toBe(1);
+        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
 });
+
 test('a statement with no return result gives no implicit results', function (): void {
     $connection = $this->connect();
 
@@ -50,9 +52,10 @@ test('a statement with no return result gives no implicit results', function ():
         'DML' => 'update fx_categories set name = name where id = 0',
     ] as $kind => $sql) {
         $binds = $kind === 'block' ? ['x' => Number::out()] : [];
-        expect($connection->execute($sql, $binds, self::options())->implicitResults())->toBe([], $kind);
+        expect($connection->execute($sql, $binds, $this->options())->implicitResults())->toBe([], $kind);
     }
 });
+
 test('a raise after return result throws', function (): void {
     $connection = $this->connect();
 
@@ -61,18 +64,19 @@ test('a raise after return result throws', function (): void {
             $connection->execute(
                 "begin fx_cursor.implicit_results(3); raise_application_error(-20056, 'after the results'); end;",
                 [],
-                self::options(),
+                $this->options(),
             );
-            self::fail('A RAISE after RETURN_RESULT did not throw.');
+            $this->fail('A RAISE after RETURN_RESULT did not throw.');
         } catch (QueryException $e) {
             expect($e->getCode())->toBe(20056)
                 ->and($e->getMessage())->toStartWith('ORA-20056: after the results');
         }
     }
-    expect(array_column(self::rows($connection, 'select id from fx_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
+    expect(array_column($this->rows($connection, 'select id from fx_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
 });
+
 test('implicit results inherit the executes options', function (): void {
-    $options = self::options(
+    $options = $this->options(
         fetchSize: 3,
         values: new ValueMapping(numbers: NumberMode::Float),
         rowShape: RowShape::List,
@@ -87,6 +91,7 @@ test('implicit results inherit the executes options', function (): void {
         ->and(array_column($categories->columns(), 'name'))->toBe(['id', 'name'])
         ->and($categories->fetchBatch())->toHaveCount(3);
 });
+
 test('an implicit result reads fetch size rows per round trip', function (): void {
     $levels = <<<'SQL'
             declare
@@ -98,8 +103,8 @@ test('an implicit result reads fetch size rows per round trip', function (): voi
             SQL;
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
-    $cursor = results($connection->execute($levels, [], self::options(fetchSize: 10)), 1)[0];
+    $sid = $this->sid($connection);
+    $cursor = results($connection->execute($levels, [], $this->options(fetchSize: 10)), 1)[0];
     $counter = RoundTripCounter::open();
 
     try {
@@ -116,11 +121,12 @@ test('an implicit result reads fetch size rows per round trip', function (): voi
     expect($sizes)->toBe([10, 10, 5])
         ->and($trips)->toBe(3);
 });
+
 test('after close implicit results fail as use after close', function (): void {
-    $fields = self::ownPool() + ['maxConnections' => 1];
+    $fields = $this->ownPool() + ['maxConnections' => 1];
     $connection = $this->connect(...$fields);
-    $session = self::session($connection);
-    [$items, $categories] = results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options(fetchSize: 2)), 2);
+    $session = $this->session($connection);
+    [$items, $categories] = results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], $this->options(fetchSize: 2)), 2);
     expect($items->fetchBatch())->toHaveCount(2);
 
     $connection->close();
@@ -129,7 +135,7 @@ test('after close implicit results fail as use after close', function (): void {
         foreach (['fetchBatch()' => $cursor->fetchBatch(...), 'columns()' => $cursor->columns(...)] as $call => $read) {
             try {
                 $read();
-                self::fail("$call of the $which Implicit result after close() succeeded.");
+                $this->fail("$call of the $which Implicit result after close() succeeded.");
             } catch (UsageException $e) {
                 expect($e->getMessage())->toBe('The Connection is closed.', "$which $call");
             }
@@ -138,21 +144,23 @@ test('after close implicit results fail as use after close', function (): void {
     }
 
     $next = $this->connect(...$fields);
-    expect(self::session($next))->toBe($session);
-    $results = results($next->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
+    expect($this->session($next))->toBe($session);
+    $results = results($next->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], $this->options()), 2);
     expect(array_column(drain($results[0]), 'ID'))->toBe([1, 2, 3]);
 });
+
 test('implicit results dropped unread raise no ora 01000', function (): void {
     $connection = $this->connect();
     for ($i = 0; $i < 1000; ++$i) {
-        $execution = $connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options());
+        $execution = $connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], $this->options());
         expect($execution->implicitResults())->toHaveCount(2);
     }
     unset($execution);
 
-    $results = results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
+    $results = results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], $this->options()), 2);
     expect(array_column(drain($results[1]), 'ID'))->toBe([1, 2, 3, 4, 5]);
 });
+
 /**
  * @return list<DriverCursor>
  */
@@ -163,6 +171,7 @@ function results(DriverExecution $execution, int $count): array
 
     return $results;
 }
+
 /**
  * @return list<array<int|string, mixed>>
  */

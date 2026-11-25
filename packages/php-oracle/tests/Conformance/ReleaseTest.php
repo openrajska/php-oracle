@@ -16,16 +16,18 @@ use Rajska\Oracle\Tests\Support\TransactionObserver;
 use RuntimeException;
 
 beforeEach(function (): void {
-    $this->pool = self::ownPool() + ['maxConnections' => 1];
-    $this->observer = TransactionObserver::open();
+    $this->pool = $this->ownPool() + ['maxConnections' => 1];
+    $this->transactionObserver = TransactionObserver::open();
     $this->counter = RoundTripCounter::open();
-    $this->observer->clear();
-    $this->observer->execute('insert into fx_tx_rows (id) values (1)');
+    $this->transactionObserver->clear();
+    $this->transactionObserver->execute('insert into fx_tx_rows (id) values (1)');
 });
+
 afterEach(function (): void {
     $this->counter->close();
-    $this->observer->close();
+    $this->transactionObserver->close();
 });
+
 /**
  * What the last calls before a Release left: never a transaction.
  *
@@ -46,11 +48,12 @@ dataset('nothingOpen', function () {
         $c->rollback();
     }];
 });
+
 test('a release with no transaction open makes no round trip', function (Closure $work): void {
     $fields = $this->pool;
     $this->connect(...$fields)->close();
     $connection = $this->connect(...$fields);
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $work($connection);
 
     expect($this->counter->during($sid, $connection->close(...)))->toBe(0, 'close()')
@@ -62,6 +65,7 @@ test('a release with no transaction open makes no round trip', function (Closure
             unset($connection);
         }))->toBe(0, 'connect() + destroying the Connection');
 })->with('nothingOpen');
+
 /**
  * Work the server keeps open after the call, with Autocommit off: each
  * locks fx_tx_rows row 1 or holds the transaction some other way.
@@ -108,6 +112,7 @@ dataset('leftOpen', function () {
         ConformanceTestCase::rows($c, 'select dbms_lob.getlength(:text) as n from dual', ['text' => Clob::in(str_repeat('x', 40_000))], $open);
     }];
 });
+
 test('a release rolls back whatever the server reports open', function (Closure $work): void {
     $fields = $this->pool;
     $this->connect(...$fields)->close();
@@ -116,14 +121,15 @@ test('a release rolls back whatever the server reports open', function (Closure 
 
     $connection->close();
 
-    expect($this->observer->select('select id, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'NOTE' => null]])
-        ->and($this->observer->locked(1))->toBeFalse('The Release left row 1 locked.');
+    expect($this->transactionObserver->select('select id, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'NOTE' => null]])
+        ->and($this->transactionObserver->locked(1))->toBeFalse('The Release left row 1 locked.');
 
     $next = $this->connect(...$fields);
-    $next->execute("update fx_tx_rows set note = 'next' where id = 1", [], self::options());
+    $next->execute("update fx_tx_rows set note = 'next' where id = 1", [], $this->options());
 
-    expect($this->observer->select('select id, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'NOTE' => 'next']]);
+    expect($this->transactionObserver->select('select id, note from fx_tx_rows order by id'))->toBe([['ID' => '1', 'NOTE' => 'next']]);
 })->with('leftOpen');
+
 /**
  * @param Closure(): mixed $call
  */

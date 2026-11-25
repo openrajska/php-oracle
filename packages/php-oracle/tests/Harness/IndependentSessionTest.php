@@ -10,8 +10,11 @@ use RuntimeException;
 beforeEach(function (): void {
     $this->sessions = [];
 });
+
 afterEach(function (): void {
-    foreach ($this->sessions as $session) {
+    /** @var list<IndependentSession> $sessions */
+    $sessions = $this->sessions;
+    foreach ($sessions as $session) {
         $session->rollback();
         $session->close();
     }
@@ -21,9 +24,11 @@ afterEach(function (): void {
     $cleanup->commit();
     $cleanup->close();
 });
+
 test('each one has its own session', function (): void {
     expect(open()->sid())->not->toBe(open()->sid());
 });
+
 it('sees only what another session committed', function (): void {
     $writer = open();
     $reader = open();
@@ -35,9 +40,11 @@ it('sees only what another session committed', function (): void {
     $writer->commit();
     expect($reader->select($count))->toBe([['N' => '1']]);
 });
+
 it('binds by name', function (): void {
     expect(open()->select('select :value + 1 as answer from dual', ['value' => 41]))->toBe([['ANSWER' => '42']]);
 });
+
 it('fails on a row another session locked', function (): void {
     $holder = open();
     $holder->execute("insert into fx_batch_rows (id, code, qty) values (9002, 'locked', 1)");
@@ -50,6 +57,7 @@ it('fails on a row another session locked', function (): void {
 
     open()->select('select id from fx_batch_rows where id = 9002 for update nowait');
 });
+
 function open(): IndependentSession
 {
     $session = IndependentSession::open();

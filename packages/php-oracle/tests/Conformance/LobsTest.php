@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\LobsTest;
 
+use Pest\Expectation;
 use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\Cursor;
@@ -25,62 +26,65 @@ use RuntimeException;
 test('a lob cell is a driver lob read chunk by chunk', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
-    [$row] = self::rows($this->connect(), 'select id, text_value, binary_value from fx_lobs where id = 1');
+    [$row] = $this->rows($this->connect(), 'select id, text_value, binary_value from fx_lobs where id = 1');
 
-    expect($row['ID'])->toBe(1)
-        ->and($row['TEXT_VALUE'])->toBeInstanceOf(DriverLob::class)
-        ->and($row['TEXT_VALUE']->type())->toBe(LobType::Clob)
+    expect($row['ID'])->toBe(1);
+    assert($row['TEXT_VALUE'] instanceof DriverLob);
+    expect($row['TEXT_VALUE']->type())->toBe(LobType::Clob)
         ->and($row['TEXT_VALUE']->size())->toBe(19)
-        ->and(read($row['TEXT_VALUE']))->toBe($small)
-        ->and($row['BINARY_VALUE'])->toBeInstanceOf(DriverLob::class)
-        ->and($row['BINARY_VALUE']->type())->toBe(LobType::Blob)
+        ->and(read($row['TEXT_VALUE']))->toBe($small);
+    assert($row['BINARY_VALUE'] instanceof DriverLob);
+    expect($row['BINARY_VALUE']->type())->toBe(LobType::Blob)
         ->and($row['BINARY_VALUE']->size())->toBe(4)
         ->and(read($row['BINARY_VALUE']))->toBe("\xde\xad\xbe\xef");
 });
+
 test('an empty lob has size 0 and null is null', function (): void {
     $connection = $this->connect();
-    $rows = self::rows($connection, <<<'SQL'
+    $rows = $this->rows($connection, <<<'SQL'
             select text_value, binary_value, to_nclob(text_value) as national_value
               from fx_lobs where id in (2, 3) order by id
             SQL);
 
     foreach (['TEXT_VALUE' => LobType::Clob, 'BINARY_VALUE' => LobType::Blob, 'NATIONAL_VALUE' => LobType::NClob] as $column => $type) {
         $empty = $rows[0][$column];
-        expect($empty)->toBeInstanceOf(DriverLob::class, $column)
-            ->and($empty->type())->toBe($type, $column)
+        assert($empty instanceof DriverLob);
+        expect($empty->type())->toBe($type, $column)
             ->and($empty->size())->toBe(0, $column)
-            ->and(roundTrips($connection, static fn() => self::assertSame('', $empty->readChunk())))->toBe(0, $column)
+            ->and(roundTrips($connection, fn(): Expectation => expect($empty->readChunk())->toBeEmpty()))->toBe(0, $column)
             ->and($rows[1][$column])->toBeNull($column);
     }
 
-    [$row] = self::rows($connection, "select to_clob('a') as c, to_blob(hextoraw('ff')) as b from dual");
-    expect($row['C'])->toBeInstanceOf(DriverLob::class)
-        ->and($row['B'])->toBeInstanceOf(DriverLob::class)
-        ->and([$row['C']->size(), read($row['C'])])->toBe([1, 'a'])
+    [$row] = $this->rows($connection, "select to_clob('a') as c, to_blob(hextoraw('ff')) as b from dual");
+    assert($row['C'] instanceof DriverLob);
+    assert($row['B'] instanceof DriverLob);
+    expect([$row['C']->size(), read($row['C'])])->toBe([1, 'a'])
         ->and([$row['B']->size(), read($row['B'])])->toBe([1, "\xff"]);
 });
+
 test('an nclob reads as utf8 and size counts ucs2 code units', function (): void {
     $grin = "\u{1f600}";
 
     $text = 'Ação 日本 ' . $grin;
-    [$row] = self::rows($this->connect(), "select to_nclob(unistr('A\\00e7\\00e3o \\65e5\\672c \\D83D\\DE00')) as n from dual");
+    [$row] = $this->rows($this->connect(), "select to_nclob(unistr('A\\00e7\\00e3o \\65e5\\672c \\D83D\\DE00')) as n from dual");
 
-    expect($row['N'])->toBeInstanceOf(DriverLob::class)
-        ->and($row['N']->type())->toBe(LobType::NClob)
+    assert($row['N'] instanceof DriverLob);
+    expect($row['N']->type())->toBe(LobType::NClob)
         ->and($row['N']->size())->toBe(10)
         ->and(read($row['N']))->toBe($text);
 });
+
 test('a 16 mib clob and blob read back exactly one round trip per chunk', function (): void {
     $connection = $this->connect();
-    [$row] = self::rows($connection, 'select text_value, binary_value from fx_lobs where id = 4');
+    [$row] = $this->rows($connection, 'select text_value, binary_value from fx_lobs where id = 4');
     $text = $row['TEXT_VALUE'];
     $binary = $row['BINARY_VALUE'];
-    expect($text)->toBeInstanceOf(DriverLob::class)
-        ->and($binary)->toBeInstanceOf(DriverLob::class)
-        ->and($text->size())->toBe(16 * 1024 * 1024)
+    assert($text instanceof DriverLob);
+    assert($binary instanceof DriverLob);
+    expect($text->size())->toBe(16 * 1024 * 1024)
         ->and($binary->size())->toBe(16 * 1024 * 1024);
 
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
 
     try {
@@ -105,6 +109,7 @@ test('a 16 mib clob and blob read back exactly one round trip per chunk', functi
         $counter->close();
     }
 });
+
 test('surrogate pairs survive at every chunk boundary', function (): void {
     $grin = "\u{1f600}";
     $chunk = 1 << 20;
@@ -125,10 +130,10 @@ test('surrogate pairs survive at every chunk boundary', function (): void {
                        :l := l;
                      end;",
                 ['prefix' => $prefix, 'l' => $bind],
-                self::options(),
+                $this->options(),
             )->outValues();
             $lob = $outValues['l'][0];
-            expect($lob)->toBeInstanceOf(DriverLob::class);
+            assert($lob instanceof DriverLob);
             $units = \strlen($prefix) + 140 * 8000;
             expect($lob->size())->toBe($units, "$prefix, $type")
                 ->and($units)->toBeGreaterThan($chunk);
@@ -138,6 +143,7 @@ test('surrogate pairs survive at every chunk boundary', function (): void {
         }
     }
 });
+
 test('lob out binds bring back driver lobs', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
@@ -145,12 +151,12 @@ test('lob out binds bring back driver lobs', function (): void {
     $outValues = $connection->execute(
         "begin :c := to_clob('text'); :n := to_nclob(unistr('\\65e5\\672c')); :b := to_blob(hextoraw('0102')); :none := null; end;",
         ['c' => Clob::out(), 'n' => NClob::out(), 'b' => Blob::out(), 'none' => Clob::out()],
-        self::options(),
+        $this->options(),
     )->outValues();
 
     expect(array_map(
-        static function (mixed $lob): string {
-            self::assertInstanceOf(DriverLob::class, $lob);
+        function (mixed $lob): string {
+            assert($lob instanceof DriverLob);
 
             return read($lob);
         },
@@ -162,7 +168,7 @@ test('lob out binds bring back driver lobs', function (): void {
     $returned = $connection->execute(
         'begin update fx_lobs set label = label where id = 1 returning text_value into :t; end;',
         ['t' => Clob::out()],
-        self::options(autocommit: false),
+        $this->options(autocommit: false),
     )->outValues();
     expect(read(lob($returned['t'][0])))->toBe($small);
     $connection->rollback();
@@ -170,7 +176,7 @@ test('lob out binds bring back driver lobs', function (): void {
     $returned = $connection->execute(
         'update fx_lobs set label = label where id in (1, 2, 3) returning id, text_value, binary_value into :id, :t, :b',
         ['id' => Number::out(), 't' => Clob::out(), 'b' => Blob::out()],
-        self::options(autocommit: false),
+        $this->options(autocommit: false),
     )->outValues();
     $rows = array_map(null, $returned['id'], $returned['t'], $returned['b']);
     usort($rows, static fn(array $a, array $b): int => $a[0] <=> $b[0]);
@@ -181,30 +187,32 @@ test('lob out binds bring back driver lobs', function (): void {
     ], $rows))->toBe([[1, $small, "\xDE\xAD\xBE\xEF"], [2, '', ''], [3, null, null]]);
     $connection->rollback();
 });
+
 test('a lob after release fails even when its session went to another connection', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
-    $fields = ['maxConnections' => 1] + self::ownPool();
+    $fields = ['maxConnections' => 1] + $this->ownPool();
     $connection = $this->connect(...$fields);
-    $session = self::session($connection);
-    [$row] = self::rows($connection, 'select text_value from fx_lobs where id = 1');
+    $session = $this->session($connection);
+    [$row] = $this->rows($connection, 'select text_value from fx_lobs where id = 1');
     $lob = lob($row['TEXT_VALUE']);
     $connection->close();
 
     $next = $this->connect(...$fields);
-    expect(self::session($next))->toBe($session, 'The same Session');
+    expect($this->session($next))->toBe($session, 'The same Session');
     assertUseAfterClose($lob);
     $lob->close();
 
-    [$row] = self::rows($next, 'select text_value from fx_lobs where id = 1');
+    [$row] = $this->rows($next, 'select text_value from fx_lobs where id = 1');
     expect(read(lob($row['TEXT_VALUE'])))->toBe($small);
 });
+
 test('a lob does not keep the session alive', function (): void {
-    $fields = ['maxConnections' => 1, 'acquireTimeout' => 0.5] + self::ownPool();
+    $fields = ['maxConnections' => 1, 'acquireTimeout' => 0.5] + $this->ownPool();
     $config = TestDatabase::fromEnvironment()->config(...$fields);
     $connection = $this->driver()->connect($config);
-    $cursor = $connection->execute('select text_value from fx_lobs where id = 1', [], self::options())->cursor();
-    expect($cursor)->not->toBeNull();
+    $cursor = $connection->execute('select text_value from fx_lobs where id = 1', [], $this->options())->cursor();
+    assert($cursor !== null);
     $lob = lob($cursor->fetchBatch()[0]['TEXT_VALUE']);
     unset($connection, $cursor);
 
@@ -212,8 +220,9 @@ test('a lob does not keep the session alive', function (): void {
     $this->connect(...$fields)->close();
     assertUseAfterClose($lob);
 });
+
 test('a closed lob fails and close is idempotent', function (): void {
-    [$row] = self::rows($this->connect(), 'select binary_value from fx_lobs where id = 1');
+    [$row] = $this->rows($this->connect(), 'select binary_value from fx_lobs where id = 1');
     $lob = lob($row['BINARY_VALUE']);
     $lob->close();
     $lob->close();
@@ -221,18 +230,19 @@ test('a closed lob fails and close is idempotent', function (): void {
     foreach (['type()' => $lob->type(...), 'size()' => $lob->size(...), 'readChunk()' => $lob->readChunk(...)] as $call => $read) {
         try {
             $read();
-            self::fail("$call after close() worked.");
+            $this->fail("$call after close() worked.");
         } catch (UsageException $e) {
             expect($e->getMessage())->toBe('The Lob is closed.', $call);
         }
     }
 });
+
 test('inline lobs give strings empty and null', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
     $connection = $this->connect();
-    $inline = self::options(values: new ValueMapping(lobs: LobMode::Inline));
-    $rows = self::rows($connection, <<<'SQL'
+    $inline = $this->options(values: new ValueMapping(lobs: LobMode::Inline));
+    $rows = $this->rows($connection, <<<'SQL'
             select id, text_value, binary_value, to_nclob(text_value) as national_value
               from fx_lobs where id <= 3 order by id
             SQL, [], $inline);
@@ -251,23 +261,24 @@ test('inline lobs give strings empty and null', function (): void {
     )->outValues();
     expect($outValues)->toBe(['c' => ['text'], 'n' => ["\u{65e5}\u{672c}"], 'b' => ["\x01\x02"], 'e' => [''], 'none' => [null]]);
 
-    [$row] = self::rows($connection, 'select text_value, binary_value from fx_lobs where id = 4', [], $inline);
-    expect($row['TEXT_VALUE'])->toBeString()
-        ->and($row['BINARY_VALUE'])->toBeString()
-        ->and(md5($row['TEXT_VALUE']))->toBe(md5(largeText()))
+    [$row] = $this->rows($connection, 'select text_value, binary_value from fx_lobs where id = 4', [], $inline);
+    assert(\is_string($row['TEXT_VALUE']));
+    assert(\is_string($row['BINARY_VALUE']));
+    expect(md5($row['TEXT_VALUE']))->toBe(md5(largeText()))
         ->and(md5($row['BINARY_VALUE']))->toBe(md5(largeBinary()));
 });
+
 test('inline lobs within the prefetch size cost no round trip of their own', function (): void {
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
     $rows = [];
-    $query = static function (string $sql, LobMode $lobs) use ($connection, $counter, $sid, &$rows): int {
-        return $counter->during($sid, static function () use ($connection, $sql, $lobs, &$rows): void {
-            $cursor = $connection->execute($sql, [], self::options(values: new ValueMapping(lobs: $lobs)))->cursor();
-            self::assertNotNull($cursor);
+    $query = function (string $sql, LobMode $lobs) use ($connection, $counter, $sid, &$rows): int {
+        return $counter->during($sid, function () use ($connection, $sql, $lobs, &$rows): void {
+            $cursor = $connection->execute($sql, [], $this->options(values: new ValueMapping(lobs: $lobs)))->cursor();
+            assert($cursor !== null);
             $types = array_column($cursor->columns(), 'type');
-            self::assertSame(\array_slice(['clob', 'nClob', 'blob'], 0, \count($types)), $types, 'The Column types stay the LOB types');
+            expect($types)->toBe(\array_slice(['clob', 'nClob', 'blob'], 0, \count($types)));
             $rows = $cursor->fetchBatch();
             $cursor->close();
         });
@@ -307,19 +318,20 @@ test('inline lobs within the prefetch size cost no round trip of their own', fun
                 expect($inline[0][array_key_first($inline[0])])->toBe(str_repeat('x', (int) substr($case, 11, 5)), $case);
             } elseif ($case === 'one LOB of 16 MiB') {
                 $value = $inline[0]['TEXT_VALUE'];
-                expect($value)->toBeString()
-                    ->and(md5($value))->toBe(md5(largeText()));
+                assert(\is_string($value));
+                expect(md5($value))->toBe(md5(largeText()));
             }
         }
     } finally {
         $counter->close();
     }
 });
+
 test('a lob within the prefetch size reads with no round trip', function (): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
 
     $connection = $this->connect();
-    [$row] = self::rows($connection, 'select text_value, to_nclob(text_value) as national_value, binary_value from fx_lobs where id = 1');
+    [$row] = $this->rows($connection, 'select text_value, to_nclob(text_value) as national_value, binary_value from fx_lobs where id = 1');
     $read = [];
     $trips = roundTrips($connection, static function () use ($row, &$read): void {
         $read = array_map(read(...), array_map(lob(...), $row));
@@ -328,26 +340,28 @@ test('a lob within the prefetch size reads with no round trip', function (): voi
     expect($read)->toBe(['TEXT_VALUE' => $small, 'NATIONAL_VALUE' => $small, 'BINARY_VALUE' => "\xde\xad\xbe\xef"])
         ->and($trips)->toBe(0);
 });
+
 test('an inline lob too large for memory fails pointing to the default mode', function (): void {
     $connection = $this->connect();
     $limit = \ini_get('memory_limit');
     \ini_set('memory_limit', (string) (memory_get_usage() + 8 * 1024 * 1024));
 
     try {
-        self::rows($connection, 'select binary_value from fx_lobs where id = 4', [], self::options(values: new ValueMapping(lobs: LobMode::Inline)));
-        self::fail('A 16 MiB LOB was read inline under an 8 MiB margin.');
+        $this->rows($connection, 'select binary_value from fx_lobs where id = 4', [], $this->options(values: new ValueMapping(lobs: LobMode::Inline)));
+        $this->fail('A 16 MiB LOB was read inline under an 8 MiB margin.');
     } catch (UnsupportedException $unsupportedException) {
         expect($unsupportedException->getMessage())->toContain('Column BINARY_VALUE')
             ->and($unsupportedException->getMessage())->toContain('LobMode::Locator');
     } finally {
         \ini_set('memory_limit', (string) $limit);
     }
-    expect(self::value($connection, 'select 1 from dual'))->toBe(1, 'The Connection still works');
+    expect($this->value($connection, 'select 1 from dual'))->toBe(1, 'The Connection still works');
 });
+
 test('a chunk too large for memory fails instead of ending the request', function (): void {
     $connection = $this->connect();
-    $cursor = $connection->execute('select binary_value, text_value from fx_lobs where id = 4', [], self::options())->cursor();
-    expect($cursor)->not->toBeNull();
+    $cursor = $connection->execute('select binary_value, text_value from fx_lobs where id = 4', [], $this->options())->cursor();
+    assert($cursor !== null);
     $row = $cursor->fetchBatch()[0];
     $limit = \ini_get('memory_limit');
 
@@ -356,7 +370,7 @@ test('a chunk too large for memory fails instead of ending the request', functio
         \ini_set('memory_limit', (string) (memory_get_usage(true) + 512 * 1024));
         try {
             $lob->readChunk();
-            self::fail("$column: a 1 MiB chunk was read under a 512 KiB margin.");
+            $this->fail("$column: a 1 MiB chunk was read under a 512 KiB margin.");
         } catch (UnsupportedException $e) {
             expect($e->getMessage())->toContain('memory_limit');
         } finally {
@@ -365,10 +379,12 @@ test('a chunk too large for memory fails instead of ending the request', functio
         expect(\strlen($lob->readChunk()))->toBeGreaterThanOrEqual(1024 * 1024, "$column reads once memory allows");
     }
 });
+
 /**
  * @return array<string, array{string}>
  */
 dataset('cursorKinds', fn(): array => ['REF CURSOR' => ['ref'], 'nested CURSOR()' => ['nested'], 'Implicit result' => ['implicit']]);
+
 /**
  * @return array<string, array{string, LobMode}>
  */
@@ -382,6 +398,7 @@ dataset('cursorKindsAndLobModes', function (): array {
 
     return $cases;
 });
+
 test('lob columns of a cursor read like those of a query', function (string $kind, LobMode $mode): void {
     $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
     $allLobs = <<<'SQL'
@@ -390,8 +407,8 @@ test('lob columns of a cursor read like those of a query', function (string $kin
             SQL;
 
     $connection = $this->connect();
-    $options = self::options(values: new ValueMapping(lobs: $mode));
-    $query = comparable(self::rows($connection, $allLobs, [], $options));
+    $options = $this->options(values: new ValueMapping(lobs: $mode));
+    $query = comparable($this->rows($connection, $allLobs, [], $options));
     [$cursor] = cursorOf($kind, $connection, $allLobs, $options);
 
     expect(array_column($cursor->columns(), 'type'))->toBe(['number', 'clob', 'nClob', 'blob'])
@@ -403,6 +420,7 @@ test('lob columns of a cursor read like those of a query', function (string $kin
             ['ID' => 4, 'TEXT_VALUE' => md5(largeText()), 'NATIONAL_VALUE' => md5(largeText()), 'BINARY_VALUE' => md5(largeBinary())],
         ]);
 })->with('cursorKindsAndLobModes');
+
 test('lob columns of a cursor cost the round trips they cost in a query', function (string $kind): void {
     $smallText = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
     $allLobs = <<<'SQL'
@@ -411,17 +429,17 @@ test('lob columns of a cursor cost the round trips they cost in a query', functi
             SQL;
 
     $connection = $this->connect();
-    $sid = self::sid($connection);
+    $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();
-    $locator = self::options(values: new ValueMapping(lobs: LobMode::Locator));
-    $inline = self::options(values: new ValueMapping(lobs: LobMode::Inline));
+    $locator = $this->options(values: new ValueMapping(lobs: LobMode::Locator));
+    $inline = $this->options(values: new ValueMapping(lobs: LobMode::Inline));
 
     try {
-        $query = static function (DriverOptions $options) use ($connection, $counter, $sid, $allLobs): int {
-            self::rows($connection, $allLobs, [], $options);
+        $query = function (DriverOptions $options) use ($connection, $counter, $sid, $allLobs): int {
+            $this->rows($connection, $allLobs, [], $options);
 
-            return $counter->during($sid, static function () use ($connection, $options, $allLobs): void {
-                self::rows($connection, $allLobs, [], $options);
+            return $counter->during($sid, function () use ($connection, $options, $allLobs): void {
+                $this->rows($connection, $allLobs, [], $options);
             });
         };
         $fetch = static function (string $sql, DriverOptions $options) use ($kind, $connection, $counter, $sid): int {
@@ -448,6 +466,7 @@ test('lob columns of a cursor cost the round trips they cost in a query', functi
         $counter->close();
     }
 })->with('cursorKinds');
+
 /**
  * The second element keeps the parent of a nested Cursor open.
  *
@@ -457,15 +476,16 @@ function cursorOf(string $kind, DriverConnection $connection, string $query, Dri
 {
     if ($kind === 'ref') {
         $values = $connection->execute("begin open :o for $query; end;", ['o' => Cursor::out()], $options)->outValues()['o'] ?? [];
-        expect($values[0] ?? null)->toBeInstanceOf(DriverCursor::class);
+        $cursor = $values[0] ?? null;
+        assert($cursor instanceof DriverCursor);
 
-        return [$values[0], null];
+        return [$cursor, null];
     }
     if ($kind === 'nested') {
         $parent = $connection->execute("select cursor($query) as nested_rows from dual", [], $options)->cursor();
-        expect($parent)->not->toBeNull();
+        assert($parent instanceof DriverCursor);
         $nested = $parent->fetchBatch()[0]['NESTED_ROWS'] ?? null;
-        expect($nested)->toBeInstanceOf(DriverCursor::class);
+        assert($nested instanceof DriverCursor);
 
         return [$nested, $parent];
     }
@@ -478,6 +498,7 @@ function cursorOf(string $kind, DriverConnection $connection, string $query, Dri
 
     return [$results[0], null];
 }
+
 /**
  * @return list<array<int|string, mixed>>
  */
@@ -490,6 +511,7 @@ function drain(DriverCursor $cursor): array
 
     return $rows;
 }
+
 /**
  * The rows with each LOB read to its contents, and contents longer than
  * 1 KiB replaced by their MD5, so that rows compare readably.
@@ -506,6 +528,7 @@ function comparable(array $rows): array
         return \is_string($value) && \strlen($value) > 1024 ? md5($value) : $value;
     }, $row), $rows);
 }
+
 function read(DriverLob $lob): string
 {
     $contents = '';
@@ -516,12 +539,14 @@ function read(DriverLob $lob): string
 
     return $contents;
 }
+
 function lob(mixed $value): DriverLob
 {
-    expect($value)->toBeInstanceOf(DriverLob::class);
+    assert($value instanceof DriverLob);
 
     return $value;
 }
+
 function assertUseAfterClose(DriverLob $lob): void
 {
     foreach (['type()' => $lob->type(...), 'size()' => $lob->size(...), 'readChunk()' => $lob->readChunk(...)] as $call => $read) {
@@ -533,6 +558,7 @@ function assertUseAfterClose(DriverLob $lob): void
         }
     }
 }
+
 /**
  * @param callable(): mixed $action
  */
@@ -546,6 +572,7 @@ function roundTrips(DriverConnection $connection, callable $action, int | null $
         $counter->close();
     }
 }
+
 /**
  * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
  */
@@ -559,6 +586,7 @@ function largeText(): string
 
     return $text;
 }
+
 /**
  * fx_lobs row 4's BLOB: the byte at offset k is k mod 256.
  */

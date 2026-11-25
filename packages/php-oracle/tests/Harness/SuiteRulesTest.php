@@ -19,6 +19,7 @@ test('exceptions keep their arguments', function (): void {
         return;
     }
 });
+
 test('traces show string arguments whole', function (): void {
     $throw = static function (string $argument): never {
         throw new RuntimeException('boom');
@@ -32,6 +33,7 @@ test('traces show string arguments whole', function (): void {
         return;
     }
 });
+
 /**
  * @return iterable<string, array{string, string}>
  */
@@ -40,18 +42,21 @@ dataset('issues', function () {
     yield 'E_NOTICE' => ['emits_a_notice', '1 test triggered 1 PHP notice'];
     yield 'E_DEPRECATED' => ['emits_a_deprecation', '1 test triggered 1 PHP deprecation'];
 });
+
 test('an issue fails the run', function (string $probe, string $reported): void {
     [$exitCode, $output] = runProbe($probe);
 
     expect($output)->toContain($reported)
         ->and($exitCode)->toBe(1, $output);
 })->with('issues');
+
 test('a clean test passes the run', function (): void {
     [$exitCode, $output] = runProbe('emits_nothing');
 
     expect($output)->toContain('OK (1 test, 1 assertion)')
         ->and($exitCode)->toBe(0, $output);
 });
+
 /**
  * Runs one test of IssueProbe in a separate PHPUnit process, with this
  * suite's configuration.
@@ -73,7 +78,7 @@ function runProbe(string $method): array
     ];
 
     $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-    expect($process)->toBeResource();
+    assert(\is_resource($process));
     $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
