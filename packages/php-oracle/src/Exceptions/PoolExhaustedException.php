@@ -7,4 +7,6 @@ namespace Rajska\Oracle\Exceptions;
 /**
  * The Pool stayed at its ceiling for the whole `acquireTimeout`.
  */
-final class PoolExhaustedException extends ConnectionException {}
+final class PoolExhaustedException extends ConnectionException
+{
+}

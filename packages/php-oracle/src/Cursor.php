@@ -52,7 +52,8 @@ final class Cursor implements IteratorAggregate
         private readonly DriverCursor $driver,
         private readonly ConnectionState $connection,
         private readonly Cursor | null $parent = null,
-    ) {}
+    ) {
+    }
 
     /**
      * Values with each Backend Cursor handle (a REF CURSOR) wrapped as a

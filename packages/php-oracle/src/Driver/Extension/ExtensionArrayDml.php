@@ -14,7 +14,9 @@ final readonly class ExtensionArrayDml implements DriverArrayDml
     /**
      * @param array<string, list<list<mixed>>> $outValues
      */
-    public function __construct(private int $rowCount, private array $outValues) {}
+    public function __construct(private int $rowCount, private array $outValues)
+    {
+    }
 
     public function rowCount(): int
     {

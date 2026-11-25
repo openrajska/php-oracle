@@ -21,7 +21,8 @@ final readonly class TestDatabase
         public string $user,
         #[SensitiveParameter]
         public string $password,
-    ) {}
+    ) {
+    }
 
     /**
      * A ConnectionConfig for the test database; named arguments override

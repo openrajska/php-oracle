@@ -54,7 +54,8 @@ final readonly class FunctionCall
     public function __construct(
         private Call $call,
         private Closure $run,
-    ) {}
+    ) {
+    }
 
     public function varchar(): string | null
     {

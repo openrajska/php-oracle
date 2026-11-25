@@ -29,7 +29,9 @@ final class ExtensionConnection implements DriverConnection
      */
     private array | null $lastArray = null;
 
-    public function __construct(private readonly NativeConnection $native) {}
+    public function __construct(private readonly NativeConnection $native)
+    {
+    }
 
     public function execute(string $sql, #[SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
     {

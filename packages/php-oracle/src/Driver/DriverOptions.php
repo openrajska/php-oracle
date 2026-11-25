@@ -27,7 +27,8 @@ final readonly class DriverOptions
         public ValueMapping $values,
         public RowShape $rowShape,
         public KeyCase $keyCase,
-    ) {}
+    ) {
+    }
 
     /**
      * These options, committing with each execute or not.

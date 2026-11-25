@@ -51,7 +51,8 @@ final readonly class Call
         #[SensitiveParameter]
         private array $binds,
         private array $parameters,
-    ) {}
+    ) {
+    }
 
     /**
      * @param array<mixed> $binds keyed by parameter name

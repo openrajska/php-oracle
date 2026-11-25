@@ -28,7 +28,8 @@ final readonly class OutValue
         private array $values,
         private string | null $sql = null,
         private string | null $call = null,
-    ) {}
+    ) {
+    }
 
     public function int(): int | null
     {

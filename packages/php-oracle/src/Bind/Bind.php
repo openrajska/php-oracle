@@ -24,5 +24,6 @@ abstract readonly class Bind
         #[SensitiveParameter]
         public mixed $value,
         public string | null $typeName = null,
-    ) {}
+    ) {
+    }
 }

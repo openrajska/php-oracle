@@ -283,7 +283,9 @@ final class BindsTest extends ConformanceTestCase
 
         try {
             $connection->execute('select :v from dual', ['v' => new readonly class ($thrown) implements Stringable {
-                public function __construct(private Throwable $thrown) {}
+                public function __construct(private Throwable $thrown)
+                {
+                }
 
                 public function __toString(): string
                 {

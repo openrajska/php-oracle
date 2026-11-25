@@ -26,7 +26,8 @@ final readonly class Lob
     public function __construct(
         private DriverLob $driver,
         private ConnectionState $connection,
-    ) {}
+    ) {
+    }
 
     /**
      * Values with each Backend LOB handle wrapped as a Lob of the

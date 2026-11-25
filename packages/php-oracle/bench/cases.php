@@ -65,7 +65,8 @@ final class BenchContext
         public readonly string $user,
         #[SensitiveParameter]
         public readonly string $password,
-    ) {}
+    ) {
+    }
 
     public static function fromEnvironment(): self
     {

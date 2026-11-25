@@ -16,7 +16,9 @@ use RuntimeException;
  */
 final readonly class TransactionObserver
 {
-    private function __construct(private IndependentSession $session) {}
+    private function __construct(private IndependentSession $session)
+    {
+    }
 
     /**
      * Opens the observer and empties fx_tx_rows.

@@ -22,7 +22,8 @@ final readonly class ExtensionExecution implements DriverExecution
         private array $outValues,
         private array $implicitResults,
         private string | null $warning,
-    ) {}
+    ) {
+    }
 
     public function rowCount(): int
     {

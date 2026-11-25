@@ -33,7 +33,8 @@ final class ArrayDml implements Countable
         private readonly string $sql,
         private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
-    ) {}
+    ) {
+    }
 
     /**
      * The INSERT / UPDATE / DELETE / MERGE count, across every bind row; 0

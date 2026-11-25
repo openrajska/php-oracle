@@ -29,7 +29,9 @@ final class ExtensionCursor implements DriverCursor
     /**
      * @param string $sql the SQL of the Execution the Cursor was born of, for `sql()`
      */
-    public function __construct(private readonly NativeCursor $native, private readonly string $sql) {}
+    public function __construct(private readonly NativeCursor $native, private readonly string $sql)
+    {
+    }
 
     /**
      * OUT values with each native handle (a REF CURSOR, a LOB) wrapped.

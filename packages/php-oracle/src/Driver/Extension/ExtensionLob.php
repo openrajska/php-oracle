@@ -17,7 +17,9 @@ final readonly class ExtensionLob implements DriverLob
     /**
      * @param string $sql the SQL of the Execution the LOB was read from, for `sql()`
      */
-    public function __construct(private NativeLob $native, private string $sql) {}
+    public function __construct(private NativeLob $native, private string $sql)
+    {
+    }
 
     public function type(): LobType
     {

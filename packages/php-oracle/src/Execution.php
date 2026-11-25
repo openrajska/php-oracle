@@ -42,7 +42,8 @@ final class Execution
         private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
         private readonly string | null $call = null,
-    ) {}
+    ) {
+    }
 
     /**
      * The INSERT / UPDATE / DELETE / MERGE count; 0 for anything else.
