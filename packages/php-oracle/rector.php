@@ -2,6 +2,7 @@
 
 declare(strict_types = 1);
 
+use Pest\Rector\Set\PestSetList;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
@@ -20,4 +21,7 @@ return RectorConfig::configure()
         codingStyle: true,
         typeDeclarations: true,
     )
+    ->withSets([
+        PestSetList::CODING_STYLE,
+    ])
     ->withPhpSets();

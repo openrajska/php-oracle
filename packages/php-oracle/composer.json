@@ -9,8 +9,11 @@
     },
     "require-dev": {
         "laravel/pint": "^1.32",
+        "pestphp/pest": "^5.3",
+        "pestphp/pest-plugin-drift": "^5.0",
+        "pestphp/pest-plugin-rector": "^5.0",
+        "pestphp/pest-plugin-type-coverage": "^5.1",
         "phpstan/phpstan": "^2.3",
-        "phpunit/phpunit": "^13.4",
         "rector/rector": "^2.9"
     },
     "autoload": {
@@ -25,14 +28,30 @@
         }
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
     },
     "scripts": {
-        "analyse": "phpstan analyse --no-progress --memory-limit=1G",
-        "format": "pint",
-        "format:check": "pint --test",
-        "refactor": "rector process",
-        "refactor:check": "rector process --dry-run",
-        "test": "phpunit"
+        "lint": [
+            "rector",
+            "pint --parallel"
+        ],
+        "test:type-coverage": "pest --type-coverage --min=100",
+        "test:lint": [
+            "pint --parallel --test",
+            "rector --dry-run"
+        ],
+        "test:unit": "XDEBUG_MODE=\"coverage\" pest --parallel --coverage --exactly=100.0",
+        "test:types": [
+            "phpstan --memory-limit=-1"
+        ],
+        "test": [
+            "@test:lint",
+            "@test:type-coverage",
+            "@test:types",
+            "@test:unit"
+        ]
     }
 }
