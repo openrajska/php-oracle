@@ -200,6 +200,12 @@ jobs:
         # Composer runs without the Extension loaded (spec #32 §15).
         run: composer install --no-interaction --no-progress --ignore-platform-req=ext-oracledb
 
+      - name: Code style and refactoring
+        working-directory: packages/php-oracle
+        run: |
+          composer format:check
+          composer refactor:check
+
       - name: Static analysis
         working-directory: packages/php-oracle
         run: composer analyse
