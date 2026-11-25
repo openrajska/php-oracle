@@ -21,13 +21,13 @@ use RuntimeException;
  */
 final readonly class RoundTripCounter
 {
-    private const string SQL = <<<'SQL'
-        select s.value
-          from v$sesstat s
-          join v$statname n on n.statistic# = s.statistic#
-         where n.name = 'SQL*Net roundtrips to/from client'
-           and s.sid = :sid
-        SQL;
+    private const string SQL = <<<'SQL_WRAP'
+    select s.value
+      from v$sesstat s
+      join v$statname n on n.statistic# = s.statistic#
+     where n.name = 'SQL*Net roundtrips to/from client'
+       and s.sid = :sid
+    SQL_WRAP;
 
     private function __construct(private IndependentSession $observer) {}
 
