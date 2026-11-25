@@ -44,7 +44,7 @@ The header is the first line. It takes the form `<type>(<scope>)!: <description>
 | `test`     | Adding or fixing tests, conformance suites or benchmarks          | —      |
 | `build`    | Build system, packaging, dependencies, Dockerfiles, PIE metadata  | —      |
 | `ci`       | CI configuration and scripts                                      | —      |
-| `style`    | Formatting only (whitespace, rustfmt, php-cs-fixer); no logic     | —      |
+| `style`    | Formatting only (whitespace, rustfmt, Pint); no logic             | —      |
 | `chore`    | Maintenance that fits none of the above                           | —      |
 | `revert`   | Reverting a previous commit                                       | —      |
 
