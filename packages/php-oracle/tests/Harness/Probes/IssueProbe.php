@@ -17,20 +17,20 @@ final class IssueProbe extends TestCase
     #[Test]
     public function emits_nothing(): void
     {
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
     public function emits_a_warning(): void
     {
         $values = [];
-        self::assertNull($values['missing']); // E_WARNING: Undefined array key
+        $this->assertNull($values['missing']); // E_WARNING: Undefined array key
     }
 
     #[Test]
     public function emits_a_notice(): void
     {
-        self::assertSame('b', array_pop(explode(',', 'a,b'))); // E_NOTICE: only variables by reference
+        $this->assertSame('b', array_pop(explode(',', 'a,b'))); // E_NOTICE: only variables by reference
     }
 
     #[Test]
@@ -38,6 +38,6 @@ final class IssueProbe extends TestCase
     {
         $object = new class {};
         $object->dynamic = true; // E_DEPRECATED: creation of a dynamic property
-        self::assertTrue($object->dynamic);
+        $this->assertTrue($object->dynamic);
     }
 }

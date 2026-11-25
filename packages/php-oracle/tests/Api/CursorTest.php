@@ -2,13 +2,10 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Api;
+namespace Rajska\Oracle\Tests\Api\CursorTest;
 
 use Fiber;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Column;
-use Rajska\Oracle\Connection;
 use Rajska\Oracle\Cursor;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -23,422 +20,342 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Type;
 use Rajska\Oracle\ValueMapping;
 use Rajska\Oracle\VectorFormat;
+use RuntimeException;
 
-/**
- * A Cursor streams a query's rows lazily, in one pass, shaped by the
- * Execution's options.
- */
-final class CursorTest extends TestCase
-{
-    private const string FIVE_ROWS = 'select level n from dual connect by level <= 5';
+beforeEach(function (): void {
+    $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
+});
+afterEach(function (): void {
+    $this->connection->close();
+});
+test('select equals run rows', function (): void {
+    $sql = 'select id, name from fx_items where id <= :last order by id';
 
-    private Connection $connection;
+    expect($this->connection->select($sql, ['last' => 3])->all())->toBe($this->connection->run($sql, ['last' => 3])->rows()->all())
+        ->and($this->connection->select($sql, ['last' => 1])->all())->toBe([['ID' => 1, 'NAME' => 'Item 0001']]);
+});
+test('select is lazy', function (): void {
+    $sid = sid();
+    $counter = RoundTripCounter::open();
+    $options = new ExecuteOptions(fetchSize: 10);
 
-    protected function setUp(): void
-    {
-        $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
-    }
-
-    protected function tearDown(): void
-    {
-        $this->connection->close();
-    }
-
-    #[Test]
-    public function select_equals_run_rows(): void
-    {
-        $sql = 'select id, name from fx_items where id <= :last order by id';
-
-        self::assertSame(
-            $this->connection->run($sql, ['last' => 3])->rows()->all(),
-            $this->connection->select($sql, ['last' => 3])->all(),
-        );
-        self::assertSame([['ID' => 1, 'NAME' => 'Item 0001']], $this->connection->select($sql, ['last' => 1])->all());
-    }
-
-    #[Test]
-    public function select_is_lazy(): void
-    {
-        $sid = $this->sid();
-        $counter = RoundTripCounter::open();
-        $options = new ExecuteOptions(fetchSize: 10);
-
-        try {
-            $cursor = null;
-            self::assertSame(1, $counter->during($sid, function () use (&$cursor, $options): void {
-                $cursor = $this->connection->select('select id from fx_items order by id', [], $options);
-            }));
-            self::assertInstanceOf(Cursor::class, $cursor);
-            // The execute brought the first batch; the second and third
-            // batches cost one Round trip each.
-            self::assertSame(2, $counter->during($sid, function () use ($cursor): void {
-                foreach ($cursor as $position => $row) {
-                    if ($position === 29) {
-                        break;
-                    }
+    try {
+        $cursor = null;
+        expect($counter->during($sid, function () use (&$cursor, $options): void {
+            $cursor = $this->connection->select('select id from fx_items order by id', [], $options);
+        }))->toBe(1)
+            ->and($cursor)->toBeInstanceOf(Cursor::class);
+        // The execute brought the first batch; the second and third
+        // batches cost one Round trip each.
+        expect($counter->during($sid, function () use ($cursor): void {
+            foreach ($cursor as $position => $row) {
+                if ($position === 29) {
+                    break;
                 }
-            }));
-        } finally {
-            $counter->close();
-        }
-    }
-
-    /**
-     * Core never classifies SQL.
-     */
-    #[Test]
-    public function select_of_an_update_runs_it_then_fails_in_rows(): void
-    {
-        $table = 'tmp_select_' . bin2hex(random_bytes(4));
-        $this->connection->run("create table $table (id number)");
-
-        try {
-            try {
-                $this->connection->select("insert into $table values (1)");
-                self::fail('select() of an INSERT returned a Cursor.');
-            } catch (UsageException $e) {
-                self::assertStringContainsString('results()', $e->getMessage());
-                self::assertStringContainsString('out()', $e->getMessage());
-                self::assertSame("insert into $table values (1)", $e->sql());
             }
-            self::assertSame(1, $this->connection->select("select count(*) from $table")->value());
-
-            $this->expectException(UsageException::class);
-            $this->connection->run('begin null; end;')->rows();
-        } finally {
-            $this->connection->run("drop table $table purge");
-        }
+        }))->toBe(2);
+    } finally {
+        $counter->close();
     }
+});
+test('select of an update runs it then fails in rows', function (): void {
+    $table = 'tmp_select_' . bin2hex(random_bytes(4));
+    $this->connection->run("create table $table (id number)");
 
-    #[Test]
-    public function foreach_is_single_pass_and_continues_where_it_stopped(): void
-    {
-        $cursor = $this->connection->select(self::FIVE_ROWS, [], new ExecuteOptions(fetchSize: 2));
-
-        $seen = [];
-        foreach ($cursor as $position => $row) {
-            $seen[$position] = $row['N'];
-            if ($position === 2) {
-                break;
-            }
-        }
-        foreach ($cursor as $position => $row) {
-            $seen[$position] = $row['N'];
-        }
-
-        self::assertSame([0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5], $seen);
-        self::assertSame([], iterator_to_array($cursor));
-        self::assertSame([], $cursor->all());
+    try {
+        expect(fn() => $this->connection->select("insert into $table values (1)"))->toThrow(function (UsageException $usageException) use ($table): void {
+            expect($usageException->getMessage())->toContain('results()', 'out()')
+                ->and($usageException->sql())->toBe("insert into $table values (1)");
+        })
+            ->and($this->connection->select("select count(*) from $table")->value())->toBe(1)
+            ->and(fn() => $this->connection->run('begin null; end;')->rows())->toThrow(UsageException::class);
+    } finally {
+        $this->connection->run("drop table $table purge");
     }
+});
+test('foreach is single pass and continues where it stopped', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
 
-    #[Test]
-    public function all_returns_the_remaining_rows(): void
-    {
-        $cursor = $this->connection->select(self::FIVE_ROWS, [], new ExecuteOptions(fetchSize: 2));
+    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
 
-        foreach ($cursor as $row) {
+    $seen = [];
+    foreach ($cursor as $position => $row) {
+        $seen[$position] = $row['N'];
+        if ($position === 2) {
             break;
         }
-
-        self::assertSame([['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5]], $cursor->all());
-        self::assertSame([], $cursor->all());
+    }
+    foreach ($cursor as $position => $row) {
+        $seen[$position] = $row['N'];
     }
 
-    #[Test]
-    public function first_and_value_return_the_next_row_then_close(): void
-    {
-        $cursor = $this->connection->select(self::FIVE_ROWS);
-        foreach ($cursor as $row) {
-            break;
-        }
-        self::assertSame(['N' => 2], $cursor->first());
-        $this->assertClosed($cursor);
+    expect($seen)->toBe([0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5])
+        ->and(iterator_to_array($cursor))->toBeEmpty()
+        ->and($cursor->all())->toBe([]);
+});
+test('all returns the remaining rows', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
 
-        self::assertSame(1, $this->connection->select(self::FIVE_ROWS)->value());
-        self::assertNull($this->connection->select('select 1 from dual where 1 = 0')->value());
-        self::assertNull($this->connection->select('select 1 from dual where 1 = 0')->first());
-        self::assertSame(1, $this->connection->select(self::FIVE_ROWS, [], new ExecuteOptions(rowShape: RowShape::List))->value());
+    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
 
-        $cursor = $this->connection->select(self::FIVE_ROWS);
-        $cursor->value();
-        $this->assertClosed($cursor);
+    foreach ($cursor as $row) {
+        break;
     }
 
-    #[Test]
-    public function reading_after_close_fails_and_a_double_close_is_fine(): void
-    {
-        $cursor = $this->connection->select(self::FIVE_ROWS, [], new ExecuteOptions(fetchSize: 2));
-        foreach ($cursor as $row) {
-            break;
-        }
+    expect($cursor->all())->toBe([['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5]])
+        ->and($cursor->all())->toBe([]);
+});
+test('first and value return the next row then close', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
 
-        $cursor->close();
-        $cursor->close();
+    $cursor = $this->connection->select($fiveRows);
+    foreach ($cursor as $row) {
+        break;
+    }
+    expect($cursor->first())->toBe(['N' => 2]);
+    assertClosed($cursor);
 
-        $this->assertClosed($cursor);
+    expect($this->connection->select($fiveRows)->value())->toBe(1)
+        ->and($this->connection->select('select 1 from dual where 1 = 0')->value())->toBeNull()
+        ->and($this->connection->select('select 1 from dual where 1 = 0')->first())->toBeNull()
+        ->and($this->connection->select($fiveRows, [], new ExecuteOptions(rowShape: RowShape::List))->value())->toBe(1);
+
+    $cursor = $this->connection->select($fiveRows);
+    $cursor->value();
+    assertClosed($cursor);
+});
+test('reading after close fails and a double close is fine', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
+
+    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
+    foreach ($cursor as $row) {
+        break;
     }
 
-    /**
-     * Also from two Fibers.
-     */
-    #[Test]
-    public function two_cursors_read_interleaved_with_dml_and_commit_between_batches(): void
-    {
-        $options = new ExecuteOptions(fetchSize: 3);
-        $sql = 'select id from fx_items where id <= :last order by id';
-        $iterators = [
-            $this->connection->select($sql, ['last' => 10], $options)->getIterator(),
-            $this->connection->select($sql, ['last' => 10], $options)->getIterator(),
-        ];
+    $cursor->close();
+    $cursor->close();
 
-        $ids = [[], []];
-        while ($iterators[0]->valid() || $iterators[1]->valid()) {
-            foreach ($iterators as $which => $rows) {
-                if ($rows->valid()) {
-                    $ids[$which][] = $rows->current()['ID'];
-                    $rows->next();
-                }
-            }
-            $this->connection->run('update fx_items set name = name where id = 1');
-            $this->connection->run('commit');
-        }
+    assertClosed($cursor);
+});
+test('two cursors read interleaved with dml and commit between batches', function (): void {
+    $options = new ExecuteOptions(fetchSize: 3);
+    $sql = 'select id from fx_items where id <= :last order by id';
+    $iterators = [
+        $this->connection->select($sql, ['last' => 10], $options)->getIterator(),
+        $this->connection->select($sql, ['last' => 10], $options)->getIterator(),
+    ];
 
-        self::assertSame([range(1, 10), range(1, 10)], $ids);
-
-        $fibers = [];
-        $read = [];
-        foreach (['a', 'b'] as $name) {
-            $cursor = $this->connection->select($sql, ['last' => 10], $options);
-            $fibers[$name] = new Fiber(static function () use ($cursor, $name, &$read): void {
-                foreach ($cursor as $row) {
-                    $read[$name][] = $row['ID'];
-                    Fiber::suspend();
-                }
-            });
-        }
-        foreach ($fibers as $fiber) {
-            $fiber->start();
-        }
-        while (array_filter($fibers, static fn(Fiber $f): bool => !$f->isTerminated()) !== []) {
-            foreach ($fibers as $fiber) {
-                if (!$fiber->isTerminated()) {
-                    $fiber->resume();
-                }
+    $ids = [[], []];
+    while ($iterators[0]->valid() || $iterators[1]->valid()) {
+        foreach ($iterators as $which => $rows) {
+            if ($rows->valid()) {
+                $ids[$which][] = $rows->current()['ID'];
+                $rows->next();
             }
         }
-
-        self::assertSame(['a' => range(1, 10), 'b' => range(1, 10)], $read);
+        $this->connection->run('update fx_items set name = name where id = 1');
+        $this->connection->run('commit');
     }
 
-    /**
-     * Dropping a Cursor half-read closes its server cursor.
-     */
-    #[Test]
-    public function two_thousand_cursors_dropped_half_read_raise_no_ora_01000(): void
-    {
-        $options = new ExecuteOptions(fetchSize: 2);
-        for ($i = 0; $i < 2000; ++$i) {
-            $cursor = $this->connection->select(self::FIVE_ROWS, [], $options);
+    expect($ids)->toBe([range(1, 10), range(1, 10)]);
+
+    $fibers = [];
+    $read = [];
+    foreach (['a', 'b'] as $name) {
+        $cursor = $this->connection->select($sql, ['last' => 10], $options);
+        $fibers[$name] = new Fiber(static function () use ($cursor, $name, &$read): void {
             foreach ($cursor as $row) {
-                break;
+                $read[$name][] = $row['ID'];
+                Fiber::suspend();
             }
-            unset($cursor);
+        });
+    }
+    foreach ($fibers as $fiber) {
+        $fiber->start();
+    }
+    while (array_filter($fibers, static fn(Fiber $f): bool => !$f->isTerminated()) !== []) {
+        foreach ($fibers as $fiber) {
+            if (!$fiber->isTerminated()) {
+                $fiber->resume();
+            }
         }
-
-        self::assertSame(5, $this->connection->select('select count(*) from (' . self::FIVE_ROWS . ')')->value());
     }
 
-    #[Test]
-    public function columns_are_column_objects_before_the_first_row(): void
-    {
-        $cursor = $this->connection->select(
-            "select id, price, to_vector('[1,2,3]', 3, float32) embedding from fx_items where id = 1",
-            [],
-            new ExecuteOptions(keyCase: KeyCase::Lower),
-        );
+    expect($read)->toBe(['a' => range(1, 10), 'b' => range(1, 10)]);
+});
+test('two thousand cursors dropped half read raise no ora 01000', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
 
-        $columns = $cursor->columns();
-
-        self::assertEquals([
-            new Column(
-                name: 'id',
-                type: Type::Number,
-                nullable: false,
-                precision: 10,
-                scale: 0,
-                maxSize: null,
-                objectType: null,
-                vectorDimensions: null,
-                vectorFormat: null,
-                sparse: false,
-            ),
-            new Column(
-                name: 'price',
-                type: Type::Number,
-                nullable: false,
-                precision: 10,
-                scale: 2,
-                maxSize: null,
-                objectType: null,
-                vectorDimensions: null,
-                vectorFormat: null,
-                sparse: false,
-            ),
-            new Column(
-                name: 'embedding',
-                type: Type::Vector,
-                nullable: true,
-                precision: null,
-                scale: null,
-                maxSize: null,
-                objectType: null,
-                vectorDimensions: 3,
-                vectorFormat: VectorFormat::Float32,
-                sparse: false,
-            ),
-        ], $columns);
-        self::assertSame(Type::Number, $cursor->columns()[0]->type);
-        $cursor->close();
+    $options = new ExecuteOptions(fetchSize: 2);
+    for ($i = 0; $i < 2000; ++$i) {
+        $cursor = $this->connection->select($fiveRows, [], $options);
+        foreach ($cursor as $row) {
+            break;
+        }
+        unset($cursor);
     }
 
-    /**
-     * The Connection reads on, and the other scalar types arrive as stated.
-     */
-    #[Test]
-    public function an_xmltype_column_is_described_and_reading_it_is_unsupported(): void
-    {
-        $cursor = $this->connection->select("select xmltype('<a>1</a>') doc from dual");
-        self::assertSame(Type::Xmltype, $cursor->columns()[0]->type);
+    expect($this->connection->select('select count(*) from (' . $fiveRows . ')')->value())->toBe(5);
+});
+test('columns are column objects before the first row', function (): void {
+    $cursor = $this->connection->select(
+        "select id, price, to_vector('[1,2,3]', 3, float32) embedding from fx_items where id = 1",
+        [],
+        new ExecuteOptions(keyCase: KeyCase::Lower),
+    );
 
-        try {
+    $columns = $cursor->columns();
+
+    expect($columns)->toEqual([
+        new Column(
+            name: 'id',
+            type: Type::Number,
+            nullable: false,
+            precision: 10,
+            scale: 0,
+            maxSize: null,
+            objectType: null,
+            vectorDimensions: null,
+            vectorFormat: null,
+            sparse: false,
+        ),
+        new Column(
+            name: 'price',
+            type: Type::Number,
+            nullable: false,
+            precision: 10,
+            scale: 2,
+            maxSize: null,
+            objectType: null,
+            vectorDimensions: null,
+            vectorFormat: null,
+            sparse: false,
+        ),
+        new Column(
+            name: 'embedding',
+            type: Type::Vector,
+            nullable: true,
+            precision: null,
+            scale: null,
+            maxSize: null,
+            objectType: null,
+            vectorDimensions: 3,
+            vectorFormat: VectorFormat::Float32,
+            sparse: false,
+        ),
+    ])
+        ->and($cursor->columns()[0]->type)->toBe(Type::Number);
+
+    $cursor->close();
+});
+test('an xmltype column is described and reading it is unsupported', function (): void {
+    $cursor = $this->connection->select("select xmltype('<a>1</a>') doc from dual");
+    expect($cursor->columns()[0]->type)->toBe(Type::Xmltype)
+        ->and(function () use ($cursor): void {
             $cursor->first();
             self::fail('An XMLTYPE value was read.');
-        } catch (UnsupportedException $unsupportedException) {
-            self::assertSame('Column DOC: XMLTYPE values cannot be fetched yet.', $unsupportedException->getMessage());
-        }
-
-        self::assertSame(
-            ['BF' => 0.1, 'FLAG' => true, 'BYTES' => "\x00\xff", 'CH' => 'a  ', 'LONG_TEXT' => 'long text'],
-            $this->connection->select(<<<'SQL'
+        })->toThrow(UnsupportedException::class, 'Column DOC: XMLTYPE values cannot be fetched yet.')
+        ->and($this->connection->select(<<<'SQL'
                 select to_binary_float(0.1) bf, true flag, hextoraw('00FF') bytes,
                        cast('a' as char(3)) ch, l.text long_text
                   from fx_long_rows l
                  where l.id = 1
-                SQL)->first(),
-        );
+                SQL)->first())->toBe(['BF' => 0.1, 'FLAG' => true, 'BYTES' => "\x00\xff", 'CH' => 'a  ', 'LONG_TEXT' => 'long text']);
+});
+test('json and vector columns arrive decoded', function (): void {
+    $row = $this->connection->select(
+        "select json('{\"a\": [1, 0.5]}') doc, v8, s8 from fx_vectors where id = 1",
+        [],
+        new ExecuteOptions(keyCase: KeyCase::Lower),
+    )->first();
+
+    expect($row)->not->toBeNull()
+        ->and($row['doc'])->toBe(['a' => [1, '0.5']])
+        ->and($row['v8'])->toBe([1, -2, 127])
+        ->and($row['s8'])->toEqual(new SparseVector(10, [0 => -128, 9 => 127]));
+});
+test('row shape and key case come from the config and execute options override them', function (): void {
+    $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(rowShape: RowShape::Assoc, keyCase: KeyCase::Lower));
+    $sql = 'select id, name from fx_items where id = 1';
+
+    try {
+        expect($connection->select($sql)->first())->toBe(['id' => 1, 'name' => 'Item 0001'])
+            ->and($connection->select($sql, [], new ExecuteOptions(rowShape: RowShape::List))->first())->toBe([1, 'Item 0001'])
+            ->and($connection->select($sql, [], new ExecuteOptions(keyCase: KeyCase::Native))->first())->toBe(['ID' => 1, 'NAME' => 'Item 0001'])
+            ->and($connection->select($sql)->first())->toBe(['id' => 1, 'name' => 'Item 0001']);
+    } finally {
+        $connection->close();
+    }
+});
+test('numbers float works per connection and per execution', function (): void {
+    $float = new ValueMapping(numbers: NumberMode::Float);
+    $sql = 'select 12.5 half, 5 five from dual';
+
+    expect($this->connection->select($sql, [], new ExecuteOptions(values: $float))->first())->toBe(['HALF' => 12.5, 'FIVE' => 5])
+        ->and($this->connection->select($sql)->first())->toBe(['HALF' => '12.5', 'FIVE' => 5]);
+
+    $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(values: $float));
+    try {
+        expect($connection->select($sql)->first())->toBe(['HALF' => 12.5, 'FIVE' => 5])
+            ->and($connection->select($sql, [], new ExecuteOptions(values: new ValueMapping()))->first())->toBe(['HALF' => '12.5', 'FIVE' => 5]);
+    } finally {
+        $connection->close();
+    }
+});
+test('ddl runs through run and a compilation error is a warning', function (): void {
+    $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
+
+    $created = $this->connection->run("create or replace procedure $procedure is begin no_such_thing; end;");
+    try {
+        expect($created->affected())->toBe(0)
+            ->and($created->warning())->not->toBeNull()
+            ->and($this->connection->run("create or replace procedure $procedure is begin null; end;")->warning())->toBeNull();
+    } finally {
+        $this->connection->run("drop procedure $procedure");
+    }
+});
+test('after the connection closes its cursor fails even with rows left in its batch', function (): void {
+    $fiveRows = 'select level n from dual connect by level <= 5';
+
+    $cursor = $this->connection->select($fiveRows);
+    foreach ($cursor as $row) {
+        expect($row)->toBe(['N' => 1]);
+        break;
     }
 
-    #[Test]
-    public function json_and_vector_columns_arrive_decoded(): void
-    {
-        $row = $this->connection->select(
-            "select json('{\"a\": [1, 0.5]}') doc, v8, s8 from fx_vectors where id = 1",
-            [],
-            new ExecuteOptions(keyCase: KeyCase::Lower),
-        )->first();
+    $this->connection->close();
 
-        self::assertNotNull($row);
-        self::assertSame(['a' => [1, '0.5']], $row['doc']);
-        self::assertSame([1, -2, 127], $row['v8']);
-        self::assertEquals(new SparseVector(10, [0 => -128, 9 => 127]), $row['s8']);
-    }
-
-    #[Test]
-    public function row_shape_and_key_case_come_from_the_config_and_execute_options_override_them(): void
-    {
-        $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(rowShape: RowShape::Assoc, keyCase: KeyCase::Lower));
-        $sql = 'select id, name from fx_items where id = 1';
-
-        try {
-            self::assertSame(['id' => 1, 'name' => 'Item 0001'], $connection->select($sql)->first());
-            self::assertSame([1, 'Item 0001'], $connection->select($sql, [], new ExecuteOptions(rowShape: RowShape::List))->first());
-            self::assertSame(['ID' => 1, 'NAME' => 'Item 0001'], $connection->select($sql, [], new ExecuteOptions(keyCase: KeyCase::Native))->first());
-            self::assertSame(['id' => 1, 'name' => 'Item 0001'], $connection->select($sql)->first());
-        } finally {
-            $connection->close();
-        }
-    }
-
-    #[Test]
-    public function numbers_float_works_per_connection_and_per_execution(): void
-    {
-        $float = new ValueMapping(numbers: NumberMode::Float);
-        $sql = 'select 12.5 half, 5 five from dual';
-
-        self::assertSame(['HALF' => 12.5, 'FIVE' => 5], $this->connection->select($sql, [], new ExecuteOptions(values: $float))->first());
-        self::assertSame(['HALF' => '12.5', 'FIVE' => 5], $this->connection->select($sql)->first());
-
-        $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(values: $float));
-        try {
-            self::assertSame(['HALF' => 12.5, 'FIVE' => 5], $connection->select($sql)->first());
-            self::assertSame(['HALF' => '12.5', 'FIVE' => 5], $connection->select($sql, [], new ExecuteOptions(values: new ValueMapping()))->first());
-        } finally {
-            $connection->close();
-        }
-    }
-
-    #[Test]
-    public function ddl_runs_through_run_and_a_compilation_error_is_a_warning(): void
-    {
-        $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
-
-        $created = $this->connection->run("create or replace procedure $procedure is begin no_such_thing; end;");
-        try {
-            self::assertSame(0, $created->affected());
-            self::assertNotNull($created->warning());
-            self::assertNull($this->connection->run("create or replace procedure $procedure is begin null; end;")->warning());
-        } finally {
-            $this->connection->run("drop procedure $procedure");
-        }
-    }
-
-    #[Test]
-    public function after_the_connection_closes_its_cursor_fails_even_with_rows_left_in_its_batch(): void
-    {
-        $cursor = $this->connection->select(self::FIVE_ROWS);
+    $served = [];
+    expect(function () use ($cursor, &$served): void {
         foreach ($cursor as $row) {
-            self::assertSame(['N' => 1], $row);
-            break;
+            $served[] = $row;
         }
-
-        $this->connection->close();
-
-        $served = [];
+        self::fail('foreach after the Connection closed succeeded.');
+    })->toThrow(UsageException::class, 'The Connection is closed.')
+        ->and($served)->toBe([], 'No row of the batch is served after the Connection closed.');
+    assertClosed($cursor);
+    $cursor->close();
+});
+function assertClosed(Cursor $cursor): void
+{
+    foreach ([
+        'foreach' => static fn(): array => iterator_to_array($cursor),
+        'all()' => $cursor->all(...),
+        'first()' => $cursor->first(...),
+        'value()' => $cursor->value(...),
+    ] as $read => $call) {
         try {
-            foreach ($cursor as $row) {
-                $served[] = $row;
-            }
-            self::fail('foreach after the Connection closed succeeded.');
-        } catch (UsageException $usageException) {
-            self::assertSame('The Connection is closed.', $usageException->getMessage());
-        }
-        self::assertSame([], $served, 'No row of the batch is served after the Connection closed.');
-        $this->assertClosed($cursor);
-        $cursor->close();
-    }
-
-    private function assertClosed(Cursor $cursor): void
-    {
-        foreach ([
-            'foreach' => static fn(): array => iterator_to_array($cursor),
-            'all()' => $cursor->all(...),
-            'first()' => $cursor->first(...),
-            'value()' => $cursor->value(...),
-        ] as $read => $call) {
-            try {
-                $call();
-                self::fail("$read after close() succeeded.");
-            } catch (UsageException) {
-                $this->addToAssertionCount(1);
-            }
+            $call();
+            throw new RuntimeException("$read after close() succeeded.");
+        } catch (UsageException) {
+            test()->addToAssertionCount(1);
         }
     }
+}
+function sid(): int
+{
+    $sid = test()->connection->select("select sys_context('userenv', 'sid') from dual")->value();
+    expect($sid)->toBeString();
 
-    private function sid(): int
-    {
-        $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-        self::assertIsString($sid);
-
-        return (int) $sid;
-    }
+    return (int) $sid;
 }

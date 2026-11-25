@@ -2,15 +2,11 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Api;
+namespace Rajska\Oracle\Tests\Api\LobsTest;
 
-use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\NClob;
-use Rajska\Oracle\Connection;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Lob;
@@ -19,331 +15,277 @@ use Rajska\Oracle\LobType;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
+use RuntimeException;
 
-/**
- * CLOB, NCLOB and BLOB values read as a `Lob` (`contents()`, `stream()`),
- * or inline as strings under `LobMode::Inline` (fixtures/sql/05_lob.sql,
- * fx_call.f_clob / f_nclob / f_blob).
- */
-final class LobsTest extends TestCase
+beforeEach(function (): void {
+    $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
+});
+afterEach(function (): void {
+    $this->connection->close();
+});
+test('a lob column reads its contents', function (): void {
+    $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+
+    $row = $this->connection->select('select id, text_value, binary_value from fx_lobs where id = 1')->first();
+    expect($row)->not->toBeNull()
+        ->and($row['ID'])->toBe(1);
+
+
+    $text = lob($row['TEXT_VALUE']);
+    expect($text->type())->toBe(LobType::Clob)
+        ->and($text->size())->toBe(19)
+        ->and($text->contents())->toBe($small);
+
+    $binary = lob($row['BINARY_VALUE']);
+    expect($binary->type())->toBe(LobType::Blob)
+        ->and($binary->contents())->toBe("\xde\xad\xbe\xef");
+});
+test('contents and stream go on from where the last read stopped', function (): void {
+    $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+
+    $lob = lob($this->connection->select('select text_value from fx_lobs where id = 1')->value());
+
+    expect($lob->contents())->toBe($small)
+        ->and($lob->contents())->toBeEmpty()
+        ->and(stream_get_contents($lob->stream()))->toBe('');
+});
+test('stream reads the 16 mib clob and blob exactly', function (): void {
+    $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
+    expect($row)->not->toBeNull();
+
+    $text = lob($row['TEXT_VALUE'])->stream();
+    $hash = hash_init('md5');
+    $lines = 0;
+    while (($line = fgets($text)) !== false) {
+        hash_update($hash, $line);
+        ++$lines;
+    }
+    expect(feof($text))->toBeTrue();
+    fclose($text);
+    expect($lines)->toBe(262_144)
+        ->and(hash_final($hash))->toBe(md5(largeText()));
+
+    $binary = lob($row['BINARY_VALUE'])->stream();
+    expect(md5((string) stream_get_contents($binary)))->toBe(md5(largeBinary()));
+});
+test('a 100 mib lob streams with flat memory', function (): void {
+    $lob = $this->connection->run(<<<'SQL'
+        declare
+          l blob;
+          chunk raw(16384);
+        begin
+          for k in 0 .. 63 loop
+            chunk := utl_raw.concat(chunk, hextoraw(
+              '000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F'
+              || '202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F'
+              || '404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F'
+              || '606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F'
+              || '808182838485868788898A8B8C8D8E8F909192939495969798999A9B9C9D9E9F'
+              || 'A0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF'
+              || 'C0C1C2C3C4C5C6C7C8C9CACBCCCDCECFD0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF'
+              || 'E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF'));
+          end loop;
+          dbms_lob.createtemporary(l, true);
+          for i in 1 .. 6400 loop
+            dbms_lob.writeappend(l, 16384, chunk);
+          end loop;
+          :l := l;
+        end;
+        SQL, ['l' => Blob::out()])->out('l')->lob();
+    expect($lob)->not->toBeNull()
+        ->and($lob->size())->toBe(100 * 1024 * 1024);
+
+    $expected = hash_init('md5');
+    $mebibyte = largeBinary(1);
+    for ($i = 0; $i < 100; ++$i) {
+        hash_update($expected, $mebibyte);
+    }
+    unset($mebibyte);
+
+    $stream = $lob->stream();
+    $hash = hash_init('md5');
+    $start = residentSetSize();
+    $peak = $start;
+    $bytes = 0;
+    while (!feof($stream)) {
+        $data = (string) fread($stream, 1024 * 1024);
+        hash_update($hash, $data);
+        $bytes += \strlen($data);
+        $peak = max($peak, residentSetSize());
+    }
+    fclose($stream);
+
+    expect($bytes)->toBe(100 * 1024 * 1024)
+        ->and(hash_final($hash))->toBe(hash_final($expected))
+        ->and($peak - $start)->toBeLessThan(32 * 1024 * 1024, 'Resident set growth while streaming 100 MiB');
+})->group('slow');
+test('an empty lob is a lob of size 0 and null is null', function (): void {
+    $rows = $this->connection->select('select text_value, binary_value from fx_lobs where id in (2, 3) order by id')->all();
+
+    foreach (['TEXT_VALUE', 'BINARY_VALUE'] as $column) {
+        $lob = lob($rows[0][$column]);
+        expect($lob->size())->toBe(0)
+            ->and($lob->contents())->toBeEmpty()
+            ->and(stream_get_contents(lob($rows[0][$column])->stream()))->toBe('')
+            ->and($rows[1][$column])->toBeNull();
+    }
+});
+test('after close a lob and its stream fail', function (): void {
+    $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
+    expect($row)->not->toBeNull();
+    $lob = lob($row['TEXT_VALUE']);
+    $stream = lob($row['BINARY_VALUE'])->stream();
+    $readBytes = \strlen((string) fread($stream, 8192));
+    expect($readBytes)->toBe(8192);
+    $this->connection->close();
+
+    foreach ([
+        'type()' => $lob->type(...),
+        'size()' => $lob->size(...),
+        'contents()' => $lob->contents(...),
+        'stream()' => $lob->stream(...),
+        'reading the stream' => static fn(): false | string => stream_get_contents($stream),
+    ] as $call => $read) {
+        try {
+            $read();
+            self::fail("$call after close() worked.");
+        } catch (UsageException $e) {
+            expect($e->getMessage())->toBe('The Connection is closed.', $call);
+        }
+    }
+});
+test('out value lob reads a lob out bind', function (): void {
+    $execution = $this->connection->run(
+        "begin :c := to_clob('text'); :n := to_nclob(unistr('\\65e5\\672c')); :b := to_blob(hextoraw('0102')); :none := null; end;",
+        ['c' => Clob::out(), 'n' => NClob::out(), 'b' => Blob::out(), 'none' => Clob::out()],
+    );
+
+    expect($execution->out('c')->lob()?->contents())->toBe('text');
+    $national = $execution->out('n')->lob();
+    expect($national)->not->toBeNull()
+        ->and([$national->type(), $national->contents()])->toBe([LobType::NClob, "\u{65e5}\u{672c}"])
+        ->and($execution->out('b')->lob()?->contents())->toBe("\x01\x02")
+        ->and($execution->out('none')->lob())->toBeNull();
+
+    try {
+        $execution->out('c')->string();
+        self::fail('string() read a Lob.');
+    } catch (UsageException $usageException) {
+        expect($usageException->getMessage())->toEndWith('not a string. Read it with lob().');
+    }
+});
+test('lob binds write strings and streams', function (): void {
+    $text = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+
+    $file = tmpfile();
+    expect($file)->toBeResource();
+    fwrite($file, str_repeat($text . "\n", 100_000));
+    rewind($file);
+    $this->connection->begin();
+
+    $this->connection->run(
+        "insert into fx_lobs (id, label, text_value, binary_value) values (100, 'written', :text, :binary)",
+        ['text' => Clob::in($file), 'binary' => Blob::in("\x00\xff")],
+    );
+    $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 100')->first();
+    expect($row)->not->toBeNull()
+        ->and(lob($row['TEXT_VALUE'])->contents())->toBe(str_repeat($text . "\n", 100_000))
+        ->and(lob($row['BINARY_VALUE'])->contents())->toBe("\x00\xff");
+
+    $this->connection->rollback();
+
+    expect($this->connection->function('fx_lob.text_length', ['p_text' => NClob::in($text . ' 😀')])->number())->toBe(10)
+        ->and($this->connection->run("begin :c := :c || '!'; end;", ['c' => Clob::inOut($text)])->out('c')->lob()?->contents())->toBe($text . '!');
+});
+test('a string over 32767 bytes binds as a clob', function (): void {
+    $long = str_repeat('ç', 20_000);
+
+    expect($this->connection->function('fx_lob.text_length', ['p_text' => $long])->number())->toBe(20_000)
+        ->and($this->connection->run('begin :out := :v; end;', ['v' => $long, 'out' => Clob::out()])->out('out')->lob()?->contents())->toBe($long);
+});
+test('inline lobs are strings', function (): void {
+    $small = "Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+
+    $inline = new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline));
+
+    expect($this->connection->select('select text_value, binary_value from fx_lobs where id <= 3 order by id', [], $inline)->all())->toBe([
+        ['TEXT_VALUE' => $small, 'BINARY_VALUE' => "\xde\xad\xbe\xef"],
+        ['TEXT_VALUE' => '', 'BINARY_VALUE' => ''],
+        ['TEXT_VALUE' => null, 'BINARY_VALUE' => null],
+    ]);
+
+    $execution = $this->connection->run("begin :c := to_clob('text'); end;", ['c' => Clob::out()], $inline);
+    expect($execution->out('c')->string())->toBe('text');
+    try {
+        $execution->out('c')->lob();
+        self::fail('lob() read a string.');
+    } catch (UsageException $usageException) {
+        expect($usageException->getMessage())->toEndWith('Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().');
+    }
+});
+test('the lob terminals of a function call', function (): void {
+    $text = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+
+    $clob = $this->connection->function('fx_call.f_clob')->clob();
+    expect($clob)->toBeInstanceOf(Lob::class)
+        ->and($clob->contents())->toBe($text);
+
+    $nclob = $this->connection->function('fx_call.f_nclob')->nclob();
+    expect($nclob)->toBeInstanceOf(Lob::class)
+        ->and([$nclob->type(), $nclob->contents()])->toBe([LobType::NClob, $text]);
+
+    $blob = $this->connection->function('fx_call.f_blob')->blob();
+    expect($blob)->toBeInstanceOf(Lob::class)
+        ->and($blob->contents())->toBe("\xde\xad\xbe\xef")
+        ->and($this->connection->function('fx_call.f_clob', ['p_null' => true])->clob())->toBeNull();
+
+    $empty = $this->connection->function('fx_call.f_blob', ['p_empty' => true])->blob();
+    expect($empty)->toBeInstanceOf(Lob::class)
+        ->and($empty->size())->toBe(0);
+
+    $inline = new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline));
+    expect($this->connection->function('fx_call.f_clob', [], $inline)->clob())->toBe($text)
+        ->and($this->connection->function('fx_call.f_nclob', [], $inline)->nclob())->toBe($text)
+        ->and($this->connection->function('fx_call.f_blob', [], $inline)->blob())->toBe("\xde\xad\xbe\xef")
+        ->and($this->connection->function('fx_call.f_nclob', ['p_empty' => true], $inline)->nclob())->toBe('')
+        ->and($this->connection->function('fx_call.f_blob', ['p_null' => true], $inline)->blob())->toBeNull();
+});
+function lob(mixed $value): Lob
 {
-    /** `Ação 日本`. */
-    private const string TEXT = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
+    expect($value)->toBeInstanceOf(Lob::class);
 
-    /** `Hello, LOB! Ação 日本`. */
-    private const string SMALL = 'Hello, LOB! ' . self::TEXT;
-
-    private Connection $connection;
-
-    protected function setUp(): void
-    {
-        $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
+    return $value;
+}
+/**
+ * This process's resident set size, in bytes (Linux).
+ */
+function residentSetSize(): int
+{
+    $status = (string) file_get_contents('/proc/self/status');
+    if (preg_match('/^VmRSS:\s+(\d+) kB$/m', $status, $match) !== 1) {
+        throw new RuntimeException('No VmRSS in /proc/self/status.');
     }
 
-    protected function tearDown(): void
-    {
-        $this->connection->close();
+    return (int) $match[1] * 1024;
+}
+/**
+ * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
+ */
+function largeText(): string
+{
+    $tail = " a\u{e7}\u{e3}o caf\u{e9} \u{65e5}\u{672c} " . str_repeat('x', 41) . "\n";
+    $text = '';
+    for ($line = 1; $line <= 262_144; ++$line) {
+        $text .= \sprintf('%08d', $line) . $tail;
     }
 
-    #[Test]
-    public function a_lob_column_reads_its_contents(): void
-    {
-        $row = $this->connection->select('select id, text_value, binary_value from fx_lobs where id = 1')->first();
-        self::assertNotNull($row);
-
-        self::assertSame(1, $row['ID']);
-        $text = $this->lob($row['TEXT_VALUE']);
-        self::assertSame(LobType::Clob, $text->type());
-        self::assertSame(19, $text->size());
-        self::assertSame(self::SMALL, $text->contents());
-        $binary = $this->lob($row['BINARY_VALUE']);
-        self::assertSame(LobType::Blob, $binary->type());
-        self::assertSame("\xde\xad\xbe\xef", $binary->contents());
-    }
-
-    /**
-     * One pass, like a Cursor.
-     */
-    #[Test]
-    public function contents_and_stream_go_on_from_where_the_last_read_stopped(): void
-    {
-        $lob = $this->lob($this->connection->select('select text_value from fx_lobs where id = 1')->value());
-
-        self::assertSame(self::SMALL, $lob->contents());
-        self::assertSame('', $lob->contents());
-        self::assertSame('', stream_get_contents($lob->stream()));
-    }
-
-    #[Test]
-    public function stream_reads_the_16_mib_clob_and_blob_exactly(): void
-    {
-        $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
-        self::assertNotNull($row);
-
-        $text = $this->lob($row['TEXT_VALUE'])->stream();
-        $hash = hash_init('md5');
-        $lines = 0;
-        while (($line = fgets($text)) !== false) {
-            hash_update($hash, $line);
-            ++$lines;
-        }
-        self::assertTrue(feof($text));
-        fclose($text);
-        self::assertSame(262_144, $lines);
-        self::assertSame(md5($this->largeText()), hash_final($hash));
-
-        $binary = $this->lob($row['BINARY_VALUE'])->stream();
-        self::assertSame(md5($this->largeBinary()), md5((string) stream_get_contents($binary)));
-    }
-
-    /**
-     * Measured as resident set size, so the Extension's memory counts too.
-     */
-    #[Test]
-    #[Group('slow')]
-    public function a_100_mib_lob_streams_with_flat_memory(): void
-    {
-        $lob = $this->connection->run(<<<'SQL'
-            declare
-              l blob;
-              chunk raw(16384);
-            begin
-              for k in 0 .. 63 loop
-                chunk := utl_raw.concat(chunk, hextoraw(
-                  '000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F'
-                  || '202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F'
-                  || '404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F'
-                  || '606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F'
-                  || '808182838485868788898A8B8C8D8E8F909192939495969798999A9B9C9D9E9F'
-                  || 'A0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF'
-                  || 'C0C1C2C3C4C5C6C7C8C9CACBCCCDCECFD0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF'
-                  || 'E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF'));
-              end loop;
-              dbms_lob.createtemporary(l, true);
-              for i in 1 .. 6400 loop
-                dbms_lob.writeappend(l, 16384, chunk);
-              end loop;
-              :l := l;
-            end;
-            SQL, ['l' => Blob::out()])->out('l')->lob();
-        self::assertNotNull($lob);
-        self::assertSame(100 * 1024 * 1024, $lob->size());
-
-        $expected = hash_init('md5');
-        $mebibyte = $this->largeBinary(1);
-        for ($i = 0; $i < 100; ++$i) {
-            hash_update($expected, $mebibyte);
-        }
-        unset($mebibyte);
-
-        $stream = $lob->stream();
-        $hash = hash_init('md5');
-        $start = $this->residentSetSize();
-        $peak = $start;
-        $bytes = 0;
-        while (!feof($stream)) {
-            $data = (string) fread($stream, 1024 * 1024);
-            hash_update($hash, $data);
-            $bytes += \strlen($data);
-            $peak = max($peak, $this->residentSetSize());
-        }
-        fclose($stream);
-
-        self::assertSame(100 * 1024 * 1024, $bytes);
-        self::assertSame(hash_final($expected), hash_final($hash));
-        self::assertLessThan(32 * 1024 * 1024, $peak - $start, 'Resident set growth while streaming 100 MiB');
-    }
-
-    #[Test]
-    public function an_empty_lob_is_a_lob_of_size_0_and_null_is_null(): void
-    {
-        $rows = $this->connection->select('select text_value, binary_value from fx_lobs where id in (2, 3) order by id')->all();
-
-        foreach (['TEXT_VALUE', 'BINARY_VALUE'] as $column) {
-            $lob = $this->lob($rows[0][$column]);
-            self::assertSame(0, $lob->size());
-            self::assertSame('', $lob->contents());
-            self::assertSame('', stream_get_contents($this->lob($rows[0][$column])->stream()));
-            self::assertNull($rows[1][$column]);
-        }
-    }
-
-    #[Test]
-    public function after_close_a_lob_and_its_stream_fail(): void
-    {
-        $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
-        self::assertNotNull($row);
-        $lob = $this->lob($row['TEXT_VALUE']);
-        $stream = $this->lob($row['BINARY_VALUE'])->stream();
-        self::assertSame(8192, \strlen((string) fread($stream, 8192)));
-        $this->connection->close();
-
-        foreach ([
-            'type()' => $lob->type(...),
-            'size()' => $lob->size(...),
-            'contents()' => $lob->contents(...),
-            'stream()' => $lob->stream(...),
-            'reading the stream' => static fn(): false | string => stream_get_contents($stream),
-        ] as $call => $read) {
-            try {
-                $read();
-                self::fail("$call after close() worked.");
-            } catch (UsageException $e) {
-                self::assertSame('The Connection is closed.', $e->getMessage(), $call);
-            }
-        }
-    }
-
-    #[Test]
-    public function out_value_lob_reads_a_lob_out_bind(): void
-    {
-        $execution = $this->connection->run(
-            "begin :c := to_clob('text'); :n := to_nclob(unistr('\\65e5\\672c')); :b := to_blob(hextoraw('0102')); :none := null; end;",
-            ['c' => Clob::out(), 'n' => NClob::out(), 'b' => Blob::out(), 'none' => Clob::out()],
-        );
-
-        self::assertSame('text', $execution->out('c')->lob()?->contents());
-        $national = $execution->out('n')->lob();
-        self::assertNotNull($national);
-        self::assertSame([LobType::NClob, "\u{65e5}\u{672c}"], [$national->type(), $national->contents()]);
-        self::assertSame("\x01\x02", $execution->out('b')->lob()?->contents());
-        self::assertNull($execution->out('none')->lob());
-
-        try {
-            $execution->out('c')->string();
-            self::fail('string() read a Lob.');
-        } catch (UsageException $usageException) {
-            self::assertStringEndsWith('not a string. Read it with lob().', $usageException->getMessage());
-        }
-    }
-
-    #[Test]
-    public function lob_binds_write_strings_and_streams(): void
-    {
-        $file = tmpfile();
-        self::assertIsResource($file);
-        fwrite($file, str_repeat(self::TEXT . "\n", 100_000));
-        rewind($file);
-        $this->connection->begin();
-
-        $this->connection->run(
-            "insert into fx_lobs (id, label, text_value, binary_value) values (100, 'written', :text, :binary)",
-            ['text' => Clob::in($file), 'binary' => Blob::in("\x00\xff")],
-        );
-        $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 100')->first();
-        self::assertNotNull($row);
-        self::assertSame(str_repeat(self::TEXT . "\n", 100_000), $this->lob($row['TEXT_VALUE'])->contents());
-        self::assertSame("\x00\xff", $this->lob($row['BINARY_VALUE'])->contents());
-        $this->connection->rollback();
-
-        self::assertSame(10, $this->connection->function('fx_lob.text_length', ['p_text' => NClob::in(self::TEXT . ' 😀')])->number());
-        self::assertSame(
-            self::TEXT . '!',
-            $this->connection->run("begin :c := :c || '!'; end;", ['c' => Clob::inOut(self::TEXT)])->out('c')->lob()?->contents(),
-        );
-    }
-
-    #[Test]
-    public function a_string_over_32767_bytes_binds_as_a_clob(): void
-    {
-        $long = str_repeat('ç', 20_000);
-
-        self::assertSame(20_000, $this->connection->function('fx_lob.text_length', ['p_text' => $long])->number());
-        self::assertSame(
-            $long,
-            $this->connection->run('begin :out := :v; end;', ['v' => $long, 'out' => Clob::out()])->out('out')->lob()?->contents(),
-        );
-    }
-
-    #[Test]
-    public function inline_lobs_are_strings(): void
-    {
-        $inline = new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline));
-
-        self::assertSame(
-            [
-                ['TEXT_VALUE' => self::SMALL, 'BINARY_VALUE' => "\xde\xad\xbe\xef"],
-                ['TEXT_VALUE' => '', 'BINARY_VALUE' => ''],
-                ['TEXT_VALUE' => null, 'BINARY_VALUE' => null],
-            ],
-            $this->connection->select('select text_value, binary_value from fx_lobs where id <= 3 order by id', [], $inline)->all(),
-        );
-
-        $execution = $this->connection->run("begin :c := to_clob('text'); end;", ['c' => Clob::out()], $inline);
-        self::assertSame('text', $execution->out('c')->string());
-        try {
-            $execution->out('c')->lob();
-            self::fail('lob() read a string.');
-        } catch (UsageException $usageException) {
-            self::assertStringEndsWith('Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().', $usageException->getMessage());
-        }
-    }
-
-    #[Test]
-    public function the_lob_terminals_of_a_function_call(): void
-    {
-        $clob = $this->connection->function('fx_call.f_clob')->clob();
-        self::assertInstanceOf(Lob::class, $clob);
-        self::assertSame(self::TEXT, $clob->contents());
-        $nclob = $this->connection->function('fx_call.f_nclob')->nclob();
-        self::assertInstanceOf(Lob::class, $nclob);
-        self::assertSame([LobType::NClob, self::TEXT], [$nclob->type(), $nclob->contents()]);
-        $blob = $this->connection->function('fx_call.f_blob')->blob();
-        self::assertInstanceOf(Lob::class, $blob);
-        self::assertSame("\xde\xad\xbe\xef", $blob->contents());
-        self::assertNull($this->connection->function('fx_call.f_clob', ['p_null' => true])->clob());
-        $empty = $this->connection->function('fx_call.f_blob', ['p_empty' => true])->blob();
-        self::assertInstanceOf(Lob::class, $empty);
-        self::assertSame(0, $empty->size());
-
-        $inline = new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline));
-        self::assertSame(self::TEXT, $this->connection->function('fx_call.f_clob', [], $inline)->clob());
-        self::assertSame(self::TEXT, $this->connection->function('fx_call.f_nclob', [], $inline)->nclob());
-        self::assertSame("\xde\xad\xbe\xef", $this->connection->function('fx_call.f_blob', [], $inline)->blob());
-        self::assertSame('', $this->connection->function('fx_call.f_nclob', ['p_empty' => true], $inline)->nclob());
-        self::assertNull($this->connection->function('fx_call.f_blob', ['p_null' => true], $inline)->blob());
-    }
-
-    private function lob(mixed $value): Lob
-    {
-        self::assertInstanceOf(Lob::class, $value);
-
-        return $value;
-    }
-
-    /**
-     * This process's resident set size, in bytes (Linux).
-     */
-    private function residentSetSize(): int
-    {
-        $status = (string) file_get_contents('/proc/self/status');
-        if (preg_match('/^VmRSS:\s+(\d+) kB$/m', $status, $match) !== 1) {
-            self::fail('No VmRSS in /proc/self/status.');
-        }
-
-        return (int) $match[1] * 1024;
-    }
-
-    /**
-     * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
-     */
-    private function largeText(): string
-    {
-        $tail = " a\u{e7}\u{e3}o caf\u{e9} \u{65e5}\u{672c} " . str_repeat('x', 41) . "\n";
-        $text = '';
-        for ($line = 1; $line <= 262_144; ++$line) {
-            $text .= \sprintf('%08d', $line) . $tail;
-        }
-
-        return $text;
-    }
-
-    /**
-     * Bytes where the one at offset k is k mod 256 (fx_lobs row 4's BLOB is
-     * 16 MiB of them).
-     */
-    private function largeBinary(int $mebibytes = 16): string
-    {
-        return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 4096 * $mebibytes);
-    }
+    return $text;
+}
+/**
+ * Bytes where the one at offset k is k mod 256 (fx_lobs row 4's BLOB is
+ * 16 MiB of them).
+ */
+function largeBinary(int $mebibytes = 16): string
+{
+    return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 4096 * $mebibytes);
 }

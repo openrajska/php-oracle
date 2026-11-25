@@ -2,81 +2,51 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Api;
+namespace Rajska\Oracle\Tests\Api\OptionsTest;
 
-use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\ConnectionConfig;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\ExecuteOptions;
 
 /**
- * ConnectionConfig and ExecuteOptions validate in pure PHP, with no
- * Extension and no Round trip: a bad config is a ConfigurationException, a
- * bad option for one Execution a UsageException.
+ * @return iterable<string, array{string, float|int}>
  */
-final class OptionsTest extends TestCase
-{
-    /**
-     * @return iterable<string, array{string, float|int}>
-     */
-    public static function invalidValues(): iterable
-    {
-        yield 'fetchSize 0' => ['fetchSize', 0];
-        yield 'fetchSize -1' => ['fetchSize', -1];
-        yield 'timeout 0' => ['timeout', 0];
-        yield 'timeout -0.5' => ['timeout', -0.5];
-        yield 'timeout NAN' => ['timeout', NAN];
-        yield 'timeout INF' => ['timeout', INF];
-    }
-
-    #[Test]
-    #[DataProvider('invalidValues')]
-    public function execute_options_reject_invalid_values_with_usage_exception(string $field, float | int $value): void
-    {
-        $this->expectException(UsageException::class);
-        $this->expectExceptionMessage($field);
-
-        // @phpstan-ignore argument.type (the named field goes through as given)
-        new ExecuteOptions(...[$field => $value]);
-    }
-
-    /**
-     * @return iterable<string, array{string, float|int}>
-     */
-    public static function invalidConfigValues(): iterable
-    {
-        yield 'fetchSize 0' => ['fetchSize', 0];
-        yield 'fetchSize -1' => ['fetchSize', -1];
-        yield 'callTimeout 0' => ['callTimeout', 0];
-        yield 'callTimeout INF' => ['callTimeout', INF];
-        yield 'connectTimeout 0' => ['connectTimeout', 0];
-        yield 'connectTimeout -1' => ['connectTimeout', -1];
-        yield 'acquireTimeout 0' => ['acquireTimeout', 0];
-        yield 'acquireTimeout NAN' => ['acquireTimeout', NAN];
-        yield 'maxConnections 0' => ['maxConnections', 0];
-        yield 'maxConnections -1' => ['maxConnections', -1];
-        yield 'statementCacheSize -1' => ['statementCacheSize', -1];
-    }
-
-    #[Test]
-    #[DataProvider('invalidConfigValues')]
-    public function connection_config_rejects_invalid_values_with_configuration_exception(string $field, float | int $value): void
-    {
-        $this->expectException(ConfigurationException::class);
-        $this->expectExceptionMessage($field);
-
-        // @phpstan-ignore argument.type (the named field goes through as given)
-        new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]);
-    }
-
-    #[Test]
-    public function connection_config_validates_without_the_extension(): void
-    {
-        $autoload = \dirname(__DIR__, 2) . '/vendor/autoload.php';
-        $code = <<<'PHP'
+dataset('invalidValues', function () {
+    yield 'fetchSize 0' => ['fetchSize', 0];
+    yield 'fetchSize -1' => ['fetchSize', -1];
+    yield 'timeout 0' => ['timeout', 0];
+    yield 'timeout -0.5' => ['timeout', -0.5];
+    yield 'timeout NAN' => ['timeout', NAN];
+    yield 'timeout INF' => ['timeout', INF];
+});
+test('execute options reject invalid values with usage exception', function (string $field, float | int $value): void {
+    // @phpstan-ignore argument.type (the named field goes through as given)
+    expect(fn(): ExecuteOptions => new ExecuteOptions(...[$field => $value]))->toThrow(UsageException::class, $field);
+})->with('invalidValues');
+/**
+ * @return iterable<string, array{string, float|int}>
+ */
+dataset('invalidConfigValues', function () {
+    yield 'fetchSize 0' => ['fetchSize', 0];
+    yield 'fetchSize -1' => ['fetchSize', -1];
+    yield 'callTimeout 0' => ['callTimeout', 0];
+    yield 'callTimeout INF' => ['callTimeout', INF];
+    yield 'connectTimeout 0' => ['connectTimeout', 0];
+    yield 'connectTimeout -1' => ['connectTimeout', -1];
+    yield 'acquireTimeout 0' => ['acquireTimeout', 0];
+    yield 'acquireTimeout NAN' => ['acquireTimeout', NAN];
+    yield 'maxConnections 0' => ['maxConnections', 0];
+    yield 'maxConnections -1' => ['maxConnections', -1];
+    yield 'statementCacheSize -1' => ['statementCacheSize', -1];
+});
+test('connection config rejects invalid values with configuration exception', function (string $field, float | int $value): void {
+    // @phpstan-ignore argument.type (the named field goes through as given)
+    expect(fn(): ConnectionConfig => new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]))->toThrow(ConfigurationException::class, $field);
+})->with('invalidConfigValues');
+test('connection config validates without the extension', function (): void {
+    $autoload = \dirname(__DIR__, 2) . '/vendor/autoload.php';
+    $code = <<<'PHP'
             require $argv[1];
             $fields = ['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p'];
             $messages = [];
@@ -90,34 +60,30 @@ final class OptionsTest extends TestCase
             }
             echo json_encode(['loaded' => extension_loaded('oracledb'), 'messages' => $messages]);
             PHP;
-        $process = proc_open([\PHP_BINARY, '-r', $code, '--', $autoload], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-        self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]);
-        $errors = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        self::assertSame(0, proc_close($process), $output . $errors);
+    $process = proc_open([\PHP_BINARY, '-r', $code, '--', $autoload], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    expect($process)->toBeResource();
+    $output = (string) stream_get_contents($pipes[1]);
+    $errors = (string) stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    expect(proc_close($process))->toBe(0, $output . $errors);
 
-        /** @var array{loaded: bool, messages: list<string>} $result */
-        $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
-        if ($result['loaded']) {
-            self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
-        }
-        self::assertSame([
-            'ConnectionConfig: maxConnections must be at least 1, got 0.',
-            'ConnectionConfig: statementCacheSize must be 0 (no Statement cache) or more, got -1.',
-            'ConnectionConfig: connectTimeout must be a positive number of seconds, got 0.',
-        ], $result['messages']);
+    /** @var array{loaded: bool, messages: list<string>} $result */
+    $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
+    if ($result['loaded']) {
+        self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
     }
+    expect($result['messages'])->toBe([
+        'ConnectionConfig: maxConnections must be at least 1, got 0.',
+        'ConnectionConfig: statementCacheSize must be 0 (no Statement cache) or more, got -1.',
+        'ConnectionConfig: connectTimeout must be a positive number of seconds, got 0.',
+    ]);
+});
+test('valid values are kept', function (): void {
+    $config = new ConnectionConfig('localhost/FREEPDB1', 'u', 'p', connectTimeout: 0.5, maxConnections: 1, acquireTimeout: 2, statementCacheSize: 0, callTimeout: 1.5, fetchSize: 1);
+    $options = new ExecuteOptions(fetchSize: 1, timeout: 0.25);
 
-    #[Test]
-    public function valid_values_are_kept(): void
-    {
-        $config = new ConnectionConfig('localhost/FREEPDB1', 'u', 'p', connectTimeout: 0.5, maxConnections: 1, acquireTimeout: 2, statementCacheSize: 0, callTimeout: 1.5, fetchSize: 1);
-        $options = new ExecuteOptions(fetchSize: 1, timeout: 0.25);
-
-        self::assertSame([0.5, 1, 2, 0, 1.5, 1], [$config->connectTimeout, $config->maxConnections, $config->acquireTimeout, $config->statementCacheSize, $config->callTimeout, $config->fetchSize]);
-        self::assertSame([1, 0.25], [$options->fetchSize, $options->timeout]);
-        self::assertNull(new ExecuteOptions()->timeout);
-    }
-}
+    expect([$config->connectTimeout, $config->maxConnections, $config->acquireTimeout, $config->statementCacheSize, $config->callTimeout, $config->fetchSize])->toBe([0.5, 1, 2, 0, 1.5, 1])
+        ->and([$options->fetchSize, $options->timeout])->toBe([1, 0.25])
+        ->and(new ExecuteOptions()->timeout)->toBeNull();
+});

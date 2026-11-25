@@ -2,151 +2,111 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Api;
+namespace Rajska\Oracle\Tests\Api\DetectionTest;
 
-use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Tests\Support\ConnectTargets;
 
+test('without the extension connect says how to install it and classes still load', function (): void {
+    $result = child(extension: false);
+
+    expect($result['classes'])->toBeGreaterThan(50, 'every Core class loads')
+        ->and($result['phpversionBeforeConnect'])->toBe(0, 'no check at autoload or class load');
+    foreach ($result['connects'] as $connect) {
+        expect($connect['connected'])->toBeFalse()
+            ->and($connect['class'] ?? null)->toBe(ConfigurationException::class)
+            ->and($connect['message'] ?? null)->toBe('The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
+        . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).');
+    }
+    expect($result['phpversion'])->toBe(['oracledb'], 'checked once, on the first connect()');
+});
 /**
- * How Core finds the Extension and checks its version, each case in a fresh
- * PHP process (tests/Support/detect.php).
- *
- * The declared minimum is 0.1.0 (`ext-oracledb: ^0.1`): the accepted
- * range is `>= 0.1.0, < 0.2.0`, Composer's caret for a 0.x version.
+ * @return iterable<string, array{string}>
  */
-final class DetectionTest extends TestCase
+dataset('outsideTheRange', function () {
+    yield 'below the minimum' => ['0.0.9'];
+    yield 'a pre-release of the minimum' => ['0.1.0-beta.1'];
+    yield 'the next 0.x minor' => ['0.2.0'];
+    yield 'a pre-release of the next 0.x minor' => ['0.2.0-beta.1'];
+    yield 'the next major' => ['1.0.0'];
+});
+test('an extension outside the range is refused naming both versions the range and the upgrade command', function (string $version): void {
+    $result = child(extension: true, reported: $version);
+
+    foreach ($result['connects'] as $connect) {
+        expect($connect['connected'])->toBeFalse()
+            ->and($connect['class'] ?? null)->toBe(ConfigurationException::class)
+            ->and($connect['message'] ?? '')->toMatch('/^oracledb ' . preg_quote($version, '/') . ' is loaded, but openrajska\/php-oracle \S+ needs '
+        . '>= 0\.1\.0, < 0\.2\.0\. Upgrade it with `pie install openrajska\/php-oracle-ext:\^0\.1`\.$/');
+    }
+    expect($result['phpversion'])->toBe(['oracledb']);
+})->with('outsideTheRange');
+/**
+ * @return iterable<string, array{string}>
+ */
+dataset('insideTheRange', function () {
+    yield 'the minimum' => ['0.1.0'];
+    yield 'a later patch' => ['0.1.17'];
+});
+test('an extension inside the range connects', function (string $version): void {
+    $result = child(extension: true, reported: $version);
+
+    foreach ($result['connects'] as $connect) {
+        expect($connect['connected'])->toBeTrue($connect['message'] ?? '');
+    }
+})->with('insideTheRange');
+test('the check runs once per process on the first connect', function (): void {
+    $result = child(extension: true);
+
+    expect($result['phpversionBeforeConnect'])->toBe(0)
+        ->and($result['connects'][0]['connected'])->toBeTrue($result['connects'][0]['message'] ?? '')
+        ->and($result['connects'][1]['connected'])->toBeTrue($result['connects'][1]['message'] ?? '')
+        ->and($result['phpversion'])->toBe(['oracledb']);
+});
+test('core requires the extension from the minimum its upgrade command names', function (): void {
+    $manifest = json_decode((string) file_get_contents(\dirname(__DIR__, 2) . '/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
+
+    expect($manifest)->toBeArray()
+        ->and($manifest['require'])->toBeArray()
+        ->and($manifest['require']['ext-oracledb'] ?? null)->toBe('^0.1');
+});
+/**
+ * @return array{
+ *     loaded: bool,
+ *     classes: int,
+ *     phpversionBeforeConnect: int,
+ *     connects: list<array{connected: bool, serverVersion?: string, class?: string, message?: string}>,
+ *     phpversion: list<?string>,
+ * }
+ */
+function child(bool $extension, string | null $reported = null): array
 {
-    #[Test]
-    public function without_the_extension_connect_says_how_to_install_it_and_classes_still_load(): void
-    {
-        $result = $this->child(extension: false);
-
-        self::assertGreaterThan(50, $result['classes'], 'every Core class loads');
-        self::assertSame(0, $result['phpversionBeforeConnect'], 'no check at autoload or class load');
-        foreach ($result['connects'] as $connect) {
-            self::assertFalse($connect['connected']);
-            self::assertSame(ConfigurationException::class, $connect['class'] ?? null);
-            self::assertSame(
-                'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
-                . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).',
-                $connect['message'] ?? null,
-            );
-        }
-        self::assertSame(['oracledb'], $result['phpversion'], 'checked once, on the first connect()');
+    $command = [\PHP_BINARY];
+    if ($extension) {
+        $command[] = '-d';
+        $command[] = 'extension=' . ConnectTargets::extensionPath();
     }
-
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function outsideTheRange(): iterable
-    {
-        yield 'below the minimum' => ['0.0.9'];
-        yield 'a pre-release of the minimum' => ['0.1.0-beta.1'];
-        yield 'the next 0.x minor' => ['0.2.0'];
-        yield 'a pre-release of the next 0.x minor' => ['0.2.0-beta.1'];
-        yield 'the next major' => ['1.0.0'];
+    $command[] = __DIR__ . '/../Support/detect.php';
+    $command[] = \dirname(__DIR__, 2) . '/vendor/autoload.php';
+    if ($reported !== null) {
+        $command[] = $reported;
     }
+    $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    expect($process)->toBeResource();
+    $output = (string) stream_get_contents($pipes[1]);
+    $errors = (string) stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    expect(proc_close($process))->toBe(0, $output . $errors)
+        ->and($errors)->toBeEmpty();
 
-    #[Test]
-    #[DataProvider('outsideTheRange')]
-    public function an_extension_outside_the_range_is_refused_naming_both_versions_the_range_and_the_upgrade_command(string $version): void
-    {
-        $result = $this->child(extension: true, reported: $version);
-
-        foreach ($result['connects'] as $connect) {
-            self::assertFalse($connect['connected']);
-            self::assertSame(ConfigurationException::class, $connect['class'] ?? null);
-            self::assertMatchesRegularExpression(
-                '/^oracledb ' . preg_quote($version, '/') . ' is loaded, but openrajska\/php-oracle \S+ needs '
-                . '>= 0\.1\.0, < 0\.2\.0\. Upgrade it with `pie install openrajska\/php-oracle-ext:\^0\.1`\.$/',
-                $connect['message'] ?? '',
-            );
-        }
-        self::assertSame(['oracledb'], $result['phpversion']);
+    /** @var array{loaded: bool, classes: int, phpversionBeforeConnect: int, connects: list<array{connected: bool, serverVersion?: string, class?: string, message?: string}>, phpversion: list<?string>} $result */
+    $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
+    if (!$extension && $result['loaded']) {
+        test()->markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
     }
+    expect($result['loaded'])->toBe($extension)
+        ->and($result['connects'])->toHaveCount(2);
 
-    /**
-     * @return iterable<string, array{string}>
-     */
-    public static function insideTheRange(): iterable
-    {
-        yield 'the minimum' => ['0.1.0'];
-        yield 'a later patch' => ['0.1.17'];
-    }
-
-    #[Test]
-    #[DataProvider('insideTheRange')]
-    public function an_extension_inside_the_range_connects(string $version): void
-    {
-        $result = $this->child(extension: true, reported: $version);
-
-        foreach ($result['connects'] as $connect) {
-            self::assertTrue($connect['connected'], $connect['message'] ?? '');
-        }
-    }
-
-    #[Test]
-    public function the_check_runs_once_per_process_on_the_first_connect(): void
-    {
-        $result = $this->child(extension: true);
-
-        self::assertSame(0, $result['phpversionBeforeConnect']);
-        self::assertTrue($result['connects'][0]['connected'], $result['connects'][0]['message'] ?? '');
-        self::assertTrue($result['connects'][1]['connected'], $result['connects'][1]['message'] ?? '');
-        self::assertSame(['oracledb'], $result['phpversion']);
-    }
-
-    #[Test]
-    public function core_requires_the_extension_from_the_minimum_its_upgrade_command_names(): void
-    {
-        $manifest = json_decode((string) file_get_contents(\dirname(__DIR__, 2) . '/composer.json'), true, flags: \JSON_THROW_ON_ERROR);
-
-        self::assertIsArray($manifest);
-        self::assertIsArray($manifest['require']);
-        self::assertSame('^0.1', $manifest['require']['ext-oracledb'] ?? null);
-    }
-
-    /**
-     * @return array{
-     *     loaded: bool,
-     *     classes: int,
-     *     phpversionBeforeConnect: int,
-     *     connects: list<array{connected: bool, serverVersion?: string, class?: string, message?: string}>,
-     *     phpversion: list<?string>,
-     * }
-     */
-    private function child(bool $extension, string | null $reported = null): array
-    {
-        $command = [\PHP_BINARY];
-        if ($extension) {
-            $command[] = '-d';
-            $command[] = 'extension=' . ConnectTargets::extensionPath();
-        }
-        $command[] = __DIR__ . '/../Support/detect.php';
-        $command[] = \dirname(__DIR__, 2) . '/vendor/autoload.php';
-        if ($reported !== null) {
-            $command[] = $reported;
-        }
-        $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-        self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]);
-        $errors = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        self::assertSame(0, proc_close($process), $output . $errors);
-        self::assertSame('', $errors);
-
-        /** @var array{loaded: bool, classes: int, phpversionBeforeConnect: int, connects: list<array{connected: bool, serverVersion?: string, class?: string, message?: string}>, phpversion: list<?string>} $result */
-        $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
-        if (!$extension && $result['loaded']) {
-            self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
-        }
-        self::assertSame($extension, $result['loaded']);
-        self::assertCount(2, $result['connects']);
-
-        return $result;
-    }
+    return $result;
 }

@@ -2,15 +2,12 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Api;
+namespace Rajska\Oracle\Tests\Api\RefCursorsTest;
 
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Cursor as CursorBind;
 use Rajska\Oracle\Bind\Number;
 use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Column;
-use Rajska\Oracle\Connection;
 use Rajska\Oracle\Cursor;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
@@ -25,261 +22,204 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Type;
 use Rajska\Oracle\ValueMapping;
 
-/**
- * REF CURSORs (OUT, IN OUT, function return) and nested `CURSOR()` columns
- * as lazy Cursors (fixtures/sql/02_cursor.sql).
- */
-final class RefCursorsTest extends TestCase
-{
-    /** Each category with a nested Cursor of its first 4 items. */
-    private const string NESTED = <<<'SQL'
-        select c.id, c.name,
-               cursor(select i.id, i.price from fx_items i
-                       where i.category_id = c.id and i.id <= 20 order by i.id) as items
-          from fx_categories c
-         order by c.id
-        SQL;
+beforeEach(function (): void {
+    $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
+});
+afterEach(function (): void {
+    $this->connection->close();
+});
+test('a procedure gives its ref cursors as cursors read interleaved', function (): void {
+    $execution = $this->connection->procedure('fx_cursor.report', [
+        'p_limit' => 250,
+        'io_label' => Varchar::inOut('total'),
+        'o_items' => CursorBind::out(),
+        'o_categories' => CursorBind::out(),
+        'o_total' => Number::out(),
+        'io_names' => CursorBind::inOut(),
+    ]);
 
-    private Connection $connection;
+    expect($execution->out('io_label')->string())->toBe('total!')
+        ->and($execution->out('o_total')->int())->toBe(1000);
 
-    protected function setUp(): void
-    {
-        $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
-    }
+    $items = $execution->out('o_items')->cursor();
+    $categories = $execution->out('O_CATEGORIES')->cursor();
+    expect($execution->out('o_items')->cursor())->toBe($items);
 
-    protected function tearDown(): void
-    {
-        $this->connection->close();
-    }
-
-    #[Test]
-    public function a_procedure_gives_its_ref_cursors_as_cursors_read_interleaved(): void
-    {
-        $execution = $this->connection->procedure('fx_cursor.report', [
-            'p_limit' => 250,
-            'io_label' => Varchar::inOut('total'),
-            'o_items' => CursorBind::out(),
-            'o_categories' => CursorBind::out(),
-            'o_total' => Number::out(),
-            'io_names' => CursorBind::inOut(),
-        ]);
-
-        self::assertSame('total!', $execution->out('io_label')->string());
-        self::assertSame(1000, $execution->out('o_total')->int());
-        $items = $execution->out('o_items')->cursor();
-        $categories = $execution->out('O_CATEGORIES')->cursor();
-        self::assertSame($items, $execution->out('o_items')->cursor());
-
-        $ids = [];
-        $names = [];
-        foreach ($items as $item) {
-            $ids[] = $item['ID'];
-            if (\count($ids) === 1) {
-                foreach ($categories as $category) {
-                    $names[] = $category['NAME'];
-                }
+    $ids = [];
+    $names = [];
+    foreach ($items as $item) {
+        $ids[] = $item['ID'];
+        if (\count($ids) === 1) {
+            foreach ($categories as $category) {
+                $names[] = $category['NAME'];
             }
         }
-        self::assertSame(range(1, 250), $ids);
-        self::assertSame(['Plain', 'Ação', 'Café', 'Straße', '日本'], $names);
-        self::assertSame([['NAME' => 'Plain'], ['NAME' => 'Ação']], $execution->out('io_names')->cursor()->all());
     }
+    expect($ids)->toBe(range(1, 250))
+        ->and($names)->toBe(['Plain', 'Ação', 'Café', 'Straße', '日本'])
+        ->and($execution->out('io_names')->cursor()->all())->toBe([['NAME' => 'Plain'], ['NAME' => 'Ação']]);
+});
+test('the cursor terminal gives a functions ref cursor', function (): void {
+    $categories = $this->connection->function('fx_cursor.categories_with_items')->cursor();
 
-    #[Test]
-    public function the_cursor_terminal_gives_a_functions_ref_cursor(): void
-    {
-        $categories = $this->connection->function('fx_cursor.categories_with_items')->cursor();
-
-        $items = [];
-        foreach ($categories as $category) {
-            $name = $category['NAME'];
-            self::assertIsString($name);
-            $items[$name] = array_column(self::nested($category['ITEMS'])->all(), 'ID');
-        }
-        self::assertSame(
-            ['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]],
-            $items,
-        );
+    $items = [];
+    foreach ($categories as $category) {
+        $name = $category['NAME'];
+        expect($name)->toBeString();
+        $items[$name] = array_column(nested($category['ITEMS'])->all(), 'ID');
     }
+    expect($items)->toBe(['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]]);
+});
+test('every nested cursor reads after the parents all', function (): void {
+    $nested = <<<'SQL'
+            select c.id, c.name,
+                   cursor(select i.id, i.price from fx_items i
+                           where i.category_id = c.id and i.id <= 20 order by i.id) as items
+              from fx_categories c
+             order by c.id
+            SQL;
 
-    #[Test]
-    public function every_nested_cursor_reads_after_the_parents_all(): void
-    {
-        $rows = $this->connection->select(self::NESTED, options: new ExecuteOptions(fetchSize: 2))->all();
+    $rows = $this->connection->select($nested, options: new ExecuteOptions(fetchSize: 2))->all();
 
-        self::assertSame([1, 2, 3, 4, 5], array_column($rows, 'ID'));
-        self::assertSame(
-            [[1, 6, 11, 16], [2, 7, 12, 17], [3, 8, 13, 18], [4, 9, 14, 19], [5, 10, 15, 20]],
-            array_map(static fn(array $row): array => array_column(self::nested($row['ITEMS'])->all(), 'ID'), $rows),
-        );
-    }
+    expect(array_column($rows, 'ID'))->toBe([1, 2, 3, 4, 5])
+        ->and(array_map(static fn(array $row): array => array_column(nested($row['ITEMS'])->all(), 'ID'), $rows))->toBe([[1, 6, 11, 16], [2, 7, 12, 17], [3, 8, 13, 18], [4, 9, 14, 19], [5, 10, 15, 20]]);
+});
+test('a nested cursor fails after its parents close', function (): void {
+    $nested = <<<'SQL'
+            select c.id, c.name,
+                   cursor(select i.id, i.price from fx_items i
+                           where i.category_id = c.id and i.id <= 20 order by i.id) as items
+              from fx_categories c
+             order by c.id
+            SQL;
 
-    /**
-     * Also when it still holds rows of its last batch, or when `first()`
-     * closed the parent.
-     */
-    #[Test]
-    public function a_nested_cursor_fails_after_its_parents_close(): void
-    {
-        $parent = $this->connection->select(self::NESTED);
-        $children = array_column($parent->all(), 'ITEMS');
-        [$started, $unread] = array_map(self::nested(...), $children);
-        self::assertSame(['ID' => 1, 'PRICE' => '1.25'], $started->getIterator()->current());
+    $parent = $this->connection->select($nested);
+    $children = array_column($parent->all(), 'ITEMS');
+    [$started, $unread] = array_map(nested(...), $children);
+    expect($started->getIterator()->current())->toBe(['ID' => 1, 'PRICE' => '1.25']);
 
-        $parent->close();
+    $parent->close();
 
-        foreach (['started' => $started, 'unread' => $unread] as $which => $child) {
-            try {
-                $child->all();
-                self::fail("The $which child read after its parent's close().");
-            } catch (UsageException $e) {
-                self::assertSame('The Cursor this one is nested in is closed, which closed this one too.', $e->getMessage(), $which);
-            }
-        }
-
-        $first = $this->connection->select(self::NESTED)->first();
-        self::assertNotNull($first);
-        $this->expectException(UsageException::class);
-        self::nested($first['ITEMS'])->all();
-    }
-
-    #[Test]
-    public function ref_cursors_and_nested_cursors_inherit_the_executions_options(): void
-    {
-        $options = new ExecuteOptions(
-            fetchSize: 3,
-            values: new ValueMapping(numbers: NumberMode::Float),
-            rowShape: RowShape::List,
-            keyCase: KeyCase::Lower,
-        );
-        $categories = $this->connection->function('fx_cursor.categories_with_items', options: $options)->cursor();
-
-        self::assertSame(['id', 'name', 'items'], array_map(static fn(Column $c): string => $c->name, $categories->columns()));
-        self::assertSame(Type::Cursor, $categories->columns()[2]->type);
-        [$id, $name, $items] = $categories->getIterator()->current();
-        self::assertSame([1, 'Plain'], [$id, $name]);
-        self::assertInstanceOf(Cursor::class, $items);
-        self::assertSame([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75], [16, 'Item 0016', 20]], $items->all());
-    }
-
-    #[Test]
-    public function a_nested_cursor_reads_with_the_executions_options(): void
-    {
-        $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-        self::assertIsString($sid);
-        $options = new ExecuteOptions(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
-        $parent = $this->connection->select(
-            'select cursor(select level / 2 as half from dual connect by level <= 7) as halves from dual',
-            options: $options,
-        );
-        $halves = $parent->all()[0]['halves'];
-        self::assertInstanceOf(Cursor::class, $halves);
-        $counter = RoundTripCounter::open();
-
+    foreach (['started' => $started, 'unread' => $unread] as $which => $child) {
         try {
-            $rows = [];
-            $trips = $counter->during((int) $sid, static function () use ($halves, &$rows): void {
-                $rows = $halves->all();
-            });
-        } finally {
-            $counter->close();
-        }
-
-        self::assertSame([['half' => 0.5], ['half' => 1], ['half' => 1.5], ['half' => 2], ['half' => 2.5], ['half' => 3], ['half' => 3.5]], $rows);
-        self::assertSame(3, $trips);
-    }
-
-    /**
-     * Also with rows in hand.
-     */
-    #[Test]
-    public function after_close_ref_cursors_and_nested_cursors_fail_as_use_after_close(): void
-    {
-        $categories = $this->connection->function('fx_cursor.categories_with_items')->cursor();
-        $iterator = $categories->getIterator();
-        $items = $iterator->current()['ITEMS'];
-        self::assertInstanceOf(Cursor::class, $items);
-
-        $this->connection->close();
-
-        foreach (['REF CURSOR' => $categories, 'nested Cursor' => $items] as $kind => $cursor) {
-            try {
-                $cursor->all();
-                self::fail("A $kind read after close().");
-            } catch (UsageException $e) {
-                self::assertSame('The Connection is closed.', $e->getMessage(), $kind);
-            }
+            $child->all();
+            self::fail("The $which child read after its parent's close().");
+        } catch (UsageException $e) {
+            expect($e->getMessage())->toBe('The Cursor this one is nested in is closed, which closed this one too.', $which);
         }
     }
 
-    /**
-     * A REF CURSOR the block never opened is a Cursor, never null.
-     */
-    #[Test]
-    public function an_unopened_ref_cursor_fails_on_its_first_read(): void
-    {
-        $cursor = $this->connection->run('declare c sys_refcursor; begin :o := c; end;', ['o' => CursorBind::out()])->out('o')->cursor();
+    $first = $this->connection->select($nested)->first();
+    expect($first)->not->toBeNull()
+        ->and(fn(): array => nested($first['ITEMS'])->all())->toThrow(UsageException::class);
+});
+test('ref cursors and nested cursors inherit the executions options', function (): void {
+    $options = new ExecuteOptions(
+        fetchSize: 3,
+        values: new ValueMapping(numbers: NumberMode::Float),
+        rowShape: RowShape::List,
+        keyCase: KeyCase::Lower,
+    );
+    $categories = $this->connection->function('fx_cursor.categories_with_items', options: $options)->cursor();
 
+    expect(array_map(static fn(Column $c): string => $c->name, $categories->columns()))->toBe(['id', 'name', 'items'])
+        ->and($categories->columns()[2]->type)->toBe(Type::Cursor);
+    [$id, $name, $items] = $categories->getIterator()->current();
+    expect([$id, $name])->toBe([1, 'Plain'])
+        ->and($items)->toBeInstanceOf(Cursor::class)
+        ->and($items->all())->toBe([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75], [16, 'Item 0016', 20]]);
+});
+test('a nested cursor reads with the executions options', function (): void {
+    $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
+    expect($sid)->toBeString();
+    $options = new ExecuteOptions(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
+    $parent = $this->connection->select(
+        'select cursor(select level / 2 as half from dual connect by level <= 7) as halves from dual',
+        options: $options,
+    );
+    $halves = $parent->all()[0]['halves'];
+    expect($halves)->toBeInstanceOf(Cursor::class);
+    $counter = RoundTripCounter::open();
+
+    try {
+        $rows = [];
+        $trips = $counter->during((int) $sid, static function () use ($halves, &$rows): void {
+            $rows = $halves->all();
+        });
+    } finally {
+        $counter->close();
+    }
+
+    expect($rows)->toBe([['half' => 0.5], ['half' => 1], ['half' => 1.5], ['half' => 2], ['half' => 2.5], ['half' => 3], ['half' => 3.5]])
+        ->and($trips)->toBe(3);
+});
+test('after close ref cursors and nested cursors fail as use after close', function (): void {
+    $categories = $this->connection->function('fx_cursor.categories_with_items')->cursor();
+    $iterator = $categories->getIterator();
+    $items = $iterator->current()['ITEMS'];
+    expect($items)->toBeInstanceOf(Cursor::class);
+
+    $this->connection->close();
+
+    foreach (['REF CURSOR' => $categories, 'nested Cursor' => $items] as $kind => $cursor) {
         try {
             $cursor->all();
-            self::fail('An unopened REF CURSOR was read.');
-        } catch (QueryException $queryException) {
-            self::assertSame(1001, $queryException->getCode());
+            self::fail("A $kind read after close().");
+        } catch (UsageException $e) {
+            expect($e->getMessage())->toBe('The Connection is closed.', $kind);
         }
     }
+});
+test('an unopened ref cursor fails on its first read', function (): void {
+    $cursor = $this->connection->run('declare c sys_refcursor; begin :o := c; end;', ['o' => CursorBind::out()])->out('o')->cursor();
 
-    #[Test]
-    public function a_cursor_passed_back_as_in_fails_loudly(): void
-    {
-        $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
-        self::assertIsString($sid);
-        $cursor = $this->connection->function('fx_cursor.categories_with_items')->cursor();
-        $counter = RoundTripCounter::open();
-
-        try {
-            foreach (['a plain value' => $cursor, 'Cursor::inOut()' => CursorBind::inOut($cursor)] as $how => $bind) {
-                $trips = $counter->during((int) $sid, function () use ($bind, $how): void {
-                    try {
-                        $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind]);
-                        self::fail("A Cursor bound back as $how.");
-                    } catch (UnsupportedException $unsupportedException) {
-                        self::assertStringContainsString("Bind 'c': passing a Cursor back to the server is not supported yet", $unsupportedException->getMessage(), $how);
-                    }
-                });
-                self::assertSame(0, $trips, $how);
-            }
-        } finally {
-            $counter->close();
-        }
+    try {
+        $cursor->all();
+        self::fail('An unopened REF CURSOR was read.');
+    } catch (QueryException $queryException) {
+        expect($queryException->getCode())->toBe(1001);
     }
+});
+test('a cursor passed back as in fails loudly', function (): void {
+    $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
+    expect($sid)->toBeString();
+    $cursor = $this->connection->function('fx_cursor.categories_with_items')->cursor();
+    $counter = RoundTripCounter::open();
 
-    #[Test]
-    public function getters_narrow_between_cursors_and_scalars(): void
-    {
-        $execution = $this->connection->run('begin open :c for select 1 from dual; :n := 5; end;', [
-            'c' => CursorBind::out(),
-            'n' => Number::out(),
-        ]);
-
-        try {
-            $execution->out('n')->cursor();
-            self::fail('cursor() read a NUMBER.');
-        } catch (UsageException $usageException) {
-            self::assertSame("OUT bind 'n' holds int, not a Cursor. Read it with int().", $usageException->getMessage());
+    try {
+        foreach (['a plain value' => $cursor, 'Cursor::inOut()' => CursorBind::inOut($cursor)] as $how => $bind) {
+            $trips = $counter->during((int) $sid, function () use ($bind, $how): void {
+                try {
+                    $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind]);
+                    self::fail("A Cursor bound back as $how.");
+                } catch (UnsupportedException $unsupportedException) {
+                    expect($unsupportedException->getMessage())->toContain("Bind 'c': passing a Cursor back to the server is not supported yet");
+                }
+            });
+            expect($trips)->toBe(0, $how);
         }
-        try {
+    } finally {
+        $counter->close();
+    }
+});
+test('getters narrow between cursors and scalars', function (): void {
+    $execution = $this->connection->run('begin open :c for select 1 from dual; :n := 5; end;', [
+        'c' => CursorBind::out(),
+        'n' => Number::out(),
+    ]);
+    expect(function () use ($execution): void {
+        $execution->out('n')->cursor();
+        self::fail('cursor() read a NUMBER.');
+    })->toThrow(UsageException::class, "OUT bind 'n' holds int, not a Cursor. Read it with int().")
+        ->and(function () use ($execution): void {
             $execution->out('c')->int();
             self::fail('int() read a REF CURSOR.');
-        } catch (UsageException $usageException) {
-            self::assertSame("OUT bind 'c' holds Rajska\\Oracle\\Cursor, not an int. Read it with cursor().", $usageException->getMessage());
-        }
-        self::assertSame(1, self::nested($execution->out('c')->value())->value());
-    }
+        })->toThrow(UsageException::class, "OUT bind 'c' holds Rajska\\Oracle\\Cursor, not an int. Read it with cursor().")
+        ->and(nested($execution->out('c')->value())->value())->toBe(1);
+});
+function nested(mixed $cell): Cursor
+{
+    expect($cell)->toBeInstanceOf(Cursor::class);
 
-    private static function nested(mixed $cell): Cursor
-    {
-        self::assertInstanceOf(Cursor::class, $cell);
-
-        return $cell;
-    }
+    return $cell;
 }

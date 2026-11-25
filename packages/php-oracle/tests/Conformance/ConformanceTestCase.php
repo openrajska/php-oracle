@@ -73,7 +73,7 @@ abstract class ConformanceTestCase extends TestCase
         return ['connectTimeout' => 30 + ++self::$pools / 1000];
     }
 
-    protected static function options(
+    public static function options(
         int $fetchSize = 100,
         bool $autocommit = true,
         float | int | null $timeout = null,
@@ -98,7 +98,7 @@ abstract class ConformanceTestCase extends TestCase
      *
      * @phpstan-impure
      */
-    protected static function rows(DriverConnection $connection, string $sql, array $binds = [], DriverOptions | null $options = null): array
+    public static function rows(DriverConnection $connection, string $sql, array $binds = [], DriverOptions | null $options = null): array
     {
         $cursor = $connection->execute($sql, $binds, $options ?? self::options())->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");

@@ -2,9 +2,8 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Tests\Conformance;
+namespace Rajska\Oracle\Tests\Conformance\SeamAndRowsTest;
 
-use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -13,115 +12,85 @@ use Rajska\Oracle\RowShape;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
-final class SeamAndRowsTest extends ConformanceTestCase
-{
-    #[Test]
-    public function bind_values_never_reach_the_sql_text(): void
-    {
-        $tag = 'sql-text-' . bin2hex(random_bytes(6));
-        $value = 'bound-value-' . bin2hex(random_bytes(6));
-        $statements = [
-            "select :v /* $tag */ from dual",
-            "update fx_items set name = name where name = :v /* $tag */",
-            "declare x varchar2(100) := :v; /* $tag */ begin null; end;",
-        ];
+test('bind values never reach the sql text', function (): void {
+    $tag = 'sql-text-' . bin2hex(random_bytes(6));
+    $value = 'bound-value-' . bin2hex(random_bytes(6));
+    $statements = [
+        "select :v /* $tag */ from dual",
+        "update fx_items set name = name where name = :v /* $tag */",
+        "declare x varchar2(100) := :v; /* $tag */ begin null; end;",
+    ];
 
-        $connection = $this->connect();
-        foreach ($statements as $sql) {
-            $connection->execute($sql, ['v' => $value], self::options());
-        }
-
-        $observer = IndependentSession::open();
-        try {
-            $texts = array_column(
-                $observer->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag]),
-                'SQL_TEXT',
-            );
-            $leaks = $observer->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value]);
-        } finally {
-            $observer->close();
-        }
-
-        foreach ($statements as $sql) {
-            self::assertContains($sql, $texts);
-        }
-        self::assertSame([], $leaks);
+    $connection = $this->connect();
+    foreach ($statements as $sql) {
+        $connection->execute($sql, ['v' => $value], self::options());
     }
 
-    /** Calls are Core's (Api\CallsTest). */
-    #[Test]
-    public function every_statement_kind_returns_a_complete_execution(): void
-    {
-        $connection = $this->connect();
-        $table = 'tmp_kinds_' . bin2hex(random_bytes(4));
-        $kinds = [
-            'DDL' => ["create table $table (id number)", 0, false],
-            'DML' => ["insert into $table select level from dual connect by level <= 3", 3, false],
-            'query' => ["select id from $table", 0, true],
-            'Anonymous block' => ["begin update $table set id = id + 1; end;", 0, false],
-            'DDL again' => ["drop table $table purge", 0, false],
-        ];
-
-        foreach ($kinds as $kind => [$sql, $count, $query]) {
-            $execution = $connection->execute($sql, [], self::options());
-            self::assertSame($count, $execution->rowCount(), $kind);
-            self::assertSame($query, $execution->cursor() instanceof DriverCursor, $kind);
-            self::assertSame([], $execution->outValues(), $kind);
-            self::assertSame([], $execution->implicitResults(), $kind);
-            self::assertNull($execution->warning(), $kind);
-        }
-    }
-
-    #[Test]
-    public function native_keys_are_as_oracle_reports_them_lower_keys_are_lowercase_and_list_rows_follow_column_order(): void
-    {
-        $connection = $this->connect();
-        $sql = 'select 1 as one, 2 as "Two", 3 as "three" from dual';
-
-        self::assertSame([['ONE' => 1, 'Two' => 2, 'three' => 3]], self::rows($connection, $sql));
-        self::assertSame(
-            [['one' => 1, 'two' => 2, 'three' => 3]],
-            self::rows($connection, $sql, options: self::options(keyCase: KeyCase::Lower)),
+    $observer = IndependentSession::open();
+    try {
+        $texts = array_column(
+            $observer->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag]),
+            'SQL_TEXT',
         );
-        self::assertSame(
-            [[1, 2, 3]],
-            self::rows($connection, $sql, options: self::options(rowShape: RowShape::List)),
-        );
+        $leaks = $observer->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value]);
+    } finally {
+        $observer->close();
     }
 
-    #[Test]
-    public function duplicate_column_names_under_assoc_fail_at_cursor_open_with_a_hint(): void
-    {
-        $connection = $this->connect();
-        $cases = [
-            'select 1 as a, 2 as a from dual' => self::options(),
-            'select 1 as a, 2 as "a" from dual' => self::options(keyCase: KeyCase::Lower),
-        ];
+    foreach ($statements as $sql) {
+        expect($texts)->toContain($sql);
+    }
+    expect($leaks)->toBeEmpty();
+});
+test('every statement kind returns a complete execution', function (): void {
+    $connection = $this->connect();
+    $table = 'tmp_kinds_' . bin2hex(random_bytes(4));
+    $kinds = [
+        'DDL' => ["create table $table (id number)", 0, false],
+        'DML' => ["insert into $table select level from dual connect by level <= 3", 3, false],
+        'query' => ["select id from $table", 0, true],
+        'Anonymous block' => ["begin update $table set id = id + 1; end;", 0, false],
+        'DDL again' => ["drop table $table purge", 0, false],
+    ];
 
-        foreach ($cases as $sql => $options) {
-            try {
-                $connection->execute($sql, [], $options);
-                self::fail("$sql opened a Cursor.");
-            } catch (UsageException $e) {
-                self::assertStringContainsString('alias', $e->getMessage());
-                self::assertStringContainsString('RowShape::List', $e->getMessage());
-                self::assertSame($sql, $e->sql());
-            }
-        }
+    foreach ($kinds as $kind => [$sql, $count, $query]) {
+        $execution = $connection->execute($sql, [], self::options());
+        expect($execution->rowCount())->toBe($count, $kind)
+            ->and($execution->cursor() instanceof DriverCursor)->toBe($query, $kind)
+            ->and($execution->outValues())->toBe([], $kind)
+            ->and($execution->implicitResults())->toBe([], $kind)
+            ->and($execution->warning())->toBeNull($kind);
+    }
+});
+test('native keys are as oracle reports them lower keys are lowercase and list rows follow column order', function (): void {
+    $connection = $this->connect();
+    $sql = 'select 1 as one, 2 as "Two", 3 as "three" from dual';
 
-        self::assertSame(
-            [[1, 2]],
-            self::rows($connection, 'select 1 as a, 2 as a from dual', options: self::options(rowShape: RowShape::List)),
-        );
+    expect(self::rows($connection, $sql))->toBe([['ONE' => 1, 'Two' => 2, 'three' => 3]])
+        ->and(self::rows($connection, $sql, options: self::options(keyCase: KeyCase::Lower)))->toBe([['one' => 1, 'two' => 2, 'three' => 3]])
+        ->and(self::rows($connection, $sql, options: self::options(rowShape: RowShape::List)))->toBe([[1, 2, 3]]);
+});
+test('duplicate column names under assoc fail at cursor open with a hint', function (): void {
+    $connection = $this->connect();
+    $cases = [
+        'select 1 as a, 2 as a from dual' => self::options(),
+        'select 1 as a, 2 as "a" from dual' => self::options(keyCase: KeyCase::Lower),
+    ];
+
+    foreach ($cases as $sql => $options) {
+        expect(fn(): array => $connection->execute($sql, [], $options))->toThrow(function (UsageException $usageException) use ($sql): void {
+            expect($usageException->getMessage())->toContain('alias', 'RowShape::List')
+                ->and($usageException->sql())->toBe($sql);
+        });
     }
 
-    #[Test]
-    public function columns_describe_every_field_before_the_first_row_also_for_an_empty_result(): void
-    {
-        $connection = $this->connect();
-        $schema = strtoupper(TestDatabase::fromEnvironment()->user);
-        $cursor = $connection->execute(
-            <<<'SQL'
+    expect(self::rows($connection, 'select 1 as a, 2 as a from dual', options: self::options(rowShape: RowShape::List)))->toBe([[1, 2]]);
+});
+test('columns describe every field before the first row also for an empty result', function (): void {
+    $connection = $this->connect();
+    $schema = strtoupper(TestDatabase::fromEnvironment()->user);
+    $cursor = $connection->execute(
+        <<<'SQL'
                 select i.id, i.price, i.name, i.created_at, i.rowid,
                        cast(null as number) unconstrained, cast(null as float(53)) float53,
                        cast(null as char(5)) ch, cast(null as nchar(5)) nch, cast(null as nvarchar2(10)) nv,
@@ -134,40 +103,39 @@ final class SeamAndRowsTest extends ConformanceTestCase
                   from fx_items i
                  where 1 = 0
                 SQL,
-            [],
-            self::options(),
-        )->cursor();
-        self::assertNotNull($cursor);
+        [],
+        self::options(),
+    )->cursor();
+    expect($cursor)->not->toBeNull()
+        ->and($cursor->columns())->toBe([
+            column('ID', 'number', nullable: false, precision: 10, scale: 0),
+            column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
+            column('NAME', 'varchar', nullable: false, maxSize: 100),
+            column('CREATED_AT', 'date', nullable: false),
+            column('ROWID', 'rowid', nullable: false),
+            column('UNCONSTRAINED', 'number'),
+            column('FLOAT53', 'number', precision: 53),
+            column('CH', 'char', maxSize: 5),
+            column('NCH', 'nChar', maxSize: 5),
+            column('NV', 'nVarchar', maxSize: 10),
+            column('R', 'raw', maxSize: 16),
+            column('TS', 'timestamp', scale: 3),
+            column('TSTZ', 'timestampTz', scale: 6),
+            column('TSLTZ', 'timestampLtz', scale: 9),
+            column('IDS', 'intervalDs', precision: 3, scale: 2),
+            column('IYM', 'intervalYm', precision: 4),
+            column('BF', 'binaryFloat'),
+            column('BD', 'binaryDouble'),
+            column('B', 'boolean'),
+            column('UR', 'urowid'),
+            column('CL', 'clob'),
+            column('NCL', 'nClob'),
+            column('BL', 'blob'),
+        ])
+        ->and($cursor->fetchBatch())->toBe([]);
 
-        self::assertSame([
-            $this->column('ID', 'number', nullable: false, precision: 10, scale: 0),
-            $this->column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
-            $this->column('NAME', 'varchar', nullable: false, maxSize: 100),
-            $this->column('CREATED_AT', 'date', nullable: false),
-            $this->column('ROWID', 'rowid', nullable: false),
-            $this->column('UNCONSTRAINED', 'number'),
-            $this->column('FLOAT53', 'number', precision: 53),
-            $this->column('CH', 'char', maxSize: 5),
-            $this->column('NCH', 'nChar', maxSize: 5),
-            $this->column('NV', 'nVarchar', maxSize: 10),
-            $this->column('R', 'raw', maxSize: 16),
-            $this->column('TS', 'timestamp', scale: 3),
-            $this->column('TSTZ', 'timestampTz', scale: 6),
-            $this->column('TSLTZ', 'timestampLtz', scale: 9),
-            $this->column('IDS', 'intervalDs', precision: 3, scale: 2),
-            $this->column('IYM', 'intervalYm', precision: 4),
-            $this->column('BF', 'binaryFloat'),
-            $this->column('BD', 'binaryDouble'),
-            $this->column('B', 'boolean'),
-            $this->column('UR', 'urowid'),
-            $this->column('CL', 'clob'),
-            $this->column('NCL', 'nClob'),
-            $this->column('BL', 'blob'),
-        ], $cursor->columns());
-        self::assertSame([], $cursor->fetchBatch());
-
-        $cursor = $connection->execute(
-            <<<'SQL'
+    $cursor = $connection->execute(
+        <<<'SQL'
                 select cast(null as json) j,
                        to_vector('[1,2,3]', 3, float32) v, to_vector('[1,2]', *, *) flexible,
                        to_vector('[10,[1],[1.0]]', 10, float64, sparse) sparse,
@@ -175,116 +143,93 @@ final class SeamAndRowsTest extends ConformanceTestCase
                        cursor(select 1 from dual) nested, bfilename('NO_SUCH_DIRECTORY', 'x') locator
                   from dual
                 SQL,
-            [],
-            self::options(),
-        )->cursor();
-        self::assertNotNull($cursor);
+        [],
+        self::options(),
+    )->cursor();
+    expect($cursor)->not->toBeNull()
+        ->and($cursor->columns())->toBe([
+            column('J', 'json'),
+            column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
+            column('FLEXIBLE', 'vector'),
+            column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
+            column('POINT', 'object', objectType: "$schema.FX_POINT"),
+            column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
+            column('NESTED', 'cursor'),
+            column('LOCATOR', 'bfile'),
+        ]);
+    $cursor->close();
+});
+test('columns describe long columns and follow the key case', function (): void {
+    $connection = $this->connect();
 
-        self::assertSame([
-            $this->column('J', 'json'),
-            $this->column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
-            $this->column('FLEXIBLE', 'vector'),
-            $this->column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
-            $this->column('POINT', 'object', objectType: "$schema.FX_POINT"),
-            $this->column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
-            $this->column('NESTED', 'cursor'),
-            $this->column('LOCATOR', 'bfile'),
-        ], $cursor->columns());
-        $cursor->close();
-    }
+    // A table holds one LONG or LONG RAW column at most.
+    $suffix = bin2hex(random_bytes(4));
+    $connection->execute("create table tmp_long_$suffix (text long)", [], self::options());
 
-    #[Test]
-    public function columns_describe_long_columns_and_follow_the_key_case(): void
-    {
-        $connection = $this->connect();
-        // A table holds one LONG or LONG RAW column at most.
-        $suffix = bin2hex(random_bytes(4));
-        $connection->execute("create table tmp_long_$suffix (text long)", [], self::options());
-
+    try {
+        $connection->execute("create table tmp_long_raw_$suffix (bytes long raw)", [], self::options());
         try {
-            $connection->execute("create table tmp_long_raw_$suffix (bytes long raw)", [], self::options());
-            try {
-                $cursor = $connection->execute(
-                    "select t.text, b.bytes from tmp_long_$suffix t cross join tmp_long_raw_$suffix b",
-                    [],
-                    self::options(keyCase: KeyCase::Lower),
-                )->cursor();
-                self::assertNotNull($cursor);
-                self::assertSame([$this->column('text', 'long'), $this->column('bytes', 'longRaw')], $cursor->columns());
-                $cursor->close();
-            } finally {
-                $connection->execute("drop table tmp_long_raw_$suffix purge", [], self::options());
-            }
+            $cursor = $connection->execute(
+                "select t.text, b.bytes from tmp_long_$suffix t cross join tmp_long_raw_$suffix b",
+                [],
+                self::options(keyCase: KeyCase::Lower),
+            )->cursor();
+            expect($cursor)->not->toBeNull()
+                ->and($cursor->columns())->toBe([column('text', 'long'), column('bytes', 'longRaw')]);
+            $cursor->close();
         } finally {
-            $connection->execute("drop table tmp_long_$suffix purge", [], self::options());
+            $connection->execute("drop table tmp_long_raw_$suffix purge", [], self::options());
+        }
+    } finally {
+        $connection->execute("drop table tmp_long_$suffix purge", [], self::options());
+    }
+});
+test('a bfile column is described and only fetching it fails', function (): void {
+    $cursor = $this->connect()->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') f from dual", [], self::options())->cursor();
+    expect($cursor)->not->toBeNull()
+        ->and($cursor->columns()[0]['type'])->toBe('bfile')
+        ->and(fn() => $cursor->fetchBatch())->toThrow(UnsupportedException::class);
+});
+test('after close the connections cursors fail as use after close and the next owner is unaffected', function (): void {
+    $fields = self::ownPool() + ['maxConnections' => 1];
+    $connection = $this->connect(...$fields);
+    $session = self::session($connection);
+    $sql = 'select level as n from dual connect by level <= 3';
+    $cursor = $connection->execute($sql, [], self::options(fetchSize: 1))->cursor();
+    expect($cursor)->not->toBeNull()
+        ->and($cursor->fetchBatch())->toBe([['N' => 1]]);
+
+    $connection->close();
+
+    foreach (['fetchBatch()' => $cursor->fetchBatch(...), 'columns()' => $cursor->columns(...)] as $call => $read) {
+        try {
+            $read();
+            self::fail("$call after close() succeeded.");
+        } catch (UsageException $e) {
+            expect($e->getMessage())->toBe('The Connection is closed.', $call);
         }
     }
+    $cursor->close();
 
-    #[Test]
-    public function a_bfile_column_is_described_and_only_fetching_it_fails(): void
-    {
-        $cursor = $this->connect()->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') f from dual", [], self::options())->cursor();
-        self::assertNotNull($cursor);
-
-        self::assertSame('bfile', $cursor->columns()[0]['type']);
-        $this->expectException(UnsupportedException::class);
-        $cursor->fetchBatch();
-    }
-
-    #[Test]
-    public function after_close_the_connections_cursors_fail_as_use_after_close_and_the_next_owner_is_unaffected(): void
-    {
-        $fields = self::ownPool() + ['maxConnections' => 1];
-        $connection = $this->connect(...$fields);
-        $session = self::session($connection);
-        $sql = 'select level as n from dual connect by level <= 3';
-        $cursor = $connection->execute($sql, [], self::options(fetchSize: 1))->cursor();
-        self::assertNotNull($cursor);
-        self::assertSame([['N' => 1]], $cursor->fetchBatch());
-
-        $connection->close();
-
-        foreach (['fetchBatch()' => $cursor->fetchBatch(...), 'columns()' => $cursor->columns(...)] as $call => $read) {
-            try {
-                $read();
-                self::fail("$call after close() succeeded.");
-            } catch (UsageException $e) {
-                self::assertSame('The Connection is closed.', $e->getMessage(), $call);
-            }
-        }
-        $cursor->close();
-
-        $next = $this->connect(...$fields);
-        self::assertSame($session, self::session($next));
-        self::assertSame([['N' => 1], ['N' => 2], ['N' => 3]], self::rows($next, $sql, [], self::options(fetchSize: 1)));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function column(
-        string $name,
-        string $type,
-        bool $nullable = true,
-        int | null $precision = null,
-        int | null $scale = null,
-        int | null $maxSize = null,
-        string | null $objectType = null,
-        int | null $vectorDimensions = null,
-        string | null $vectorFormat = null,
-        bool $sparse = false,
-    ): array {
-        return [
-            'name' => $name,
-            'type' => $type,
-            'nullable' => $nullable,
-            'precision' => $precision,
-            'scale' => $scale,
-            'maxSize' => $maxSize,
-            'objectType' => $objectType,
-            'vectorDimensions' => $vectorDimensions,
-            'vectorFormat' => $vectorFormat,
-            'sparse' => $sparse,
-        ];
-    }
+    $next = $this->connect(...$fields);
+    expect(self::session($next))->toBe($session)
+        ->and(self::rows($next, $sql, [], self::options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
+});
+/**
+ * @return array<string, mixed>
+ */
+function column(string $name, string $type, bool $nullable = true, int | null $precision = null, int | null $scale = null, int | null $maxSize = null, string | null $objectType = null, int | null $vectorDimensions = null, string | null $vectorFormat = null, bool $sparse = false): array
+{
+    return [
+        'name' => $name,
+        'type' => $type,
+        'nullable' => $nullable,
+        'precision' => $precision,
+        'scale' => $scale,
+        'maxSize' => $maxSize,
+        'objectType' => $objectType,
+        'vectorDimensions' => $vectorDimensions,
+        'vectorFormat' => $vectorFormat,
+        'sparse' => $sparse,
+    ];
 }
