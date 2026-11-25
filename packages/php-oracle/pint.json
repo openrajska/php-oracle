@@ -3,9 +3,32 @@
     "rules": {
         "ordered_imports": {
             "sort_algorithm": "alpha",
-            "imports_order": ["class", "function", "const"]
+            "imports_order": [
+                "class",
+                "function",
+                "const"
+            ]
         },
-        "no_unused_imports": true
+        "no_unused_imports": true,
+        "declare_equal_normalize": {
+            "space": "single"
+        },
+        "types_spaces": {
+            "space": "single"
+        },
+        "nullable_type_declaration": {
+            "syntax": "union"
+        },
+        "ordered_types": {
+            "sort_algorithm": "alpha",
+            "case_sensitive": true,
+            "null_adjustment": "always_last"
+        },
+        "phpdoc_types_order": {
+            "sort_algorithm": "alpha",
+            "case_sensitive": true,
+            "null_adjustment": "always_last"
+        }
     },
     "exclude": [
         "tests/Harness/Probes"
