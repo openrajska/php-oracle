@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -20,7 +20,7 @@ use Rajska\Oracle\ExecuteOptions;
 final class OptionsTest extends TestCase
 {
     /**
-     * @return iterable<string, array{string, int|float}>
+     * @return iterable<string, array{string, float|int}>
      */
     public static function invalidValues(): iterable
     {
@@ -34,7 +34,7 @@ final class OptionsTest extends TestCase
 
     #[Test]
     #[DataProvider('invalidValues')]
-    public function execute_options_reject_invalid_values_with_usage_exception(string $field, int|float $value): void
+    public function execute_options_reject_invalid_values_with_usage_exception(string $field, float | int $value): void
     {
         $this->expectException(UsageException::class);
         $this->expectExceptionMessage($field);
@@ -44,7 +44,7 @@ final class OptionsTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, int|float}>
+     * @return iterable<string, array{string, float|int}>
      */
     public static function invalidConfigValues(): iterable
     {
@@ -63,7 +63,7 @@ final class OptionsTest extends TestCase
 
     #[Test]
     #[DataProvider('invalidConfigValues')]
-    public function connection_config_rejects_invalid_values_with_configuration_exception(string $field, int|float $value): void
+    public function connection_config_rejects_invalid_values_with_configuration_exception(string $field, float | int $value): void
     {
         $this->expectException(ConfigurationException::class);
         $this->expectExceptionMessage($field);

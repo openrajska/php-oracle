@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
@@ -24,7 +24,7 @@ final class ExtensionCursor implements DriverCursor
      *
      * @var list<int>|null
      */
-    private ?array $handles = null;
+    private array | null $handles = null;
 
     /**
      * @param string $sql the SQL of the Execution the Cursor was born of, for `sql()`

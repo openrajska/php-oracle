@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -10,9 +10,9 @@ namespace Rajska\Oracle;
 final readonly class Tracing
 {
     public function __construct(
-        public ?string $module = null,
-        public ?string $action = null,
-        public ?string $clientIdentifier = null,
-        public ?string $clientInfo = null,
+        public string | null $module = null,
+        public string | null $action = null,
+        public string | null $clientIdentifier = null,
+        public string | null $clientInfo = null,
     ) {}
 }

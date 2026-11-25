@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -28,7 +28,7 @@ final readonly class CallExecution implements DriverExecution
         return $this->execution->rowCount();
     }
 
-    public function cursor(): ?DriverCursor
+    public function cursor(): DriverCursor | null
     {
         return $this->execution->cursor();
     }
@@ -48,7 +48,7 @@ final readonly class CallExecution implements DriverExecution
         return $this->execution->implicitResults();
     }
 
-    public function warning(): ?string
+    public function warning(): string | null
     {
         return $this->execution->warning();
     }

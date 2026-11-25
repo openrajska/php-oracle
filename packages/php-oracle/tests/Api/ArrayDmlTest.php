@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -87,7 +87,7 @@ final class ArrayDmlTest extends TestCase
         $ids = $returning->out('IDS');
         self::assertSame([[3], []], array_map(static fn(OutValue $value): array => $value->list(), $ids));
         self::assertSame(3, $ids[0]->int());
-        self::assertSame(['a1', 'b2'], array_map(static fn(OutValue $value): ?string => $value->string(), $block->out('label')));
+        self::assertSame(['a1', 'b2'], array_map(static fn(OutValue $value): string | null => $value->string(), $block->out('label')));
     }
 
     /**

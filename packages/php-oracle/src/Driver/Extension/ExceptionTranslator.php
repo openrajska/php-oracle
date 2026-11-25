@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
@@ -33,7 +33,7 @@ final class ExceptionTranslator
     /**
      * @param ?string $sql the SQL that ran, for `sql()`
      */
-    public static function translate(NativeException $native, ?string $sql = null): OracleException
+    public static function translate(NativeException $native, string | null $sql = null): OracleException
     {
         $message = $native->getMessage();
         $code = $native->getCode();

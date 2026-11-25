@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -12,7 +12,7 @@ use SensitiveParameter;
  */
 final readonly class PlsInteger extends Bind
 {
-    public static function in(#[SensitiveParameter] ?int $value): self
+    public static function in(#[SensitiveParameter] int | null $value): self
     {
         return new self(Type::PlsInteger, Direction::In, $value);
     }
@@ -22,7 +22,7 @@ final readonly class PlsInteger extends Bind
         return new self(Type::PlsInteger, Direction::Out, null);
     }
 
-    public static function inOut(#[SensitiveParameter] ?int $value): self
+    public static function inOut(#[SensitiveParameter] int | null $value): self
     {
         return new self(Type::PlsInteger, Direction::InOut, $value);
     }

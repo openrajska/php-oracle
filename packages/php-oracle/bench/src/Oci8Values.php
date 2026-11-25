@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bench;
 
@@ -21,7 +21,7 @@ final class Oci8Values
      * A NUMBER as `NumberMode::Exact` gives it: an int when integral and
      * within 64 bits, else the exact decimal text with its leading zero.
      */
-    public static function exact(string $number): int|string
+    public static function exact(string $number): int | string
     {
         $int = (int) $number;
         if ((string) $int === $number) {
@@ -41,7 +41,7 @@ final class Oci8Values
      * A NUMBER as `NumberMode::Float` gives it: an int when integral and
      * within 64 bits, else a float.
      */
-    public static function float(string $number): int|float
+    public static function float(string $number): float | int
     {
         $int = (int) $number;
 

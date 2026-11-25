@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -23,6 +23,6 @@ abstract readonly class Bind
         public Direction $direction,
         #[SensitiveParameter]
         public mixed $value,
-        public ?string $typeName = null,
+        public string | null $typeName = null,
     ) {}
 }

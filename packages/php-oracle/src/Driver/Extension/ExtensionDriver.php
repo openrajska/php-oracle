@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
@@ -55,7 +55,7 @@ final class ExtensionDriver implements Driver
      * Why the Extension cannot be used, '' once it can, null before the
      * first check.
      */
-    private static ?string $refusal = null;
+    private static string | null $refusal = null;
 
     /**
      * The `$pool` and `$session` arrays built from each config still alive:
@@ -65,7 +65,7 @@ final class ExtensionDriver implements Driver
      *
      * @var ?WeakMap<ConnectionConfig, array{PoolFields, SessionFields}>
      */
-    private static ?WeakMap $arrays = null;
+    private static WeakMap | null $arrays = null;
 
     public function connect(ConnectionConfig $config): DriverConnection
     {
@@ -170,12 +170,12 @@ final class ExtensionDriver implements Driver
      * Extension's milliseconds. A sub-millisecond duration becomes 1 ms,
      * never 0.
      */
-    public static function milliseconds(int|float $seconds): int
+    public static function milliseconds(float | int $seconds): int
     {
         return max(1, (int) round($seconds * 1000));
     }
 
-    public static function optionalMilliseconds(int|float|null $seconds): ?int
+    public static function optionalMilliseconds(float | int | null $seconds): int | null
     {
         return $seconds === null ? null : self::milliseconds($seconds);
     }

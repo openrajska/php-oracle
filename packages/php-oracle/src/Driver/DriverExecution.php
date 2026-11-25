@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver;
 
@@ -20,7 +20,7 @@ interface DriverExecution
     /**
      * The rows, if the statement was a query.
      */
-    public function cursor(): ?DriverCursor;
+    public function cursor(): DriverCursor | null;
 
     /**
      * Keyed by bind name as written; RETURNING values included. Each is the
@@ -41,5 +41,5 @@ interface DriverExecution
     /**
      * The success-with-info text, such as compilation errors.
      */
-    public function warning(): ?string;
+    public function warning(): string | null;
 }

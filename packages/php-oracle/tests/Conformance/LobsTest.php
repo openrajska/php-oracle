@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -621,7 +621,7 @@ final class LobsTest extends ConformanceTestCase
     /**
      * @param callable(): mixed $action
      */
-    private function roundTrips(DriverConnection $connection, callable $action, ?int $sid = null): int
+    private function roundTrips(DriverConnection $connection, callable $action, int | null $sid = null): int
     {
         $sid ??= self::sid($connection);
         $counter = RoundTripCounter::open();

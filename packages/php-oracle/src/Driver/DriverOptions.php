@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver;
 
@@ -18,11 +18,11 @@ use Rajska\Oracle\ValueMapping;
 final readonly class DriverOptions
 {
     /**
-     * @param int|float|null $timeout seconds per Round trip; null = no limit
+     * @param float|int|null $timeout seconds per Round trip; null = no limit
      */
     public function __construct(
         public bool $autocommit,
-        public int|float|null $timeout,
+        public float | int | null $timeout,
         public int $fetchSize,
         public ValueMapping $values,
         public RowShape $rowShape,

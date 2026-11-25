@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -32,7 +32,7 @@ abstract class ConformanceTestCase extends TestCase
      * shared by the test class: a logon per look adds to the listener's
      * load, which refuses logons with ORA-12516 when it runs high.
      */
-    private static ?IndependentSession $observer = null;
+    private static IndependentSession | null $observer = null;
 
     protected function tearDown(): void
     {
@@ -76,7 +76,7 @@ abstract class ConformanceTestCase extends TestCase
     protected static function options(
         int $fetchSize = 100,
         bool $autocommit = true,
-        int|float|null $timeout = null,
+        float | int | null $timeout = null,
         ValueMapping $values = new ValueMapping(),
         RowShape $rowShape = RowShape::Assoc,
         KeyCase $keyCase = KeyCase::Native,
@@ -98,7 +98,7 @@ abstract class ConformanceTestCase extends TestCase
      *
      * @phpstan-impure
      */
-    protected static function rows(DriverConnection $connection, string $sql, array $binds = [], ?DriverOptions $options = null): array
+    protected static function rows(DriverConnection $connection, string $sql, array $binds = [], DriverOptions | null $options = null): array
     {
         $cursor = $connection->execute($sql, $binds, $options ?? self::options())->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");

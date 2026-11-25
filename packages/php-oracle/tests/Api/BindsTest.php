@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -81,7 +81,7 @@ final class BindsTest extends TestCase
         try {
             $factory($secret);
             self::fail('The value was accepted.');
-        } catch (UsageException|TypeError $e) {
+        } catch (TypeError | UsageException $e) {
             self::assertStringNotContainsString($secret, $e->getMessage());
             self::assertStringNotContainsString($secret, $e->getTraceAsString());
             self::assertStringNotContainsString($secret, (string) $e);

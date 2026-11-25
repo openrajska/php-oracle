@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -12,7 +12,7 @@ use SensitiveParameter;
  */
 final readonly class BinaryFloat extends Bind
 {
-    public static function in(#[SensitiveParameter] int|float|null $value): self
+    public static function in(#[SensitiveParameter] float | int | null $value): self
     {
         return new self(Type::BinaryFloat, Direction::In, $value === null ? null : (float) $value);
     }
@@ -22,7 +22,7 @@ final readonly class BinaryFloat extends Bind
         return new self(Type::BinaryFloat, Direction::Out, null);
     }
 
-    public static function inOut(#[SensitiveParameter] int|float|null $value): self
+    public static function inOut(#[SensitiveParameter] float | int | null $value): self
     {
         return new self(Type::BinaryFloat, Direction::InOut, $value === null ? null : (float) $value);
     }

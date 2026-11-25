@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -266,12 +266,12 @@ final class SeamAndRowsTest extends ConformanceTestCase
         string $name,
         string $type,
         bool $nullable = true,
-        ?int $precision = null,
-        ?int $scale = null,
-        ?int $maxSize = null,
-        ?string $objectType = null,
-        ?int $vectorDimensions = null,
-        ?string $vectorFormat = null,
+        int | null $precision = null,
+        int | null $scale = null,
+        int | null $maxSize = null,
+        string | null $objectType = null,
+        int | null $vectorDimensions = null,
+        string | null $vectorFormat = null,
         bool $sparse = false,
     ): array {
         return [

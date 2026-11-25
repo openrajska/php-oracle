@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -426,7 +426,7 @@ final class ValuesTest extends ConformanceTestCase
                 SQL;
             $binds = ['n' => Number::in('12.30')];
             $float = self::options(values: new ValueMapping(numbers: NumberMode::Float));
-            $read = static fn(?DriverOptions $options = null): array => array_map(
+            $read = static fn(DriverOptions | null $options = null): array => array_map(
                 Temporals::shown(...),
                 self::rows($connection, $sql, $binds, $options)[0],
             );

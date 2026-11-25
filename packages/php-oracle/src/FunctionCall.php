@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -56,12 +56,12 @@ final readonly class FunctionCall
         private Closure $run,
     ) {}
 
-    public function varchar(): ?string
+    public function varchar(): string | null
     {
         return ($this->run)(Varchar::out())->string();
     }
 
-    public function nvarchar(): ?string
+    public function nvarchar(): string | null
     {
         return ($this->run)(NVarchar::out())->string();
     }
@@ -69,7 +69,7 @@ final readonly class FunctionCall
     /**
      * Blank-padded as returned.
      */
-    public function char(): ?string
+    public function char(): string | null
     {
         return ($this->run)(Char::out())->string();
     }
@@ -77,7 +77,7 @@ final readonly class FunctionCall
     /**
      * Blank-padded as returned.
      */
-    public function nchar(): ?string
+    public function nchar(): string | null
     {
         return ($this->run)(NChar::out())->string();
     }
@@ -86,7 +86,7 @@ final readonly class FunctionCall
      * An `int` if integral and within 64 bits, else the exact decimal
      * string; a non-integral value is a `float` under `NumberMode::Float`.
      */
-    public function number(): int|float|string|null
+    public function number(): float | int | string | null
     {
         $out = ($this->run)(Number::out());
         $value = $out->value();
@@ -96,7 +96,7 @@ final readonly class FunctionCall
             : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a NUMBER.', 0, null, $this->call->name);
     }
 
-    private function temporal(Bind $bind): DateTimeImmutable|string|null
+    private function temporal(Bind $bind): DateTimeImmutable | string | null
     {
         $value = ($this->run)($bind)->value();
 
@@ -105,22 +105,22 @@ final readonly class FunctionCall
             : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a date.', 0, null, $this->call->name);
     }
 
-    public function binaryFloat(): ?float
+    public function binaryFloat(): float | null
     {
         return ($this->run)(BinaryFloat::out())->float();
     }
 
-    public function binaryDouble(): ?float
+    public function binaryDouble(): float | null
     {
         return ($this->run)(BinaryDouble::out())->float();
     }
 
-    public function plsInteger(): ?int
+    public function plsInteger(): int | null
     {
         return ($this->run)(PlsInteger::out())->int();
     }
 
-    public function boolean(): ?bool
+    public function boolean(): bool | null
     {
         return ($this->run)(Boolean::out())->bool();
     }
@@ -128,7 +128,7 @@ final readonly class FunctionCall
     /**
      * The Wall clock, or ISO text under `TemporalMode::String`.
      */
-    public function date(): DateTimeImmutable|string|null
+    public function date(): DateTimeImmutable | string | null
     {
         return $this->temporal(Date::out());
     }
@@ -136,7 +136,7 @@ final readonly class FunctionCall
     /**
      * The Wall clock, or ISO text under `TemporalMode::String`.
      */
-    public function timestamp(): DateTimeImmutable|string|null
+    public function timestamp(): DateTimeImmutable | string | null
     {
         return $this->temporal(Timestamp::out());
     }
@@ -144,7 +144,7 @@ final readonly class FunctionCall
     /**
      * With its own offset, or ISO text under `TemporalMode::String`.
      */
-    public function timestampTz(): DateTimeImmutable|string|null
+    public function timestampTz(): DateTimeImmutable | string | null
     {
         return $this->temporal(TimestampTz::out());
     }
@@ -153,17 +153,17 @@ final readonly class FunctionCall
      * The Instant in PHP's default zone, or ISO text under
      * `TemporalMode::String`.
      */
-    public function timestampLtz(): DateTimeImmutable|string|null
+    public function timestampLtz(): DateTimeImmutable | string | null
     {
         return $this->temporal(TimestampLtz::out());
     }
 
-    public function intervalDs(): ?DateInterval
+    public function intervalDs(): DateInterval | null
     {
         return ($this->run)(IntervalDs::out())->interval();
     }
 
-    public function intervalYm(): ?DateInterval
+    public function intervalYm(): DateInterval | null
     {
         return ($this->run)(IntervalYm::out())->interval();
     }
@@ -171,12 +171,12 @@ final readonly class FunctionCall
     /**
      * Bytes.
      */
-    public function raw(): ?string
+    public function raw(): string | null
     {
         return ($this->run)(Raw::out())->string();
     }
 
-    public function rowid(): ?string
+    public function rowid(): string | null
     {
         return ($this->run)(Rowid::out())->string();
     }
@@ -184,7 +184,7 @@ final readonly class FunctionCall
     /**
      * A `Lob`, or the whole text under `LobMode::Inline`.
      */
-    public function clob(): Lob|string|null
+    public function clob(): Lob | string | null
     {
         return $this->lob(Clob::out());
     }
@@ -192,7 +192,7 @@ final readonly class FunctionCall
     /**
      * A `Lob`, or the whole text under `LobMode::Inline`.
      */
-    public function nclob(): Lob|string|null
+    public function nclob(): Lob | string | null
     {
         return $this->lob(NClob::out());
     }
@@ -200,12 +200,12 @@ final readonly class FunctionCall
     /**
      * A `Lob`, or the bytes under `LobMode::Inline`.
      */
-    public function blob(): Lob|string|null
+    public function blob(): Lob | string | null
     {
         return $this->lob(Blob::out());
     }
 
-    private function lob(Bind $bind): Lob|string|null
+    private function lob(Bind $bind): Lob | string | null
     {
         $value = ($this->run)($bind)->value();
 
@@ -225,9 +225,9 @@ final readonly class FunctionCall
     /**
      * A dense VECTOR as a list, a sparse one as a `SparseVector`.
      *
-     * @return list<int|float>|SparseVector|null
+     * @return SparseVector|list<float|int>|null
      */
-    public function vector(): array|SparseVector|null
+    public function vector(): SparseVector | array | null
     {
         $value = ($this->run)(Vector::out())->value();
 
@@ -235,7 +235,7 @@ final readonly class FunctionCall
             throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a VECTOR.', 0, null, $this->call->name);
         }
 
-        /** @var list<int|float>|SparseVector|null $value */
+        /** @var SparseVector|list<float|int>|null $value */
         return $value;
     }
 
@@ -254,7 +254,7 @@ final readonly class FunctionCall
      *
      * @return array<string, mixed>|null
      */
-    public function struct(string $type): ?array
+    public function struct(string $type): array | null
     {
         /** @var array<string, mixed>|null */
         return ($this->run)(Struct::out($type))->array();
@@ -266,7 +266,7 @@ final readonly class FunctionCall
      *
      * @return list<mixed>|null
      */
-    public function collection(string $type): ?array
+    public function collection(string $type): array | null
     {
         /** @var list<mixed>|null */
         return ($this->run)(Collection::out($type))->array();
@@ -278,7 +278,7 @@ final readonly class FunctionCall
      *
      * @return array<int, mixed>|null
      */
-    public function indexed(string $type): ?array
+    public function indexed(string $type): array | null
     {
         /** @var array<int, mixed>|null */
         return ($this->run)(Indexed::out($type))->array();

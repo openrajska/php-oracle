@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Exceptions;
 
@@ -19,10 +19,10 @@ class QueryException extends RuntimeException implements OracleException
     public function __construct(
         string $message,
         int $code = 0,
-        ?string $sql = null,
-        ?string $call = null,
-        private ?int $offset = null,
-        ?Throwable $previous = null,
+        string | null $sql = null,
+        string | null $call = null,
+        private int | null $offset = null,
+        Throwable | null $previous = null,
     ) {
         $this->carry($message, $code, $sql, $call, $previous);
     }
@@ -30,7 +30,7 @@ class QueryException extends RuntimeException implements OracleException
     /**
      * Where in the SQL the server located the error.
      */
-    public function offset(): ?int
+    public function offset(): int | null
     {
         return $this->offset;
     }

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -21,7 +21,7 @@ trait LobBind
     abstract private static function type(): Type;
 
     /**
-     * @param string|resource|null $value
+     * @param resource|string|null $value
      *
      * @throws UsageException if the value is not a string, an open stream or null
      */
@@ -42,7 +42,7 @@ trait LobBind
     /**
      * Sent as `in()` sends it; the server sends back a locator, as `out()`.
      *
-     * @param string|resource|null $value
+     * @param resource|string|null $value
      *
      * @throws UsageException if the value is not a string, an open stream or null
      */
@@ -52,7 +52,7 @@ trait LobBind
     }
 
     /**
-     * @return string|resource|null
+     * @return resource|string|null
      */
     private static function checked(#[SensitiveParameter] mixed $value): mixed
     {

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
@@ -18,10 +18,10 @@ final readonly class ExtensionExecution implements DriverExecution
      */
     public function __construct(
         private int $rowCount,
-        private ?DriverCursor $cursor,
+        private DriverCursor | null $cursor,
         private array $outValues,
         private array $implicitResults,
-        private ?string $warning,
+        private string | null $warning,
     ) {}
 
     public function rowCount(): int
@@ -29,7 +29,7 @@ final readonly class ExtensionExecution implements DriverExecution
         return $this->rowCount;
     }
 
-    public function cursor(): ?DriverCursor
+    public function cursor(): DriverCursor | null
     {
         return $this->cursor;
     }
@@ -44,7 +44,7 @@ final readonly class ExtensionExecution implements DriverExecution
         return $this->implicitResults;
     }
 
-    public function warning(): ?string
+    public function warning(): string | null
     {
         return $this->warning;
     }

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // Proves the comparisons marked `same` compare like with like: Core's case
 // and oci8's case return identical PHP values (same keys, types and values).
@@ -18,7 +18,7 @@ $written = static function () use ($context): array {
 
     return oci8_drain($statement, 'all', 'exact');
 };
-$valuesOf = static function (string $id) use ($cases, $context, $written): array|int {
+$valuesOf = static function (string $id) use ($cases, $context, $written): array | int {
     $case = $cases[$id];
     $result = $case['make']($context)(7);
     if ($case['scenario'] === 'insert') {

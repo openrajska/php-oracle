@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -23,12 +23,12 @@ final readonly class Column
         public string $name,
         public Type $type,
         public bool $nullable,
-        public ?int $precision,
-        public ?int $scale,
-        public ?int $maxSize,
-        public ?string $objectType,
-        public ?int $vectorDimensions,
-        public ?VectorFormat $vectorFormat,
+        public int | null $precision,
+        public int | null $scale,
+        public int | null $maxSize,
+        public string | null $objectType,
+        public int | null $vectorDimensions,
+        public VectorFormat | null $vectorFormat,
         public bool $sparse,
     ) {}
 

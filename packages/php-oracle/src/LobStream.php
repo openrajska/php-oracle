@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -48,7 +48,7 @@ final class LobStream
         return $stream;
     }
 
-    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    public function stream_open(string $path, string $mode, int $options, string | null &$openedPath): bool
     {
         $options = \is_resource($this->context) ? stream_context_get_options($this->context) : [];
         $read = \is_array($options[self::PROTOCOL] ?? null) ? ($options[self::PROTOCOL]['read'] ?? null) : null;

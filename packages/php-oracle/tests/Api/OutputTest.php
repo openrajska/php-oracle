@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -259,7 +259,7 @@ final class OutputTest extends TestCase
         $observer = TransactionObserver::open();
         try {
             $observer->execute("insert into fx_tx_rows (id, note) values (1, 'committed')");
-            $note = static fn(): ?string => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
+            $note = static fn(): string | null => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
             $connection = $this->fresh();
             $connection->begin();
             $connection->run("update fx_tx_rows set note = 'uncommitted' where id = 1");

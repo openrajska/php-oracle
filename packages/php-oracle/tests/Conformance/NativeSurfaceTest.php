@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -64,8 +64,8 @@ final class NativeSurfaceTest extends ConformanceTestCase
         foreach ([$connection, $cursor, $lob, $exception] as $object) {
             $class = $object::class;
             self::assertTrue(new ReflectionClass($class)->isFinal(), "$class is final");
-            $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => new $class(), "new $class");
-            $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => clone $object, "clone $class");
+            $this->assertFails(static fn(): NativeCursor | NativeException | NativeLob | \Rajska\Oracle\Extension\Connection => new $class(), "new $class");
+            $this->assertFails(static fn(): NativeCursor | NativeException | NativeLob | \Rajska\Oracle\Extension\Connection => clone $object, "clone $class");
             $this->assertFails(static fn(): string => serialize($object), "serialize($class)");
             $this->assertFails(
                 static fn(): mixed => unserialize(\sprintf('O:%d:"%s":0:{}', \strlen($class), $class)),
@@ -207,12 +207,12 @@ final class NativeSurfaceTest extends ConformanceTestCase
             'timeout' => [
                 TimeoutException::class,
                 fn() => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
-                fn(): ?array => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
+                fn(): array | null => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
             ],
             'unsupported' => [
                 UnsupportedException::class,
                 fn() => $native->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::nativeOptions())['cursor']?->fetchBatch(),
-                fn(): ?array => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
+                fn(): array | null => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
             ],
             'usage' => [
                 UsageException::class,

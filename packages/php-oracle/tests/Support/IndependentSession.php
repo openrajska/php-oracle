@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Support;
 
@@ -138,7 +138,7 @@ final class IndependentSession
     /**
      * @param array<mixed>|false $error what oci_error() returned
      */
-    private static function failure(array|false $error): RuntimeException
+    private static function failure(array | false $error): RuntimeException
     {
         $message = $error['message'] ?? null;
         $code = $error['code'] ?? null;

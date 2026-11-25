@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // Loads Core from src/ and the benchmark's helpers from bench/src/, without
 // Composer, so the benchmark runs where vendor/ does not exist (the ZTS

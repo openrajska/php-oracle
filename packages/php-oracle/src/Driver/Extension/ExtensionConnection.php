@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension;
 
@@ -22,12 +22,12 @@ final class ExtensionConnection implements DriverConnection
      * The last options passed, and their `$options` array: Core passes the
      * same DriverOptions to every call that sets none.
      */
-    private ?DriverOptions $lastOptions = null;
+    private DriverOptions | null $lastOptions = null;
 
     /**
      * @var array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}|null
      */
-    private ?array $lastArray = null;
+    private array | null $lastArray = null;
 
     public function __construct(private readonly NativeConnection $native) {}
 

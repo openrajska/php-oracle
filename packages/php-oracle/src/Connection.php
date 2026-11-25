@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -73,7 +73,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function run(string $sql, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
+    public function run(string $sql, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Execution
     {
         return new Execution(
             $this->driver->execute($sql, $binds, $this->resolve($options)),
@@ -91,7 +91,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function select(string $sql, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Cursor
+    public function select(string $sql, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Cursor
     {
         return $this->run($sql, $binds, $options)->rows();
     }
@@ -106,7 +106,7 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function procedure(string $name, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
+    public function procedure(string $name, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Execution
     {
         return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options), $this->state);
     }
@@ -121,7 +121,7 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function function(string $name, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): FunctionCall
+    public function function(string $name, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): FunctionCall
     {
         $call = Call::of($name, $binds);
 
@@ -154,7 +154,7 @@ final class Connection
      * @throws ArrayDmlException listing every failing row
      * @throws UsageException for rows that differ in keys or column types, a query, a REF CURSOR or Implicit results
      */
-    public function runMany(string $sql, #[SensitiveParameter] array $rows, ?ExecuteOptions $options = null): ArrayDml
+    public function runMany(string $sql, #[SensitiveParameter] array $rows, ExecuteOptions | null $options = null): ArrayDml
     {
         return new ArrayDml(
             $this->driver->executeMany($sql, $rows, $this->resolve($options)),
@@ -466,7 +466,7 @@ final class Connection
         }
     }
 
-    private function resolve(?ExecuteOptions $options): DriverOptions
+    private function resolve(ExecuteOptions | null $options): DriverOptions
     {
         if (!$options instanceof ExecuteOptions) {
             // The ConnectionConfig is immutable: these never change.

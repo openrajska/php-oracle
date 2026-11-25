@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -14,7 +14,7 @@ use SensitiveParameter;
  */
 final readonly class Raw extends Bind
 {
-    public static function in(#[SensitiveParameter] ?string $bytes): self
+    public static function in(#[SensitiveParameter] string | null $bytes): self
     {
         return new self(Type::Raw, Direction::In, $bytes);
     }
@@ -30,7 +30,7 @@ final readonly class Raw extends Bind
     /**
      * Declares the largest buffer: 32767 bytes.
      */
-    public static function inOut(#[SensitiveParameter] ?string $bytes): self
+    public static function inOut(#[SensitiveParameter] string | null $bytes): self
     {
         return new self(Type::Raw, Direction::InOut, $bytes);
     }

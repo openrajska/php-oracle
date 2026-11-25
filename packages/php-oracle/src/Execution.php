@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -15,7 +15,7 @@ use Rajska\Oracle\Exceptions\UsageException;
  */
 final class Execution
 {
-    private ?Cursor $rows = null;
+    private Cursor | null $rows = null;
 
     /**
      * The OUT values, each REF CURSOR wrapped once as a Cursor and each LOB
@@ -23,12 +23,12 @@ final class Execution
      *
      * @var array<string, list<mixed>>|null
      */
-    private ?array $outValues = null;
+    private array | null $outValues = null;
 
     /**
      * @var list<Cursor>|null
      */
-    private ?array $results = null;
+    private array | null $results = null;
 
     /**
      * @internal use Connection::run()
@@ -41,7 +41,7 @@ final class Execution
         private readonly string $sql,
         private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
-        private readonly ?string $call = null,
+        private readonly string | null $call = null,
     ) {}
 
     /**
@@ -113,7 +113,7 @@ final class Execution
      * The success-with-info text, such as "creation succeeded with
      * compilation errors"; null otherwise.
      */
-    public function warning(): ?string
+    public function warning(): string | null
     {
         return $this->driver->warning();
     }
@@ -143,7 +143,7 @@ final class Execution
      *
      * @param list<int|string> $names
      */
-    private function find(string $name, array $names): ?string
+    private function find(string $name, array $names): string | null
     {
         foreach ($names as $candidate) {
             if (strcasecmp((string) $candidate, $name) === 0) {

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -31,7 +31,7 @@ final class ConnectParametersTest extends ConformanceTestCase
     /** @var list<string> */
     private array $directories = [];
 
-    private string|false $tnsAdmin = false;
+    private false | string $tnsAdmin = false;
 
     protected function setUp(): void
     {
@@ -209,7 +209,7 @@ final class ConnectParametersTest extends ConformanceTestCase
 
     #[Test]
     #[DataProvider('mtlsWallets')]
-    public function mtls_connects_with_the_clients_pem_wallet(string $wallet, ?string $walletPassword, bool $standalone): void
+    public function mtls_connects_with_the_clients_pem_wallet(string $wallet, string | null $walletPassword, bool $standalone): void
     {
         $connection = $this->connect(
             dsn: ConnectTargets::variable('ORACLE_MTLS_CONNECT_STRING'),

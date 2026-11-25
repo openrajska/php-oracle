@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -565,7 +565,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      */
     private function contents(array $lists): array
     {
-        return array_map(static fn(array $list): array => array_map(static function (mixed $lob): ?string {
+        return array_map(static fn(array $list): array => array_map(static function (mixed $lob): string | null {
             if ($lob === null) {
                 return null;
             }

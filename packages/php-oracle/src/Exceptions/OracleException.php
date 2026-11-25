@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Exceptions;
 
@@ -15,10 +15,10 @@ interface OracleException extends Throwable
     /**
      * The SQL that ran: the generated block for a Call.
      */
-    public function sql(): ?string;
+    public function sql(): string | null;
 
     /**
      * The Call name, for `procedure()` and `function()`.
      */
-    public function call(): ?string;
+    public function call(): string | null;
 }

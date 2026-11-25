@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -19,7 +19,7 @@ final class ArrayDml implements Countable
      *
      * @var array<string, list<list<mixed>>>|null
      */
-    private ?array $outValues = null;
+    private array | null $outValues = null;
 
     /**
      * @internal use Connection::runMany()
@@ -92,7 +92,7 @@ final class ArrayDml implements Countable
      *
      * @param list<int|string> $names
      */
-    private function find(string $name, array $names): ?string
+    private function find(string $name, array $names): string | null
     {
         foreach ($names as $candidate) {
             if (strcasecmp((string) $candidate, $name) === 0) {

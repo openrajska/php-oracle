@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -18,11 +18,11 @@ final readonly class ConnectionConfig
      * @param string $dsn an Easy Connect string, a (DESCRIPTION=…) descriptor or a TNS alias
      * @param ?string $walletLocation the directory holding ewallet.pem
      * @param ?string $configDir where tnsnames.ora lives; else $TNS_ADMIN
-     * @param int|float $connectTimeout seconds
+     * @param float|int $connectTimeout seconds
      * @param int $maxConnections the Pool's ceiling, >= 1
-     * @param int|float $acquireTimeout seconds
+     * @param float|int $acquireTimeout seconds
      * @param int $statementCacheSize 0 disables the Statement cache
-     * @param int|float|null $callTimeout seconds per Round trip; null = no limit
+     * @param float|int|null $callTimeout seconds per Round trip; null = no limit
      * @param int $fetchSize rows per Round trip, >= 1
      *
      * @throws ConfigurationException for a fetchSize or maxConnections below 1, a negative statementCacheSize or a timeout that is not a positive number of seconds
@@ -32,19 +32,19 @@ final readonly class ConnectionConfig
         public string $user,
         #[SensitiveParameter]
         public string $password,
-        public ?string $proxyUser = null,
-        public ?string $walletLocation = null,
+        public string | null $proxyUser = null,
+        public string | null $walletLocation = null,
         #[SensitiveParameter]
-        public ?string $walletPassword = null,
-        public ?string $configDir = null,
-        public int|float $connectTimeout = 20,
-        public ?string $drcpConnectionClass = null,
+        public string | null $walletPassword = null,
+        public string | null $configDir = null,
+        public float | int $connectTimeout = 20,
+        public string | null $drcpConnectionClass = null,
         public int $maxConnections = 16,
-        public int|float $acquireTimeout = 5,
+        public float | int $acquireTimeout = 5,
         public int $statementCacheSize = 20,
         public bool $standalone = false,
         public Tracing $tracing = new Tracing(),
-        public int|float|null $callTimeout = null,
+        public float | int | null $callTimeout = null,
         public int $fetchSize = 100,
         public ValueMapping $values = new ValueMapping(),
         public RowShape $rowShape = RowShape::Assoc,

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bench;
 
@@ -12,7 +12,7 @@ use InvalidArgumentException;
 final class Stats
 {
     /**
-     * @param list<int|float> $samples
+     * @param list<float|int> $samples
      */
     public static function median(array $samples): float
     {
@@ -26,7 +26,7 @@ final class Stats
     /**
      * Nearest rank below: the sample at floor(p / 100 * (n - 1)).
      *
-     * @param list<int|float> $samples
+     * @param list<float|int> $samples
      */
     public static function percentile(array $samples, float $percent): float
     {
@@ -38,7 +38,7 @@ final class Stats
     /**
      * The lowest and the highest of the per-round medians.
      *
-     * @param non-empty-list<list<int|float>> $rounds
+     * @param non-empty-list<list<float|int>> $rounds
      *
      * @return array{float, float}
      */
@@ -50,9 +50,9 @@ final class Stats
     }
 
     /**
-     * @param list<int|float> $samples
+     * @param list<float|int> $samples
      *
-     * @return non-empty-list<int|float>
+     * @return non-empty-list<float|int>
      */
     private static function sorted(array $samples): array
     {

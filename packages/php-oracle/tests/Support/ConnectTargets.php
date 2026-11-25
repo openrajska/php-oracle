@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Support;
 
@@ -126,7 +126,7 @@ final class ConnectTargets
     /**
      * @param array<mixed>|false $error
      */
-    private static function error(array|false $error): string
+    private static function error(array | false $error): string
     {
         return \is_array($error) && \is_string($error['message'] ?? null) ? $error['message'] : 'unknown error';
     }

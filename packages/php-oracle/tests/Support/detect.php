@@ -16,10 +16,10 @@
  * a stand-in for an older or newer build of the Extension.
  */
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver\Extension {
-    function phpversion(?string $extension = null): string|false
+    function phpversion(string | null $extension = null): false | string
     {
         \DetectRecord::$phpversion[] = $extension;
 
@@ -43,7 +43,7 @@ namespace {
         public static array $phpversion = [];
 
         /** The version to report for oracledb; null for the real one. */
-        public static ?string $reported = null;
+        public static string | null $reported = null;
     }
 
     /** @var list<string> $argv */

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -261,7 +261,7 @@ final class CallsTest extends TestCase
     {
         $calls = [
             'BEGIN fx_call.fail(p_value => :b1); END;' => fn(): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
-            'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn(): int|float|string|null => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
+            'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
         ];
         foreach ($calls as $sql => $call) {
             try {
@@ -318,7 +318,7 @@ final class CallsTest extends TestCase
     {
         $calls = [
             fn(): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new DateTimeImmutable()]),
-            fn(): int|float|string|null => $this->connection->function('fx_call.f_fail', ['P_Value' => new DateTimeImmutable()])->number(),
+            fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['P_Value' => new DateTimeImmutable()])->number(),
         ];
         foreach ($calls as $call) {
             try {
@@ -337,9 +337,9 @@ final class CallsTest extends TestCase
         $secret = 'zq46secret';
         $calls = [
             'procedure' => fn(): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => $secret, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut($secret)]),
-            'function' => fn(): int|float|string|null => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
+            'function' => fn(): float | int | string | null => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
             'procedure, usage' => fn(): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => [$secret]]),
-            'function, usage' => fn(): int|float|string|null => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
+            'function, usage' => fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
         ];
         foreach ($calls as $kind => $call) {
             try {

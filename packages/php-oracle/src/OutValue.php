@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -26,32 +26,32 @@ final readonly class OutValue
     public function __construct(
         private string $name,
         private array $values,
-        private ?string $sql = null,
-        private ?string $call = null,
+        private string | null $sql = null,
+        private string | null $call = null,
     ) {}
 
-    public function int(): ?int
+    public function int(): int | null
     {
         $value = $this->one('int()');
 
         return $value === null || \is_int($value) ? $value : throw $this->wrongType($value, 'an int');
     }
 
-    public function string(): ?string
+    public function string(): string | null
     {
         $value = $this->one('string()');
 
         return $value === null || \is_string($value) ? $value : throw $this->wrongType($value, 'a string');
     }
 
-    public function float(): ?float
+    public function float(): float | null
     {
         $value = $this->one('float()');
 
         return $value === null || \is_float($value) ? $value : throw $this->wrongType($value, 'a float');
     }
 
-    public function bool(): ?bool
+    public function bool(): bool | null
     {
         $value = $this->one('bool()');
 
@@ -62,7 +62,7 @@ final readonly class OutValue
      * A DATE, TIMESTAMP, TSTZ or TSLTZ value. Under `TemporalMode::String`
      * it arrives as ISO text: read it with `string()`.
      */
-    public function dateTime(): ?DateTimeImmutable
+    public function dateTime(): DateTimeImmutable | null
     {
         $value = $this->one('dateTime()');
 
@@ -72,7 +72,7 @@ final readonly class OutValue
     /**
      * An INTERVAL DAY TO SECOND or YEAR TO MONTH value.
      */
-    public function interval(): ?DateInterval
+    public function interval(): DateInterval | null
     {
         $value = $this->one('interval()');
 
@@ -83,7 +83,7 @@ final readonly class OutValue
      * A CLOB, NCLOB or BLOB value. Under `LobMode::Inline` it arrives as a
      * string: read it with `string()`.
      */
-    public function lob(): ?Lob
+    public function lob(): Lob | null
     {
         $value = $this->one('lob()');
 
@@ -97,7 +97,7 @@ final readonly class OutValue
      *
      * @return array<mixed>|null
      */
-    public function array(): ?array
+    public function array(): array | null
     {
         $value = $this->one('array()');
 

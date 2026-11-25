@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -867,7 +867,7 @@ final class ObjectsTest extends ConformanceTestCase
             try {
                 $connection->execute('begin :o := fx_kinds.string_map; end;', ['o' => $bind], self::options());
                 self::fail('An INDEX BY VARCHAR2 bind ran.');
-            } catch (UsageException|UnsupportedException $e) {
+            } catch (UnsupportedException | UsageException $e) {
                 self::assertStringContainsString('INDEX BY VARCHAR2', $e->getMessage());
             }
         }

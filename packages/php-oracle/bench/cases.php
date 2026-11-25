@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // The benchmark's cases: each one is a workload run either through Core's
 // public API or through oci8, and the comparisons the summary reads.
@@ -55,7 +55,7 @@ const OCI8_FORMATS = "alter session set nls_date_format = 'YYYY-MM-DD HH24:MI:SS
 
 final class BenchContext
 {
-    private ?Connection $core = null;
+    private Connection | null $core = null;
 
     /** @var resource|null */
     private $oci8;
@@ -176,7 +176,7 @@ function oci8_converters($statement, string $mapping): array
  * 'exact' or 'float' (see oci8_converters()). 'all' returns the rows, 'row'
  * their count.
  */
-function oci8_drain($statement, string $mode, string $mapping, int $flags = OCI_ASSOC): array|int
+function oci8_drain($statement, string $mode, string $mapping, int $flags = OCI_ASSOC): array | int
 {
     $converters = $mapping === 'raw' ? [] : oci8_converters($statement, $mapping);
     if ($mode === 'all') {
@@ -240,7 +240,7 @@ function oci8_scalar($connection, int $i, bool $typed, int $mode = OCI_COMMIT_ON
     return ['o_num' => $number, 'o_str' => $string, 'o_date' => $out];
 }
 
-function oci8_cursor($connection, string $mode, string $mapping): array|int
+function oci8_cursor($connection, string $mode, string $mapping): array | int
 {
     $statement = oci_parse($connection, SQL_CURSOR);
     $cursor = oci_new_cursor($connection);
@@ -299,7 +299,7 @@ function core_lobs(Connection $connection, bool $inline): array
 function bench_cases(): array
 {
     $cases = [];
-    $add = static function (string $id, string $driver, int $warmup, int $iters, int $expect, Closure $make, ?Closure $after = null) use (&$cases): void {
+    $add = static function (string $id, string $driver, int $warmup, int $iters, int $expect, Closure $make, Closure | null $after = null) use (&$cases): void {
         $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after instanceof Closure ? ['after' => $after] : []);
     };
 
@@ -351,7 +351,7 @@ function bench_cases(): array
                 : static fn(): int => core_each($x->core()->select(SQL_FETCH, options: $options));
         });
         foreach ($mode === 'all' ? ['raw', 'exact', 'float'] : ['raw', 'exact'] as $mapping) {
-            $add("fetch.oci8.$mapping-$mode", 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array|int => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), $mode, $mapping));
+            $add("fetch.oci8.$mapping-$mode", 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array | int => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), $mode, $mapping));
         }
     }
     $add('fetch.core.list-all', 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x): Closure {
@@ -399,7 +399,7 @@ function bench_cases(): array
     });
     foreach (['raw-all', 'exact-all', 'float-all', 'raw-row', 'exact-row'] as $variant) {
         [$mapping, $mode] = explode('-', $variant);
-        $add("cursor.oci8.$variant", 'oci8', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): array|int => oci8_cursor($x->oci8(), $mode, $mapping));
+        $add("cursor.oci8.$variant", 'oci8', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): array | int => oci8_cursor($x->oci8(), $mode, $mapping));
     }
 
     // LOBs: 1k rows with a 1,000-character CLOB and a 1,000-byte BLOB each, read whole.
@@ -522,7 +522,7 @@ function bench_cases(): array
  */
 function bench_comparisons(): array
 {
-    $c = static fn(string $label, string $core, string $oci8, bool $same, ?string $spike = null): array => ['label' => $label, 'core' => $core, 'oci8' => $oci8, 'same' => $same, 'spike' => $spike];
+    $c = static fn(string $label, string $core, string $oci8, bool $same, string | null $spike = null): array => ['label' => $label, 'core' => $core, 'oci8' => $oci8, 'same' => $same, 'spike' => $spike];
 
     return [
         $c('Call 3 IN + 3 OUT, `procedure()`', 'call.core.procedure', 'call.oci8.typed', true, '1.28× (typed)'),

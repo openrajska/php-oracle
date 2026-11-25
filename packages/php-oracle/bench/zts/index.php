@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // FrankenPHP worker of the concurrency run. Each worker thread runs this
 // script once, then serves requests in the loop at the end.

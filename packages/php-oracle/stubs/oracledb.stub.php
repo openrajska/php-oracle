@@ -175,7 +175,7 @@ final class Exception extends \RuntimeException
      */
     public readonly string $kind;
 
-    public readonly ?int $offset;
+    public readonly int | null $offset;
 
     /** @var list<array{index: int, code: int, message: string}> */
     public readonly array $rows;

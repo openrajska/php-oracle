@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // Times one case in this process and prints one JSON line.
 //   php bench.php case=<id> [warmup=N] [iters=N]
@@ -22,7 +22,7 @@ $rssConnected = proc_memory()['VmRSS'];
 
 $run = $case['make']($context);
 $after = $case['after'] ?? null;
-$check = static function (array|int $result) use ($case, $id): void {
+$check = static function (array | int $result) use ($case, $id): void {
     $rows = is_int($result) ? $result : count($result);
     if ($rows !== $case['expect']) {
         fwrite(STDERR, "$id: $rows rows, expected {$case['expect']}\n");

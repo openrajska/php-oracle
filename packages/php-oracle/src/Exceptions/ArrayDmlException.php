@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Exceptions;
 
@@ -19,9 +19,9 @@ final class ArrayDmlException extends QueryException
         string $message,
         int $code,
         private readonly array $rows,
-        ?string $sql = null,
-        ?string $call = null,
-        ?Throwable $previous = null,
+        string | null $sql = null,
+        string | null $call = null,
+        Throwable | null $previous = null,
     ) {
         parent::__construct($message, $code, $sql, $call, null, $previous);
     }

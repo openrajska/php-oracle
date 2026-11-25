@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Bind;
 
@@ -27,7 +27,7 @@ final readonly class Indexed extends Bind
     /**
      * @param array<int, mixed>|null $value
      */
-    public static function in(string $type, #[SensitiveParameter] ?array $value): self
+    public static function in(string $type, #[SensitiveParameter] array | null $value): self
     {
         return new self(Type::AssociativeArray, Direction::In, $value, $type);
     }
@@ -40,7 +40,7 @@ final readonly class Indexed extends Bind
     /**
      * @param array<int, mixed>|null $value
      */
-    public static function inOut(string $type, #[SensitiveParameter] ?array $value): self
+    public static function inOut(string $type, #[SensitiveParameter] array | null $value): self
     {
         return new self(Type::AssociativeArray, Direction::InOut, $value, $type);
     }

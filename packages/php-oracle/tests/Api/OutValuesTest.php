@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -83,11 +83,11 @@ final class OutValuesTest extends TestCase
         self::assertNull($execution->out('nothing')->bool());
         self::assertNull($execution->out('nothing')->value());
 
-        $this->assertFails(fn(): ?int => $execution->out('fraction')->int(), "OUT bind 'fraction' holds string, not an int. A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).");
-        $this->assertFails(fn(): ?float => $execution->out('integral')->float(), "OUT bind 'integral' holds int, not a float. Read it with int().");
-        $this->assertFails(fn(): ?string => $execution->out('integral')->string(), "OUT bind 'integral' holds int, not a string. Read it with int().");
-        $this->assertFails(fn(): ?int => $execution->out('text')->int(), "OUT bind 'text' holds string, not an int.");
-        $this->assertFails(fn(): ?bool => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
+        $this->assertFails(fn(): int | null => $execution->out('fraction')->int(), "OUT bind 'fraction' holds string, not an int. A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).");
+        $this->assertFails(fn(): float | null => $execution->out('integral')->float(), "OUT bind 'integral' holds int, not a float. Read it with int().");
+        $this->assertFails(fn(): string | null => $execution->out('integral')->string(), "OUT bind 'integral' holds int, not a string. Read it with int().");
+        $this->assertFails(fn(): int | null => $execution->out('text')->int(), "OUT bind 'text' holds string, not an int.");
+        $this->assertFails(fn(): bool | null => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
     }
 
     #[Test]
@@ -124,7 +124,7 @@ final class OutValuesTest extends TestCase
 
         $string = $this->connection->run($sql, $binds, new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String)));
         self::assertSame('2026-03-01 00:00:00', $string->out('d')->string());
-        $this->assertFails(fn(): ?DateTimeImmutable => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
+        $this->assertFails(fn(): DateTimeImmutable | null => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
     }
 
     #[Test]
@@ -146,8 +146,8 @@ final class OutValuesTest extends TestCase
         self::assertSame(['a', null], $execution->out('tags')->array());
         self::assertSame([-1 => 1], $execution->out('map')->array());
         self::assertNull($execution->out('none')->array());
-        $this->assertFails(fn(): ?array => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
-        $this->assertFails(fn(): ?string => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
+        $this->assertFails(fn(): array | null => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
+        $this->assertFails(fn(): string | null => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
     }
 
     #[Test]
@@ -188,8 +188,8 @@ final class OutValuesTest extends TestCase
 
         self::assertEqualsCanonicalizing([3, 4], $two->out('id')->list());
         self::assertSame([], $none->out('id')->list());
-        $this->assertFails(fn(): ?int => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
-        $this->assertFails(fn(): ?int => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
+        $this->assertFails(fn(): int | null => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
+        $this->assertFails(fn(): int | null => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
         $this->assertFails(fn(): mixed => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
     }
 
@@ -246,7 +246,7 @@ final class OutValuesTest extends TestCase
         self::assertSame('12.', Number::in('12.')->value);
     }
 
-    private function assertFails(Closure $call, string $message, ?string $sql = null): void
+    private function assertFails(Closure $call, string $message, string | null $sql = null): void
     {
         try {
             $call();

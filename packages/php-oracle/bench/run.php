@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 // Runs the benchmark matrix and writes output/raw-<tag>.jsonl and
 // output/summary-<tag>.md.
@@ -129,7 +129,7 @@ function verdict(float $speedup): string
     };
 }
 
-/** @return list<int|float> */
+/** @return list<float|int> */
 function pooled(array $runs): array
 {
     return array_merge(...array_map(static fn(array $run): array => $run['samples_ns'], $runs));

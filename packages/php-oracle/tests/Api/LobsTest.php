@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -183,7 +183,7 @@ final class LobsTest extends TestCase
             'size()' => $lob->size(...),
             'contents()' => $lob->contents(...),
             'stream()' => $lob->stream(...),
-            'reading the stream' => static fn(): string|false => stream_get_contents($stream),
+            'reading the stream' => static fn(): false | string => stream_get_contents($stream),
         ] as $call => $read) {
             try {
                 $read();

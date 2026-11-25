@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -41,7 +41,7 @@ final class Cursor implements IteratorAggregate
      *
      * @var list<int|string>|null
      */
-    private ?array $handles = null;
+    private array | null $handles = null;
 
     /**
      * @internal use Connection::select(), Execution::rows() or OutValue::cursor()
@@ -51,7 +51,7 @@ final class Cursor implements IteratorAggregate
     public function __construct(
         private readonly DriverCursor $driver,
         private readonly ConnectionState $connection,
-        private readonly ?Cursor $parent = null,
+        private readonly Cursor | null $parent = null,
     ) {}
 
     /**
@@ -111,7 +111,7 @@ final class Cursor implements IteratorAggregate
      *
      * @return array<int|string, mixed>|null
      */
-    public function first(): ?array
+    public function first(): array | null
     {
         $row = $this->next();
         $this->close();
@@ -154,7 +154,7 @@ final class Cursor implements IteratorAggregate
     /**
      * @return array<int|string, mixed>|null
      */
-    private function next(): ?array
+    private function next(): array | null
     {
         $this->ensureOpen();
         if (!isset($this->batch[$this->next])) {

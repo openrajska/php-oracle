@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
@@ -18,7 +18,7 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
 final class ScopeTest extends ConformanceTestCase
 {
-    private static ?RoundTripCounter $counter = null;
+    private static RoundTripCounter | null $counter = null;
 
     public static function tearDownAfterClass(): void
     {
@@ -101,7 +101,7 @@ final class ScopeTest extends ConformanceTestCase
 
     #[Test]
     #[DataProvider('unfetchable')]
-    public function a_later_or_never_column_is_described_and_only_fetching_it_fails(string $sql, string $type, ?string $objectType): void
+    public function a_later_or_never_column_is_described_and_only_fetching_it_fails(string $sql, string $type, string | null $objectType): void
     {
         $connection = $this->connect();
         foreach ([$sql, "$sql where 1 = 0"] as $query) {

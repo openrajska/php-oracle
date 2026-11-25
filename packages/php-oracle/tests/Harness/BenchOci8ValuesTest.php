@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Harness;
 
@@ -34,13 +34,13 @@ final class BenchOci8ValuesTest extends TestCase
 
     #[Test]
     #[DataProvider('exactNumbers')]
-    public function an_exact_number_is_an_int_when_integral_and_within_64_bits(string $oci8, int|string $core): void
+    public function an_exact_number_is_an_int_when_integral_and_within_64_bits(string $oci8, int | string $core): void
     {
         self::assertSame($core, Oci8Values::exact($oci8));
     }
 
     /**
-     * @return iterable<string, array{string, int|float}>
+     * @return iterable<string, array{string, float|int}>
      */
     public static function floatNumbers(): iterable
     {
@@ -52,7 +52,7 @@ final class BenchOci8ValuesTest extends TestCase
 
     #[Test]
     #[DataProvider('floatNumbers')]
-    public function a_float_number_is_an_int_when_integral(string $oci8, int|float $core): void
+    public function a_float_number_is_an_int_when_integral(string $oci8, float | int $core): void
     {
         self::assertSame($core, Oci8Values::float($oci8));
     }

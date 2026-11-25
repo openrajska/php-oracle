@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api;
 
@@ -118,7 +118,7 @@ final class DetectionTest extends TestCase
      *     phpversion: list<?string>,
      * }
      */
-    private function child(bool $extension, ?string $reported = null): array
+    private function child(bool $extension, string | null $reported = null): array
     {
         $command = [\PHP_BINARY];
         if ($extension) {

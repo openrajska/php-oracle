@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types=1);
+declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
@@ -22,7 +22,7 @@ use Rajska\Oracle\Exceptions\UsageException;
 final readonly class SparseVector
 {
     /**
-     * @var array<int, int|float> keyed by 0-based position, in position order
+     * @var array<int, float|int> keyed by 0-based position, in position order
      */
     public array $values;
 
@@ -58,7 +58,7 @@ final readonly class SparseVector
      * VECTOR it reads; its name and signature are part of the Extension's
      * semver contract
      *
-     * @param array<int, int|float> $values keyed by 0-based position
+     * @param array<int, float|int> $values keyed by 0-based position
      */
     public static function fromDriver(int $dimensions, array $values): self
     {
