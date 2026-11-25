@@ -405,11 +405,11 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         }
         foreach ([
             'execute()' => static fn(): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
-            'commit()' => static fn() => $connection->commit(),
-            'rollback()' => static fn() => $connection->rollback(),
-            'serverVersion()' => static fn(): string => $connection->serverVersion(),
-            'fetchBatch()' => static fn(): array => $cursor->fetchBatch(),
-            'columns()' => static fn(): array => $cursor->columns(),
+            'commit()' => $connection->commit(...),
+            'rollback()' => $connection->rollback(...),
+            'serverVersion()' => $connection->serverVersion(...),
+            'fetchBatch()' => $cursor->fetchBatch(...),
+            'columns()' => $cursor->columns(...),
         ] as $what => $call) {
             try {
                 $call();

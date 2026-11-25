@@ -61,21 +61,16 @@ final class BindsTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{Closure(string): mixed}>
+     * @return iterable<string, array{Closure}>
      */
     public static function rejectedValues(): iterable
     {
         yield 'Number::in(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
         yield 'Number::inOut(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
-        // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'Boolean::in(), a string' => [static fn(#[SensitiveParameter] string $secret): mixed => Boolean::in($secret)];
-        // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'PlsInteger::inOut(), a string' => [static fn(#[SensitiveParameter] string $secret): mixed => PlsInteger::inOut($secret)];
+        yield 'Boolean::in(), a string' => [Boolean::in(...)];
+        yield 'PlsInteger::inOut(), a string' => [PlsInteger::inOut(...)];
     }
 
-    /**
-     * @param Closure(string): mixed $factory
-     */
     #[Test]
     #[DataProvider('rejectedValues')]
     public function a_value_a_typed_bind_rejects_never_appears_in_its_exception(Closure $factory): void

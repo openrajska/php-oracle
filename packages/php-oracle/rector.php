@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
@@ -13,7 +12,6 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         __DIR__ . '/tests/Harness/Probes',
-        ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
     ])
     ->withImportNames()
     ->withPhpSets(php84: true)

@@ -244,7 +244,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
 
         $connection->close();
 
-        foreach (['fetchBatch()' => static fn(): array => $cursor->fetchBatch(), 'columns()' => static fn(): array => $cursor->columns()] as $call => $read) {
+        foreach (['fetchBatch()' => $cursor->fetchBatch(...), 'columns()' => $cursor->columns(...)] as $call => $read) {
             try {
                 $read();
                 self::fail("$call after close() succeeded.");

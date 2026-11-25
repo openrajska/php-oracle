@@ -296,7 +296,7 @@ final class CallsTest extends TestCase
 
         $calls = [
             'fx_call.echo' => fn(): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)]),
-            'fx_call.f_number' => fn(): int|float|string|null => $function->number(),
+            'fx_call.f_number' => $function->number(...),
         ];
         foreach ($calls as $name => $call) {
             try {

@@ -421,9 +421,9 @@ final class CursorTest extends TestCase
     {
         foreach ([
             'foreach' => static fn(): array => iterator_to_array($cursor),
-            'all()' => static fn(): array => $cursor->all(),
-            'first()' => static fn(): ?array => $cursor->first(),
-            'value()' => static fn(): mixed => $cursor->value(),
+            'all()' => $cursor->all(...),
+            'first()' => $cursor->first(...),
+            'value()' => $cursor->value(...),
         ] as $read => $call) {
             try {
                 $call();
