@@ -3,7 +3,7 @@
 A typed API for Oracle Database in PHP, with full PL/SQL fidelity: REF
 CURSORs, typed OUT and IN OUT binds, Implicit results, Objects and
 Collections, Array DML with per-row errors, and exact values that never
-depend on NLS settings. It runs on the `rajska_oracle` extension, a Rust thin
+depend on NLS settings. It runs on the `oracledb` extension, a Rust thin
 Backend: no Oracle Instant Client, nothing to compile.
 
 > [!WARNING]
@@ -13,14 +13,14 @@ Backend: no Oracle Instant Client, nothing to compile.
 
 - PHP 8.4 (FPM, CLI, FrankenPHP worker mode or Octane; sync only)
 - Oracle AI Database 26ai
-- The `rajska_oracle` extension, from `openrajska/php-oracle-ext`
+- The `oracledb` extension, from `openrajska/php-oracle-ext`
 
 ## Installing
 
 ```bash
 pie install openrajska/php-oracle-ext   # a pre-built binary
 composer require openrajska/php-oracle
-php --ri rajska_oracle                    # check it is loaded
+php --ri oracledb                    # check it is loaded
 ```
 
 CLI and FPM read different `php.ini` files: check the extension is enabled
@@ -28,16 +28,16 @@ for the SAPI that serves your application. Without it, the first
 `Oracle::connect()` throws a `ConfigurationException` that says so. Loading
 Core's classes and building a `ConnectionConfig` never need the extension.
 
-**Build stages and static analysis.** Core requires `ext-rajska_oracle`, so
+**Build stages and static analysis.** Core requires `ext-oracledb`, so
 Composer refuses to install where the extension is not loaded, such as a
 Docker build stage or a PHPStan job. Tell it the extension comes later:
 
 ```bash
-composer install --ignore-platform-req=ext-rajska_oracle
+composer install --ignore-platform-req=ext-oracledb
 ```
 
 **Upgrading.** Core declares the oldest extension it works with
-(`ext-rajska_oracle: ^0.1`), and the extension is always released before the
+(`ext-oracledb: ^0.1`), and the extension is always released before the
 Core release that needs it. So upgrade the extension first, then Core. An
 extension outside the range Core accepts makes `connect()` throw a
 `ConfigurationException` naming both versions and the `pie install` command

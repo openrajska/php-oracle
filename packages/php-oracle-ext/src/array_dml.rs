@@ -42,7 +42,7 @@ use crate::options::Options;
 use crate::temp_lob::{TempLob, Written};
 
 /// The savepoint an Array DML call inside an Explicit transaction rolls back to.
-const SAVEPOINT: &str = "rajska_run_many";
+const SAVEPOINT: &str = "oracledb_run_many";
 
 /// What one Array DML execute gave back: the DML count and, per OUT bind,
 /// one list of values per row.

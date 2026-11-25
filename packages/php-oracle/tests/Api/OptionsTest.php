@@ -96,7 +96,7 @@ final class OptionsTest extends TestCase
                     $messages[] = $e->getMessage();
                 }
             }
-            echo json_encode(['loaded' => extension_loaded('rajska_oracle'), 'messages' => $messages]);
+            echo json_encode(['loaded' => extension_loaded('oracledb'), 'messages' => $messages]);
             PHP;
         $process = proc_open([\PHP_BINARY, '-r', $code, '--', $autoload], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
         self::assertIsResource($process);
@@ -109,7 +109,7 @@ final class OptionsTest extends TestCase
         /** @var array{loaded: bool, messages: list<string>} $result */
         $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
         if ($result['loaded']) {
-            self::markTestSkipped('This PHP loads rajska_oracle from its php.ini: cannot run a process without it.');
+            self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
         }
         self::assertSame([
             'ConnectionConfig: maxConnections must be at least 1, got 0.',

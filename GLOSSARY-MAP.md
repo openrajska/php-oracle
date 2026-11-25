@@ -8,7 +8,7 @@ is its own context with its own language. Core owns the shared domain language
 
 - [Core](./packages/php-oracle/GLOSSARY.md) (`openrajska/php-oracle`): the
   typed API that users call and the Driver contract that Backends implement.
-- **Extension** (`openrajska/php-oracle-ext`): the native `rajska_oracle` PHP
+- **Extension** (`openrajska/php-oracle-ext`): the native `oracledb` PHP
   extension that hosts the Rust thin Backend. No glossary yet.
 - **Laravel adapter** (`openrajska/laravel-oracle`): integrates Core into
   Laravel's database layer. No glossary yet.

@@ -50,7 +50,7 @@ openssl x509 -req -sha256 -days \$days -in \$work/client.csr \
 
 # Client wallets: the CA only (one-way TLS to a private CA), the client's
 # certificate and key with the CA (mTLS), the same with the key encrypted
-# (walletPassword), and the two formats rajska_oracle cannot read.
+# (walletPassword), and the two formats oracledb cannot read.
 cp \$work/ca.crt client/ca/ewallet.pem
 cat \$work/client.crt \$work/client.key \$work/ca.crt > client/mtls/ewallet.pem
 openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA256 \

@@ -542,7 +542,7 @@ impl Registry {
                 Ok(mut shared) => {
                     if let Err(e) = shared.pool.close() {
                         log(format!(
-                            "rajska_oracle: could not close the Pool for {}@{}, leaking it: {e}",
+                            "oracledb: could not close the Pool for {}@{}, leaking it: {e}",
                             key.user, key.dsn
                         ));
                         std::mem::forget(shared);
@@ -550,7 +550,7 @@ impl Registry {
                 }
                 Err(shared) => {
                     log(format!(
-                        "rajska_oracle: could not close the Pool for {}@{}, leaking it: a Session is still in use",
+                        "oracledb: could not close the Pool for {}@{}, leaking it: a Session is still in use",
                         key.user, key.dsn
                     ));
                     std::mem::forget(shared);

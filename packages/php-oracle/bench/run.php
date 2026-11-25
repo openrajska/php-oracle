@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 // Runs the benchmark matrix and writes output/raw-<tag>.jsonl and
 // output/summary-<tag>.md.
-//   php run.php extension=/abs/librajska_oracle.so [rounds=10] [tag=nts]
+//   php run.php extension=/abs/libphp_oracledb.so [rounds=10] [tag=nts]
 //               [only=call,fetch] [php=php] [scale=1]
 //   php run.php from=nts-a,nts-b [tag=nts] [only=...]
 //
@@ -29,7 +29,7 @@ parse_str(implode('&', array_slice($argv, 1)), $options);
 $tag = (string) ($options['tag'] ?? 'nts');
 $php = (string) ($options['php'] ?? PHP_BINARY);
 $from = isset($options['from']) ? explode(',', (string) $options['from']) : null;
-$extension = (string) ($options['extension'] ?? ($from === null ? throw new InvalidArgumentException('Pass extension=/abs/path/to/librajska_oracle.so') : ''));
+$extension = (string) ($options['extension'] ?? ($from === null ? throw new InvalidArgumentException('Pass extension=/abs/path/to/libphp_oracledb.so') : ''));
 $rounds = (int) ($options['rounds'] ?? 10);
 $scale = (float) ($options['scale'] ?? 1);
 $only = isset($options['only']) ? explode(',', (string) $options['only']) : null;

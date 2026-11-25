@@ -1,6 +1,6 @@
-//! `rajska_oracle`: the PHP extension that hosts the Rust thin Backend.
+//! `oracledb`: the PHP extension that hosts the Rust thin Backend.
 //!
-//! The module version PHP reports (`phpversion('rajska_oracle')`) is this
+//! The module version PHP reports (`phpversion('oracledb')`) is this
 //! crate's Cargo version, the contract version Core checks.
 //!
 //! Its native surface (spec #32 §14) lives in `Rajska\Oracle\Extension\`;
@@ -36,6 +36,8 @@ mod vector;
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module
+        // The crate is php-oracledb (the driver crate is oracledb); PHP sees oracledb.
+        .name("oracledb")
         .class::<error::NativeException>()
         .class::<connection::NativeConnection>()
         .class::<cursor::NativeCursor>()
@@ -44,9 +46,9 @@ pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
         .info_function(info)
 }
 
-/// MINFO, for `php --ri rajska_oracle` and `phpinfo()`. A custom MINFO
+/// MINFO, for `php --ri oracledb` and `phpinfo()`. A custom MINFO
 /// replaces PHP's default table, so it prints the Version row itself: the
-/// Cargo version, as `phpversion('rajska_oracle')` reports it.
+/// Cargo version, as `phpversion('oracledb')` reports it.
 extern "C" fn info(_module: *mut ModuleEntry) {
     info_table_start!();
     info_table_row!("Version", env!("CARGO_PKG_VERSION"));

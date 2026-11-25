@@ -245,7 +245,7 @@ impl Error {
             .unwrap_or_else(|| "non-string panic payload".to_string());
         Self::new(
             Kind::ConnectionLost,
-            format!("internal error in rajska_oracle: {text}"),
+            format!("internal error in oracledb: {text}"),
         )
     }
 

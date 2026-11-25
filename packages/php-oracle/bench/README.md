@@ -1,7 +1,7 @@
 # Benchmark: Core against oci8
 
 Tracks ADR 0002's performance goal with real numbers: Core, through its
-public API over the `rajska_oracle` Extension, should be **at least 2×
+public API over the `oracledb` Extension, should be **at least 2×
 faster than oci8**; 2× slower is the floor that catches a disaster. It
 covers the scenarios of the rust-oracledb spike
 ([`spikes/rust-oracledb/bench`](../../../spikes/rust-oracledb/bench)) and

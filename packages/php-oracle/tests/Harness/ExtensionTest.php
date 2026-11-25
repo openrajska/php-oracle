@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Smoke test: the suite runs with the `rajska_oracle` Extension loaded.
+ * Smoke test: the suite runs with the `oracledb` Extension loaded.
  */
 final class ExtensionTest extends TestCase
 {
@@ -16,8 +16,8 @@ final class ExtensionTest extends TestCase
     public function the_extension_is_loaded(): void
     {
         self::assertTrue(
-            extension_loaded('rajska_oracle'),
-            'rajska_oracle is not loaded: run PHPUnit with -d extension=/path/to/librajska_oracle.so',
+            extension_loaded('oracledb'),
+            'oracledb is not loaded: run PHPUnit with -d extension=/path/to/libphp_oracledb.so',
         );
     }
 
@@ -26,7 +26,7 @@ final class ExtensionTest extends TestCase
     {
         self::assertMatchesRegularExpression(
             '/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/',
-            (string) phpversion('rajska_oracle'),
+            (string) phpversion('oracledb'),
         );
     }
 }

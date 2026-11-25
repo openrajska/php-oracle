@@ -133,14 +133,14 @@ final class ConnectTargets
     }
 
     /**
-     * The path of the loaded rajska_oracle library, to load it in a child
+     * The path of the loaded oracledb library, to load it in a child
      * process (Linux: /proc/self/maps).
      */
     public static function extensionPath(): string
     {
         $maps = @file_get_contents('/proc/self/maps');
-        if ($maps === false || preg_match('~(/\S*rajska_oracle\S*\.so)\s*$~m', $maps, $m) !== 1) {
-            TestCase::markTestSkipped('Cannot find the loaded rajska_oracle library (needs Linux /proc).');
+        if ($maps === false || preg_match('~(/\S*php_oracledb\S*\.so)\s*$~m', $maps, $m) !== 1) {
+            TestCase::markTestSkipped('Cannot find the loaded oracledb library (needs Linux /proc).');
         }
 
         return $m[1];

@@ -6,7 +6,7 @@ declare(strict_types=1);
 // and oci8's case return identical PHP values (same keys, types and values).
 // Array DML cases are checked through the rows they leave in the table.
 // Needs both drivers loaded:
-//   php -d extension=oci8 -d extension=<rajska_oracle> crosscheck.php
+//   php -d extension=oci8 -d extension=<oracledb> crosscheck.php
 require __DIR__ . '/bootstrap.php';
 
 use Rajska\Oracle\Bench\Oci8Values;

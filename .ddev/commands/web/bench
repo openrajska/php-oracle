@@ -17,7 +17,7 @@ done
 # A target dir of its own: the default one holds the spike's build of the same crate name.
 target=${BENCH_TARGET_DIR:-/var/cache/cargo-target/bench}
 (cd "$root/packages/php-oracle-ext" && cargo build --release --locked --target-dir "$target")
-extension=$target/release/librajska_oracle.so
+extension=$target/release/libphp_oracledb.so
 
 cd "$root/packages/php-oracle/bench"
 # bench/php.ini alone, no conf.d: the same settings for both drivers.

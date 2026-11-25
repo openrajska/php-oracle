@@ -7,7 +7,7 @@
     value leak (production php.ini hides them with
     zend.exception_string_param_max_len=0).
   Run with the Extension loaded:
-    php -d extension=/path/to/librajska_oracle.so vendor/bin/phpunit
+    php -d extension=/path/to/libphp_oracledb.so vendor/bin/phpunit
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"

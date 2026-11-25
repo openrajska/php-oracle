@@ -14,7 +14,7 @@ use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Tracing;
 
 /**
- * The Primary Backend, `rajska_oracle`, behind the Driver contract.
+ * The Primary Backend, `oracledb`, behind the Driver contract.
  *
  * An Extension class cannot implement an interface declared in PHP (the
  * Extension's classes exist before Composer loads), so this adapter forwards
@@ -46,7 +46,7 @@ final class ExtensionDriver implements Driver
     private const string BREAKING = '0.2.0';
 
     /**
-     * Core's composer.json `require` of `ext-rajska_oracle`.
+     * Core's composer.json `require` of `ext-oracledb`.
      */
     private const string CONSTRAINT = '^0.1';
 
@@ -126,10 +126,10 @@ final class ExtensionDriver implements Driver
     private static function refusal(): string
     {
         // Unqualified on purpose: the detection tests shadow it in this namespace.
-        $version = phpversion('rajska_oracle');
+        $version = phpversion('oracledb');
         if ($version === false) {
-            return 'The rajska_oracle extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
-                . 'then check it is enabled for this SAPI (`php --ri rajska_oracle`; CLI and FPM read different php.ini files).';
+            return 'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
+                . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).';
         }
 
         // '-dev' sorts below any pre-release: a beta of BREAKING is outside too.
@@ -142,7 +142,7 @@ final class ExtensionDriver implements Driver
             : 'openrajska/php-oracle';
 
         return \sprintf(
-            'rajska_oracle %s is loaded, but %s needs >= %s, < %s. Upgrade it with `pie install openrajska/php-oracle-ext:%s`.',
+            'oracledb %s is loaded, but %s needs >= %s, < %s. Upgrade it with `pie install openrajska/php-oracle-ext:%s`.',
             $version,
             $core,
             self::MINIMUM,

@@ -59,10 +59,10 @@ final class DetectionAndVersioningTest extends ConformanceTestCase
         self::assertSame(1, preg_match('/^version\s*=\s*"([^"]+)"/m', (string) file_get_contents($manifest), $m), $manifest);
         $cargo = $m[1] ?? '';
 
-        self::assertSame($cargo, phpversion('rajska_oracle'));
+        self::assertSame($cargo, phpversion('oracledb'));
 
         $process = proc_open(
-            [\PHP_BINARY, '-d', 'extension=' . ConnectTargets::extensionPath(), '--ri', 'rajska_oracle'],
+            [\PHP_BINARY, '-d', 'extension=' . ConnectTargets::extensionPath(), '--ri', 'oracledb'],
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
         );
@@ -71,6 +71,6 @@ final class DetectionAndVersioningTest extends ConformanceTestCase
         fclose($pipes[1]);
         fclose($pipes[2]);
         self::assertSame(0, proc_close($process), $info);
-        self::assertSame("\nrajska_oracle\n\nVersion => $cargo\n", $info);
+        self::assertSame("\noracledb\n\nVersion => $cargo\n", $info);
     }
 }

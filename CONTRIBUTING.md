@@ -56,7 +56,7 @@ add its scope here first.
 | Scope      | Area                                                                 |
 |------------|----------------------------------------------------------------------|
 | `core`     | `packages/php-oracle`: the `openrajska/php-oracle` contract and API  |
-| `ext`      | `packages/php-oracle-ext`: the Rust extension (`rajska_oracle`)      |
+| `ext`      | `packages/php-oracle-ext`: the Rust extension (`oracledb`)           |
 | `laravel`  | `packages/laravel-oracle`: the Laravel adapter                       |
 | `spike`    | `spikes/`: throwaway experiments                                     |
 | `fixtures` | `fixtures/`: SQL and PL/SQL test schemas                             |
@@ -156,15 +156,15 @@ after every restart). Then, from the repository root:
 
 # Core's suite, with the Extension built and loaded
 ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
-  && ddev exec -d /var/www/html/packages/php-oracle composer install --ignore-platform-req=ext-rajska_oracle \
+  && ddev exec -d /var/www/html/packages/php-oracle composer install --ignore-platform-req=ext-oracledb \
   && ddev exec -d /var/www/html/packages/php-oracle php \
-       -d extension=/var/cache/cargo-target/debug/librajska_oracle.so vendor/bin/phpunit
+       -d extension=/var/cache/cargo-target/debug/libphp_oracledb.so vendor/bin/phpunit
 ```
 
 Core's suite has three parts (`--testsuite <name>` runs one): `harness` (the
 test helpers), `conformance` (the conformance catalog of spec #32, through the
 Driver contract: `new ExtensionDriver()->connect($config)`) and `api` (Core's
-public API). The Extension's stub, `packages/php-oracle-ext/rajska_oracle.stub.php`,
+public API). The Extension's stub, `packages/php-oracle-ext/oracledb.stub.php`,
 has a copy in `packages/php-oracle/stubs/` for PHPStan; change both together.
 
 Core's suite fails on any PHP warning, notice or deprecation and runs with
@@ -187,8 +187,8 @@ else uses the database; it lasts until the next `ddev restart`:
 ddev exec -s oracle sqlplus -s -l / as sysdba @/fixtures/sql/processes.sql 400
 ```
 
-Core `require`s `ext-rajska_oracle`, but Composer runs without the Extension
-loaded, hence `--ignore-platform-req=ext-rajska_oracle`. The constraint
+Core `require`s `ext-oracledb`, but Composer runs without the Extension
+loaded, hence `--ignore-platform-req=ext-oracledb`. The constraint
 (`^0.1`) declares the oldest Extension Core works with; the adapter
 (`ExtensionDriver::MINIMUM`) refuses anything outside `>= minimum, <` the next
 breaking version on the first `connect()`. Raise both together, and only after

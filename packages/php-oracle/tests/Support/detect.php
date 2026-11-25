@@ -12,7 +12,7 @@
  *
  * `phpversion()` is shadowed in the adapter's namespace (PHP resolves an
  * unqualified call there first), to count the calls and, with a second
- * argument, to report another version of rajska_oracle than the one loaded:
+ * argument, to report another version of oracledb than the one loaded:
  * a stand-in for an older or newer build of the Extension.
  */
 
@@ -23,7 +23,7 @@ namespace Rajska\Oracle\Driver\Extension {
     {
         \DetectRecord::$phpversion[] = $extension;
 
-        return $extension === 'rajska_oracle' && \DetectRecord::$reported !== null
+        return $extension === 'oracledb' && \DetectRecord::$reported !== null
             ? \DetectRecord::$reported
             : ($extension === null ? \phpversion() : \phpversion($extension));
     }
@@ -42,7 +42,7 @@ namespace {
         /** @var list<?string> the argument of every phpversion() call in the adapter */
         public static array $phpversion = [];
 
-        /** The version to report for rajska_oracle; null for the real one. */
+        /** The version to report for oracledb; null for the real one. */
         public static ?string $reported = null;
     }
 
@@ -65,7 +65,7 @@ namespace {
     $config = TestDatabase::fromEnvironment()->config();
 
     $result = [
-        'loaded' => extension_loaded('rajska_oracle'),
+        'loaded' => extension_loaded('oracledb'),
         'classes' => $classes,
         'phpversionBeforeConnect' => \count(DetectRecord::$phpversion),
         'connects' => [],

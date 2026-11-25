@@ -69,7 +69,7 @@ $connection->close();
 
 ```yaml
 test:
-  image: registry.example.com/php:8.4-rajska-oracle   # PHP 8.4 with `pie install openrajska/php-oracle-ext`
+  image: registry.example.com/php:8.4-oracledb   # PHP 8.4 with `pie install openrajska/php-oracle-ext`
   services:
     - name: gvenzl/oracle-free:23.26.3-faststart
       alias: oracle
@@ -122,11 +122,11 @@ jobs:
         with:
           php-version: "8.4"
           tools: composer
-      - name: Install rajska_oracle
+      - name: Install oracledb
         run: |
           curl -fsSL -o pie.phar https://github.com/php/pie/releases/latest/download/pie.phar
           sudo php pie.phar install openrajska/php-oracle-ext
-          php --ri rajska_oracle
+          php --ri oracledb
       - run: composer install --no-interaction
       - run: php tests/install-schema.php
       - run: vendor/bin/phpunit
@@ -135,11 +135,11 @@ jobs:
 ## Jobs without the extension
 
 A static-analysis or lint job does not need the extension, nor a database.
-Composer still checks Core's `ext-rajska_oracle` requirement, so tell it the
+Composer still checks Core's `ext-oracledb` requirement, so tell it the
 extension is not needed there:
 
 ```bash
-composer install --no-interaction --ignore-platform-req=ext-rajska_oracle
+composer install --no-interaction --ignore-platform-req=ext-oracledb
 vendor/bin/phpstan analyse
 ```
 

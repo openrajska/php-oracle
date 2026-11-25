@@ -24,6 +24,6 @@ in_image() {
     "$image" sh -c "$1"
 }
 in_image 'cd /app/packages/php-oracle-ext && cargo build --release --locked --target-dir /var/cache/cargo-target/core-bench'
-in_image 'cd /app/packages/php-oracle/bench && PHP_INI_SCAN_DIR= php -c php.ini -d extension=oci8.so -d extension=/var/cache/cargo-target/core-bench/release/librajska_oracle.so crosscheck.php >/dev/null && echo "crosscheck ok"'
+in_image 'cd /app/packages/php-oracle/bench && PHP_INI_SCAN_DIR= php -c php.ini -d extension=oci8.so -d extension=/var/cache/cargo-target/core-bench/release/libphp_oracledb.so crosscheck.php >/dev/null && echo "crosscheck ok"'
 mkdir -p "$here/../output"
 in_image 'sh /app/packages/php-oracle/bench/zts/load.sh' | tee "$here/../output/frankenphp-$tag.txt"

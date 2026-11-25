@@ -5,7 +5,7 @@
     "license": ["MIT", "Apache-2.0"],
     "require": {
         "php": "~8.4.0",
-        "ext-rajska_oracle": "^0.1"
+        "ext-oracledb": "^0.1"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.3",

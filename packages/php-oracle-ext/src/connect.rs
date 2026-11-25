@@ -130,7 +130,7 @@ fn easy_connect_plus(parameters: &str) -> Error {
         .map(|name| format!("for {name}, {}", instead(name)))
         .collect();
     configuration(format!(
-        "The dsn has Easy Connect Plus parameters ({}), which rajska_oracle does not support: {}.",
+        "The dsn has Easy Connect Plus parameters ({}), which oracledb does not support: {}.",
         names.join(", "),
         steps.join("; ")
     ))
@@ -148,7 +148,7 @@ fn check_descriptor(descriptor: &str, what: &str) -> Result<(), Error> {
         let key = trimmed[..end].to_lowercase();
         if trimmed[end..].trim_start().starts_with('=') && REJECTED_KEYS.contains(&key.as_str()) {
             return Err(configuration(format!(
-                "{what} sets {}, which rajska_oracle would ignore: {}.",
+                "{what} sets {}, which oracledb would ignore: {}.",
                 key.to_uppercase(),
                 instead(&key)
             )));
@@ -246,7 +246,7 @@ pub fn check_wallet(location: &str) -> Result<(), Error> {
 fn conversion(dir: &Path) -> Error {
     let dir = dir.display();
     configuration(format!(
-        "The wallet in '{dir}' has no ewallet.pem, only cwallet.sso / ewallet.p12, which rajska_oracle cannot read. \
+        "The wallet in '{dir}' has no ewallet.pem, only cwallet.sso / ewallet.p12, which oracledb cannot read. \
          Convert it to PEM once: openssl pkcs12 -in {dir}/ewallet.p12 -out {dir}/ewallet.pem \
          (add -legacy if OpenSSL 3 refuses the file; add -nodes to leave the private key unencrypted, \
          otherwise set walletPassword to the pass phrase you choose). A cwallet.sso has no PEM form of its own: \

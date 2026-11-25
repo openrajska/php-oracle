@@ -23,7 +23,7 @@ of it for anything else.
 | `client/ca/ewallet.pem` | The CA only: one-way TLS through a private CA |
 | `client/mtls/ewallet.pem` | The client's certificate, its unencrypted key and the CA: mTLS |
 | `client/mtls-encrypted/ewallet.pem` | The same with the key encrypted (PKCS#8, pass phrase `rajska_wallet1`, the `walletPassword`) |
-| `client/p12/ewallet.p12`, `client/sso/cwallet.sso` | The formats rajska_oracle cannot read: they fail with conversion instructions |
+| `client/p12/ewallet.p12`, `client/sso/cwallet.sso` | The formats oracledb cannot read: they fail with conversion instructions |
 
 `make.sh` regenerates them all. It needs Docker and orapki, which the slim
 database image lacks, so it uses `gvenzl/oracle-free`'s "full" image (about

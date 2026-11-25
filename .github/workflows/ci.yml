@@ -1,4 +1,4 @@
-# Builds the Extension (rajska_oracle) for PHP 8.4 NTS and ZTS, starts Oracle
+# Builds the Extension (oracledb) for PHP 8.4 NTS and ZTS, starts Oracle
 # AI Database 26ai Free, installs the fixtures and runs both suites: the
 # Extension's (cargo) and Core's (PHPUnit, with the Extension loaded).
 #
@@ -98,7 +98,7 @@ jobs:
       ORACLE_ADMIN_PASSWORD: oracle
       # The Extension under test: this checkout's, or the minimum's.
       EXTENSION_DIR: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext
-      EXTENSION: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/target/debug/librajska_oracle.so
+      EXTENSION: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/target/debug/libphp_oracledb.so
       EXTENSION_CARGO_TOML: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/Cargo.toml
     steps:
       - uses: actions/checkout@v5
@@ -140,7 +140,7 @@ jobs:
         working-directory: ${{ env.EXTENSION_DIR }}
         run: |
           cargo build --locked
-          php -d extension="$EXTENSION" --ri rajska_oracle
+          php -d extension="$EXTENSION" --ri oracledb
 
       # Before anything logs on: it restarts the instance. 200 processes,
       # ~90 of them background ones, left too little room for the suites
@@ -198,7 +198,7 @@ jobs:
       - name: Install Core's dependencies
         working-directory: packages/php-oracle
         # Composer runs without the Extension loaded (spec #32 §15).
-        run: composer install --no-interaction --no-progress --ignore-platform-req=ext-rajska_oracle
+        run: composer install --no-interaction --no-progress --ignore-platform-req=ext-oracledb
 
       - name: Static analysis
         working-directory: packages/php-oracle

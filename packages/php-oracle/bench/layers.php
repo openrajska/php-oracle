@@ -9,7 +9,7 @@ declare(strict_types=1);
 //   core:   Core's public API, as the benchmark cases call it.
 // Round trips are read from V$SESSTAT by an oci8 observer Session (needs the
 // grants of fixtures/sql/grants.sql), so oci8 must be loaded too:
-//   php -d extension=oci8 -d extension=<rajska_oracle> layers.php [rounds=5]
+//   php -d extension=oci8 -d extension=<oracledb> layers.php [rounds=5]
 // Medians over rounds × iterations in one process; read the proportions.
 require __DIR__ . '/bootstrap.php';
 

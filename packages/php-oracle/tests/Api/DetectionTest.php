@@ -15,7 +15,7 @@ use Rajska\Oracle\Tests\Support\ConnectTargets;
  * finds the Extension and checks its version, each case in a fresh PHP
  * process (tests/Support/detect.php).
  *
- * The declared minimum is 0.1.0 (`ext-rajska_oracle: ^0.1`): the accepted
+ * The declared minimum is 0.1.0 (`ext-oracledb: ^0.1`): the accepted
  * range is `>= 0.1.0, < 0.2.0`, Composer's caret for a 0.x version.
  */
 final class DetectionTest extends TestCase
@@ -34,12 +34,12 @@ final class DetectionTest extends TestCase
             self::assertFalse($connect['connected']);
             self::assertSame(ConfigurationException::class, $connect['class'] ?? null);
             self::assertSame(
-                'The rajska_oracle extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
-                . 'then check it is enabled for this SAPI (`php --ri rajska_oracle`; CLI and FPM read different php.ini files).',
+                'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
+                . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).',
                 $connect['message'] ?? null,
             );
         }
-        self::assertSame(['rajska_oracle'], $result['phpversion'], 'checked once, on the first connect()');
+        self::assertSame(['oracledb'], $result['phpversion'], 'checked once, on the first connect()');
     }
 
     /**
@@ -67,12 +67,12 @@ final class DetectionTest extends TestCase
             self::assertFalse($connect['connected']);
             self::assertSame(ConfigurationException::class, $connect['class'] ?? null);
             self::assertMatchesRegularExpression(
-                '/^rajska_oracle ' . preg_quote($version, '/') . ' is loaded, but openrajska\/php-oracle \S+ needs '
+                '/^oracledb ' . preg_quote($version, '/') . ' is loaded, but openrajska\/php-oracle \S+ needs '
                 . '>= 0\.1\.0, < 0\.2\.0\. Upgrade it with `pie install openrajska\/php-oracle-ext:\^0\.1`\.$/',
                 $connect['message'] ?? '',
             );
         }
-        self::assertSame(['rajska_oracle'], $result['phpversion']);
+        self::assertSame(['oracledb'], $result['phpversion']);
     }
 
     /**
@@ -109,7 +109,7 @@ final class DetectionTest extends TestCase
         self::assertSame(0, $result['phpversionBeforeConnect']);
         self::assertTrue($result['connects'][0]['connected'], $result['connects'][0]['message'] ?? '');
         self::assertTrue($result['connects'][1]['connected'], $result['connects'][1]['message'] ?? '');
-        self::assertSame(['rajska_oracle'], $result['phpversion']);
+        self::assertSame(['oracledb'], $result['phpversion']);
     }
 
     #[Test]
@@ -119,7 +119,7 @@ final class DetectionTest extends TestCase
 
         self::assertIsArray($manifest);
         self::assertIsArray($manifest['require']);
-        self::assertSame('^0.1', $manifest['require']['ext-rajska_oracle'] ?? null);
+        self::assertSame('^0.1', $manifest['require']['ext-oracledb'] ?? null);
     }
 
     /**
@@ -155,7 +155,7 @@ final class DetectionTest extends TestCase
         /** @var array{loaded: bool, classes: int, phpversionBeforeConnect: int, connects: list<array{connected: bool, serverVersion?: string, class?: string, message?: string}>, phpversion: list<?string>} $result */
         $result = json_decode($output, true, flags: \JSON_THROW_ON_ERROR);
         if (!$extension && $result['loaded']) {
-            self::markTestSkipped('This PHP loads rajska_oracle from its php.ini: cannot run a process without it.');
+            self::markTestSkipped('This PHP loads oracledb from its php.ini: cannot run a process without it.');
         }
         self::assertSame($extension, $result['loaded']);
         self::assertCount(2, $result['connects']);

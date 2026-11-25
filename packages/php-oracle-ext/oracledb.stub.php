@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Stub of the rajska_oracle Extension's native surface (spec #32 §14), for
+ * Stub of the oracledb Extension's native surface (spec #32 §14), for
  * static analysis and IDEs. Core keeps an identical copy in
  * packages/php-oracle/stubs/ for PHPStan only.
  *

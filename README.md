@@ -25,7 +25,7 @@ All planned; none is published yet.
 | Package | What it is |
 |---|---|
 | `openrajska/php-oracle` | Core: the typed API users call and the Driver contract Backends implement ([docs](packages/php-oracle/README.md)) |
-| `openrajska/php-oracle-ext` | The `rajska_oracle` PHP extension, hosting the Rust thin Backend |
+| `openrajska/php-oracle-ext` | The `oracledb` PHP extension, hosting the Rust thin Backend |
 | `openrajska/laravel-oracle` | Integrates Core into Laravel's database layer |
 
 The shared vocabulary (Backend, Call, Implicit result, Collection…) is defined in the [glossaries](GLOSSARY-MAP.md).

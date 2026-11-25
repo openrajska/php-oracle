@@ -1,6 +1,6 @@
 # The ZTS side of the benchmark: PHP 8.4 ZTS (FrankenPHP's official image),
 # oci8 over Instant Client as the baseline, wrk, and the Rust toolchain to
-# build rajska_oracle against ZTS headers. The same image as the spike's
+# build oracledb against ZTS headers. The same image as the spike's
 # (spikes/rust-oracledb/bench/zts), so an existing build is reused.
 FROM dunglas/frankenphp:1-php8.4-bookworm
 

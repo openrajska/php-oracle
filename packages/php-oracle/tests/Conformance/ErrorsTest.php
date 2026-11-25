@@ -288,7 +288,7 @@ final class ErrorsTest extends ConformanceTestCase
 
     /**
      * Errors 15: a panic inside the Extension, injected through the
-     * debug-build hook (SQL starting with the comment `rajska_oracle: panic`).
+     * debug-build hook (SQL starting with the comment `oracledb: panic`).
      * The process survives, the Connection is Broken, and its Session never
      * comes back.
      */
@@ -301,11 +301,11 @@ final class ErrorsTest extends ConformanceTestCase
         $session = self::session($connection);
 
         try {
-            $connection->execute('/* rajska_oracle: panic */ select 1 from dual', [], self::options());
+            $connection->execute('/* oracledb: panic */ select 1 from dual', [], self::options());
             self::markTestSkipped('The panic hook exists in debug builds of the Extension only.');
         } catch (ConnectionLostException $e) {
             self::assertSame(0, $e->getCode());
-            self::assertStringStartsWith('internal error in rajska_oracle: ', $e->getMessage());
+            self::assertStringStartsWith('internal error in oracledb: ', $e->getMessage());
         }
         try {
             $connection->execute('select 1 from dual', [], self::options());

@@ -82,5 +82,5 @@ It never returns wrong data instead.
   message says the Session is lost and the Connection is Broken.
 
 An internal failure in the extension becomes a `ConnectionLostException`
-(`internal error in rajska_oracle: …`) on a Broken Connection, never a crashed
+(`internal error in oracledb: …`) on a Broken Connection, never a crashed
 PHP process.

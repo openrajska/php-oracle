@@ -17,8 +17,8 @@ final class StubTest extends TestCase
     public function cores_copy_of_the_stub_matches_the_extensions(): void
     {
         self::assertFileEquals(
-            __DIR__ . '/../../../php-oracle-ext/rajska_oracle.stub.php',
-            __DIR__ . '/../../stubs/rajska_oracle.stub.php',
+            __DIR__ . '/../../../php-oracle-ext/oracledb.stub.php',
+            __DIR__ . '/../../stubs/oracledb.stub.php',
         );
     }
 }

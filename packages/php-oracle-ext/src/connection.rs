@@ -44,7 +44,7 @@ const POOL_KEYS: &[&str] = &[
 /// SQL starting with this runs into a panic, in debug builds only: the
 /// test-only hook for Errors 15 (spec #32 §12, Panics).
 #[cfg(debug_assertions)]
-const PANIC_HOOK: &str = "/* rajska_oracle: panic */";
+const PANIC_HOOK: &str = "/* oracledb: panic */";
 
 /// Where a native cursor lives: shared by its `Cursor` object and the
 /// Cursors nested in it and, weakly, by its Connection, which empties it on
