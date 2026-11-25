@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * A Collection (nested table or VARRAY) of a named type, as a `list`: the
@@ -27,7 +28,7 @@ final readonly class Collection extends Bind
     /**
      * @param list<mixed>|null $value
      */
-    public static function in(string $type, #[\SensitiveParameter] ?array $value): self
+    public static function in(string $type, #[SensitiveParameter] ?array $value): self
     {
         return new self(Type::Collection, Direction::In, $value, $type);
     }
@@ -40,7 +41,7 @@ final readonly class Collection extends Bind
     /**
      * @param list<mixed>|null $value
      */
-    public static function inOut(string $type, #[\SensitiveParameter] ?array $value): self
+    public static function inOut(string $type, #[SensitiveParameter] ?array $value): self
     {
         return new self(Type::Collection, Direction::InOut, $value, $type);
     }

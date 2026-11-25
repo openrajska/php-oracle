@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Exceptions;
 
+use Throwable;
+
 /**
  * The constructor and the `sql()` / `call()` of every OracleException.
  *
@@ -20,7 +22,7 @@ trait CarriesStatement
         int $code = 0,
         ?string $sql = null,
         ?string $call = null,
-        ?\Throwable $previous = null,
+        ?Throwable $previous = null,
     ) {
         parent::__construct($message, $code, $previous);
         $this->sql = $sql;

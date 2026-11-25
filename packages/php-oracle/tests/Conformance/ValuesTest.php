@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use DateTime;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\BinaryDouble;
 use Rajska\Oracle\Bind\BinaryFloat;
@@ -132,7 +135,7 @@ final class ValuesTest extends ConformanceTestCase
             foreach (['-4712-01-01 12:00:00', '-0001-12-31 23:59:59', '0001-01-01 00:00:00', '9999-12-31 23:59:59'] as $text) {
                 $stored = "to_date('$text', 'SYYYY-MM-DD HH24:MI:SS')";
                 $fetched = self::value($connection, "select $stored from dual");
-                self::assertInstanceOf(\DateTimeImmutable::class, $fetched);
+                self::assertInstanceOf(DateTimeImmutable::class, $fetched);
 
                 foreach ([Date::in($fetched), Timestamp::in($fetched)] as $bind) {
                     self::assertSame(1, self::value($connection, "select case when :v = $stored then 1 else 0 end from dual", ['v' => $bind]), $text);
@@ -178,10 +181,10 @@ final class ValuesTest extends ConformanceTestCase
             $connection = $this->connect();
             $format = "'YYYY-MM-DD HH24:MI:SS.FF6 TZH:TZM'";
             $cases = [
-                '+2026-03-01 10:00:00.123456 +05:45' => new \DateTimeImmutable('2026-03-01 10:00:00.123456', new \DateTimeZone('Asia/Kathmandu')),
-                '+2026-07-01 10:00:00.000000 -04:00' => new \DateTimeImmutable('2026-07-01 10:00:00', new \DateTimeZone('America/New_York')),
-                '+2026-01-01 10:00:00.000000 -05:00' => new \DateTime('2026-01-01 10:00:00', new \DateTimeZone('America/New_York')),
-                '+2026-03-01 10:00:00.000000 +00:00' => new \DateTimeImmutable('2026-03-01 10:00:00', new \DateTimeZone('UTC')),
+                '+2026-03-01 10:00:00.123456 +05:45' => new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Kathmandu')),
+                '+2026-07-01 10:00:00.000000 -04:00' => new DateTimeImmutable('2026-07-01 10:00:00', new DateTimeZone('America/New_York')),
+                '+2026-01-01 10:00:00.000000 -05:00' => new DateTime('2026-01-01 10:00:00', new DateTimeZone('America/New_York')),
+                '+2026-03-01 10:00:00.000000 +00:00' => new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('UTC')),
             ];
             foreach ($cases as $expected => $date) {
                 $stored = self::value($connection, "select to_char(:v, $format) from dual", ['v' => TimestampTz::in($date)]);
@@ -199,7 +202,7 @@ final class ValuesTest extends ConformanceTestCase
     public function a_tstz_offset_with_seconds_fails_before_any_round_trip(): void
     {
         $connection = $this->connect();
-        $lmt = new \DateTimeImmutable('1890-01-01 00:00:00', new \DateTimeZone('America/Sao_Paulo'));
+        $lmt = new DateTimeImmutable('1890-01-01 00:00:00', new DateTimeZone('America/Sao_Paulo'));
         self::assertNotSame(0, $lmt->getOffset() % 60);
 
         try {
@@ -258,7 +261,7 @@ final class ValuesTest extends ConformanceTestCase
             // CURRENT_TIMESTAMP carries the zone's region name, so its offset
             // is read on the server.
             self::assertSame(
-                new \DateTimeImmutable('now')->format('P'),
+                new DateTimeImmutable('now')->format('P'),
                 self::value($connection, "select to_char(current_timestamp, 'TZH:TZM') from dual"),
             );
         });

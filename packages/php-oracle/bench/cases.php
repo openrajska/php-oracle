@@ -63,7 +63,7 @@ final class BenchContext
     public function __construct(
         public readonly string $dsn,
         public readonly string $user,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         public readonly string $password,
     ) {}
 
@@ -300,7 +300,7 @@ function bench_cases(): array
 {
     $cases = [];
     $add = static function (string $id, string $driver, int $warmup, int $iters, int $expect, Closure $make, ?Closure $after = null) use (&$cases): void {
-        $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after instanceof \Closure ? ['after' => $after] : []);
+        $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after instanceof Closure ? ['after' => $after] : []);
     };
 
     // (a) A Call with 3 scalar IN and 3 OUT binds: fx_scalar.echo_out.

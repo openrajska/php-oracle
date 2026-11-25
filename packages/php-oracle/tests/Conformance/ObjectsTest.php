@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use DateInterval;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Bind;
@@ -202,7 +205,7 @@ final class ObjectsTest extends ConformanceTestCase
                 [$string['C_DATE'], $string['C_TS'], $string['C_TSTZ'], $string['C_TSLTZ']],
             );
             // INTERVALs stay objects.
-            self::assertInstanceOf(\DateInterval::class, $string['C_IDS']);
+            self::assertInstanceOf(DateInterval::class, $string['C_IDS']);
 
             $lower = self::rows($connection, $sql, options: self::options(keyCase: KeyCase::Lower));
             self::assertSame(array_map(strtolower(...), array_keys(self::allScalars())), array_keys(self::struct($lower[0]['value'])));
@@ -404,9 +407,9 @@ final class ObjectsTest extends ConformanceTestCase
     {
         $value = array_fill_keys(array_keys(self::allScalars()), null);
         $value['C_NUMBER'] = 0.1;
-        $value['C_DATE'] = new \DateTimeImmutable('2026-03-01 10:00:00.5', new \DateTimeZone('Asia/Tokyo'));
-        $value['C_TSTZ'] = new \DateTimeImmutable('2026-03-01 10:00:00.5', new \DateTimeZone('-03:30'));
-        $value['C_TSLTZ'] = new \DateTimeImmutable('2026-03-01 10:00:00', new \DateTimeZone('+02:00'));
+        $value['C_DATE'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('Asia/Tokyo'));
+        $value['C_TSTZ'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('-03:30'));
+        $value['C_TSLTZ'] = new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('+02:00'));
         $value['C_BOOLEAN'] = true;
         $value['C_NCHAR'] = 'ç';
 

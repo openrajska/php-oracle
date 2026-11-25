@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -306,7 +307,7 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{\Closure(Connection): mixed}>
+     * @return iterable<string, array{Closure(Connection): mixed}>
      */
     public static function outputCalls(): iterable
     {
@@ -318,11 +319,11 @@ final class OutputTest extends TestCase
     /**
      * After `close()`, every output call fails.
      *
-     * @param \Closure(Connection): mixed $call
+     * @param Closure(Connection): mixed $call
      */
     #[Test]
     #[DataProvider('outputCalls')]
-    public function output_calls_after_close_fail(\Closure $call): void
+    public function output_calls_after_close_fail(Closure $call): void
     {
         $connection = $this->connect();
         $connection->enableOutput();

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Support;
 
+use RuntimeException;
+
 /**
  * Counts the Round trips a Session makes, from the outside.
  *
@@ -41,7 +43,7 @@ final readonly class RoundTripCounter
     {
         $rows = $this->observer->select(self::SQL, ['sid' => $sid]);
         if ($rows === []) {
-            throw new \RuntimeException("No Session with SID $sid.");
+            throw new RuntimeException("No Session with SID $sid.");
         }
 
         return (int) $rows[0]['VALUE'];

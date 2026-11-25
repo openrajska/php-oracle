@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Support;
 
+use Closure;
+use DateInterval;
+use DateTimeImmutable;
+
 /**
  * Temporal values in tests: shown as comparable text, and read under a known
  * PHP default zone.
@@ -19,8 +23,8 @@ final class Temporals
     public static function shown(mixed $value): mixed
     {
         return match (true) {
-            $value instanceof \DateTimeImmutable => $value->format('X-m-d H:i:s.u e'),
-            $value instanceof \DateInterval => \sprintf(
+            $value instanceof DateTimeImmutable => $value->format('X-m-d H:i:s.u e'),
+            $value instanceof DateInterval => \sprintf(
                 '%s%dY%dM%dDT%dH%dM%dS.%06d',
                 $value->invert === 1 ? '-' : '+',
                 $value->y,
@@ -42,11 +46,11 @@ final class Temporals
      *
      * @template T
      *
-     * @param \Closure(): T $test
+     * @param Closure(): T $test
      *
      * @return T
      */
-    public static function inZone(string $zone, \Closure $test): mixed
+    public static function inZone(string $zone, Closure $test): mixed
     {
         $previous = date_default_timezone_get();
         date_default_timezone_set($zone);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\ConnectionConfig;
@@ -14,6 +15,9 @@ use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Tests\Support\ConnectTargets;
 use Rajska\Oracle\Tests\Support\TestDatabase;
+use ReflectionClass;
+use Throwable;
+use WeakMap;
 
 /**
  * Conformance catalog, the connect parameters (#41, spec #32 §11): Pool and
@@ -150,7 +154,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             'descriptor' => ['dsn' => ConnectTargets::descriptor($easy)],
             'configDir' => ['dsn' => 'rajska_test', 'configDir' => $this->tnsnames(['rajska_test' => ConnectTargets::descriptor($easy)])],
             'TNS_ADMIN' => ['dsn' => 'rajska_test'],
-            default => throw new \LogicException("Unknown form $form."),
+            default => throw new LogicException("Unknown form $form."),
         };
         if ($form === 'TNS_ADMIN') {
             putenv('TNS_ADMIN=' . $this->tnsnames(['other, RAJSKA_TEST' => $easy]));
@@ -458,7 +462,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             if ($value === $secret) {
                 return true;
             }
-            if (\is_array($value) || $value instanceof \WeakMap) {
+            if (\is_array($value) || $value instanceof WeakMap) {
                 foreach ($value as $element) {
                     if ($holds($element)) {
                         return true;
@@ -469,7 +473,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             return false;
         };
 
-        return $holds(new \ReflectionClass(ExtensionDriver::class)->getStaticProperties());
+        return $holds(new ReflectionClass(ExtensionDriver::class)->getStaticProperties());
     }
 
     /**
@@ -497,11 +501,11 @@ final class ConnectParametersTest extends ConformanceTestCase
         }
     }
 
-    private function failedConnect(ConnectionConfig $config): \Throwable
+    private function failedConnect(ConnectionConfig $config): Throwable
     {
         try {
             $this->driver()->connect($config)->close();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return $e;
         }
         self::fail('connect() succeeded.');

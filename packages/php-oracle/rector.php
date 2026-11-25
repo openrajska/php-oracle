@@ -15,18 +15,13 @@ return RectorConfig::configure()
         __DIR__ . '/bench',
     ])
     ->withSkip([
-        // Raises PHP issues on purpose (see SuiteRulesTest).
         __DIR__ . '/tests/Harness/Probes',
-        // Breaks static closures that call self::method().
         LocallyCalledStaticMethodToNonStaticRector::class,
-        // Drops @var annotations PHPStan needs to narrow return values.
         RemoveNonExistingVarAnnotationRector::class,
-        // Renames heredoc markers and dedents the SQL inside them.
         SensitiveHereNowDocRector::class,
-        // Drops the closure that carries #[\SensitiveParameter].
         ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
     ])
-    ->withImportNames(importShortClasses: false, removeUnusedImports: true)
+    ->withImportNames()
     ->withPhpSets(php84: true)
     ->withPreparedSets(
         deadCode: true,

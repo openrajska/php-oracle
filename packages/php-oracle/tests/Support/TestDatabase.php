@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Tests\Support;
 
 use Rajska\Oracle\ConnectionConfig;
 use RuntimeException;
+use SensitiveParameter;
 
 /**
  * Where the suites find Oracle: the ORACLE_CONNECT_STRING, ORACLE_USER and
@@ -18,7 +19,7 @@ final readonly class TestDatabase
     private function __construct(
         public string $connectString,
         public string $user,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         public string $password,
     ) {}
 

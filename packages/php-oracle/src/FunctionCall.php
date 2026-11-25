@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Closure;
+use DateInterval;
+use DateTimeImmutable;
 use Rajska\Oracle\Bind\BinaryDouble;
 use Rajska\Oracle\Bind\BinaryFloat;
 use Rajska\Oracle\Bind\Bind;
@@ -46,11 +49,11 @@ final readonly class FunctionCall
     /**
      * @internal use Connection::function()
      *
-     * @param \Closure(Bind): OutValue $run runs the Call with the return value bound as given
+     * @param Closure(Bind): OutValue $run runs the Call with the return value bound as given
      */
     public function __construct(
         private Call $call,
-        private \Closure $run,
+        private Closure $run,
     ) {}
 
     public function varchar(): ?string
@@ -97,11 +100,11 @@ final readonly class FunctionCall
      * A timestamp return value: an object, or ISO text under
      * `TemporalMode::String`.
      */
-    private function temporal(Bind $bind): \DateTimeImmutable|string|null
+    private function temporal(Bind $bind): DateTimeImmutable|string|null
     {
         $value = ($this->run)($bind)->value();
 
-        return $value === null || $value instanceof \DateTimeImmutable || \is_string($value)
+        return $value === null || $value instanceof DateTimeImmutable || \is_string($value)
             ? $value
             : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a date.', 0, null, $this->call->name);
     }
@@ -129,7 +132,7 @@ final readonly class FunctionCall
     /**
      * The Wall clock, or ISO text under `TemporalMode::String`.
      */
-    public function date(): \DateTimeImmutable|string|null
+    public function date(): DateTimeImmutable|string|null
     {
         return $this->temporal(Date::out());
     }
@@ -137,7 +140,7 @@ final readonly class FunctionCall
     /**
      * The Wall clock, or ISO text under `TemporalMode::String`.
      */
-    public function timestamp(): \DateTimeImmutable|string|null
+    public function timestamp(): DateTimeImmutable|string|null
     {
         return $this->temporal(Timestamp::out());
     }
@@ -145,7 +148,7 @@ final readonly class FunctionCall
     /**
      * With its own offset, or ISO text under `TemporalMode::String`.
      */
-    public function timestampTz(): \DateTimeImmutable|string|null
+    public function timestampTz(): DateTimeImmutable|string|null
     {
         return $this->temporal(TimestampTz::out());
     }
@@ -154,17 +157,17 @@ final readonly class FunctionCall
      * The Instant in PHP's default zone, or ISO text under
      * `TemporalMode::String`.
      */
-    public function timestampLtz(): \DateTimeImmutable|string|null
+    public function timestampLtz(): DateTimeImmutable|string|null
     {
         return $this->temporal(TimestampLtz::out());
     }
 
-    public function intervalDs(): ?\DateInterval
+    public function intervalDs(): ?DateInterval
     {
         return ($this->run)(IntervalDs::out())->interval();
     }
 
-    public function intervalYm(): ?\DateInterval
+    public function intervalYm(): ?DateInterval
     {
         return ($this->run)(IntervalYm::out())->interval();
     }

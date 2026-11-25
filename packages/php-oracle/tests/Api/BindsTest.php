@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Closure;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -19,6 +21,8 @@ use Rajska\Oracle\Execution;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\Binds\Priority;
 use Rajska\Oracle\Tests\Support\TestDatabase;
+use SensitiveParameter;
+use TypeError;
 
 /**
  * Plain PHP values bind with no ceremony; anything ambiguous fails early,
@@ -53,7 +57,7 @@ final class BindsTest extends TestCase
         $this->expectException(UsageException::class);
         $this->expectExceptionMessage("Bind 'at': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in().");
 
-        $this->connection->select('select :at from dual', ['at' => new \DateTimeImmutable()]);
+        $this->connection->select('select :at from dual', ['at' => new DateTimeImmutable()]);
     }
 
     /**
@@ -61,24 +65,24 @@ final class BindsTest extends TestCase
      * appears in the exception's trace or string form, though the suite
      * keeps exceptions' arguments (zend.exception_ignore_args=Off).
      *
-     * @return iterable<string, array{\Closure(string): mixed}>
+     * @return iterable<string, array{Closure(string): mixed}>
      */
     public static function rejectedValues(): iterable
     {
-        yield 'Number::in(), not a decimal literal' => [static fn(#[\SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
-        yield 'Number::inOut(), not a decimal literal' => [static fn(#[\SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
+        yield 'Number::in(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
+        yield 'Number::inOut(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
         // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'Boolean::in(), a string' => [static fn(#[\SensitiveParameter] string $secret): mixed => Boolean::in($secret)];
+        yield 'Boolean::in(), a string' => [static fn(#[SensitiveParameter] string $secret): mixed => Boolean::in($secret)];
         // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'PlsInteger::inOut(), a string' => [static fn(#[\SensitiveParameter] string $secret): mixed => PlsInteger::inOut($secret)];
+        yield 'PlsInteger::inOut(), a string' => [static fn(#[SensitiveParameter] string $secret): mixed => PlsInteger::inOut($secret)];
     }
 
     /**
-     * @param \Closure(string): mixed $factory
+     * @param Closure(string): mixed $factory
      */
     #[Test]
     #[DataProvider('rejectedValues')]
-    public function a_value_a_typed_bind_rejects_never_appears_in_its_exception(\Closure $factory): void
+    public function a_value_a_typed_bind_rejects_never_appears_in_its_exception(Closure $factory): void
     {
         self::assertSame('0', \ini_get('zend.exception_ignore_args'), 'the suite keeps exceptions\' arguments');
         $secret = 'zq32secret';
@@ -86,7 +90,7 @@ final class BindsTest extends TestCase
         try {
             $factory($secret);
             self::fail('The value was accepted.');
-        } catch (UsageException|\TypeError $e) {
+        } catch (UsageException|TypeError $e) {
             self::assertStringNotContainsString($secret, $e->getMessage());
             self::assertStringNotContainsString($secret, $e->getTraceAsString());
             self::assertStringNotContainsString($secret, (string) $e);

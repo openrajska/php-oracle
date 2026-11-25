@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Support\Binds;
 
+use DateTimeImmutable;
+use Stringable;
+
 /**
  * A date that is also `Stringable`, as Carbon is: it must fail as a
  * DateTimeInterface, never bind as its text.
  */
-final class StringableDate extends \DateTimeImmutable implements \Stringable
+final class StringableDate extends DateTimeImmutable implements Stringable
 {
     public function __toString(): string
     {

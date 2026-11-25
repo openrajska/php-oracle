@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Fiber;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Column;
@@ -230,17 +231,17 @@ final class CursorTest extends TestCase
         $read = [];
         foreach (['a', 'b'] as $name) {
             $cursor = $this->connection->select($sql, ['last' => 10], $options);
-            $fibers[$name] = new \Fiber(static function () use ($cursor, $name, &$read): void {
+            $fibers[$name] = new Fiber(static function () use ($cursor, $name, &$read): void {
                 foreach ($cursor as $row) {
                     $read[$name][] = $row['ID'];
-                    \Fiber::suspend();
+                    Fiber::suspend();
                 }
             });
         }
         foreach ($fibers as $fiber) {
             $fiber->start();
         }
-        while (array_filter($fibers, static fn(\Fiber $f): bool => !$f->isTerminated()) !== []) {
+        while (array_filter($fibers, static fn(Fiber $f): bool => !$f->isTerminated()) !== []) {
             foreach ($fibers as $fiber) {
                 if (!$fiber->isTerminated()) {
                     $fiber->resume();

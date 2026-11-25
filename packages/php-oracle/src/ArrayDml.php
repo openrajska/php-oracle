@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Countable;
 use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
  * What one `runMany()` produced: every bind row ran, in one Round trip.
  */
-final class ArrayDml implements \Countable
+final class ArrayDml implements Countable
 {
     /**
      * The OUT values, per bind, one list per bind row, each LOB wrapped

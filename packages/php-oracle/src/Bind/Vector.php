@@ -7,6 +7,7 @@ namespace Rajska\Oracle\Bind;
 use Rajska\Oracle\SparseVector;
 use Rajska\Oracle\Type;
 use Rajska\Oracle\VectorFormat;
+use SensitiveParameter;
 
 /**
  * VECTOR: a dense one from a `list` of numbers, a sparse one from a
@@ -31,7 +32,7 @@ final readonly class Vector extends Bind
     /**
      * @param list<int|float>|SparseVector|null $values
      */
-    public static function in(#[\SensitiveParameter] array|SparseVector|null $values, VectorFormat $format = VectorFormat::Float64): self
+    public static function in(#[SensitiveParameter] array|SparseVector|null $values, VectorFormat $format = VectorFormat::Float64): self
     {
         return new self(Type::Vector, Direction::In, $values, $format->value);
     }
@@ -44,7 +45,7 @@ final readonly class Vector extends Bind
     /**
      * @param list<int|float>|SparseVector|null $values
      */
-    public static function inOut(#[\SensitiveParameter] array|SparseVector|null $values, VectorFormat $format = VectorFormat::Float64): self
+    public static function inOut(#[SensitiveParameter] array|SparseVector|null $values, VectorFormat $format = VectorFormat::Float64): self
     {
         return new self(Type::Vector, Direction::InOut, $values, $format->value);
     }

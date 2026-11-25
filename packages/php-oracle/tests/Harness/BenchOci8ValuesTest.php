@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Harness;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -85,8 +87,8 @@ final class BenchOci8ValuesTest extends TestCase
     #[Test]
     public function the_canonical_form_of_a_date_carries_its_zone(): void
     {
-        $utc = new \DateTimeImmutable('2026-01-01 00:00:00', new \DateTimeZone('UTC'));
-        $lisbon = new \DateTimeImmutable('2026-01-01 00:00:00', new \DateTimeZone('Europe/Lisbon'));
+        $utc = new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC'));
+        $lisbon = new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('Europe/Lisbon'));
 
         self::assertSame(Oci8Values::canonical([$utc]), Oci8Values::canonical([clone $utc]));
         self::assertNotSame(Oci8Values::canonical([$utc]), Oci8Values::canonical([$lisbon]));

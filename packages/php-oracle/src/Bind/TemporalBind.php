@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Bind;
 
+use DateTimeImmutable;
+use DateTimeInterface;
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * The factories of the timestamp binds. The date is copied once, here, into
@@ -17,7 +20,7 @@ trait TemporalBind
 {
     abstract private static function type(): Type;
 
-    public static function in(#[\SensitiveParameter] ?\DateTimeInterface $value): self
+    public static function in(#[SensitiveParameter] ?DateTimeInterface $value): self
     {
         return new self(self::type(), Direction::In, self::frozen($value));
     }
@@ -27,13 +30,13 @@ trait TemporalBind
         return new self(self::type(), Direction::Out, null);
     }
 
-    public static function inOut(#[\SensitiveParameter] ?\DateTimeInterface $value): self
+    public static function inOut(#[SensitiveParameter] ?DateTimeInterface $value): self
     {
         return new self(self::type(), Direction::InOut, self::frozen($value));
     }
 
-    private static function frozen(#[\SensitiveParameter] ?\DateTimeInterface $value): ?\DateTimeImmutable
+    private static function frozen(#[SensitiveParameter] ?DateTimeInterface $value): ?DateTimeImmutable
     {
-        return $value instanceof \DateTimeInterface ? \DateTimeImmutable::createFromInterface($value) : null;
+        return $value instanceof DateTimeInterface ? DateTimeImmutable::createFromInterface($value) : null;
     }
 }

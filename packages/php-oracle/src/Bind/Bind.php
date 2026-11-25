@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * A bind with an explicit Oracle type and direction. Each Oracle type has its
@@ -20,7 +21,7 @@ abstract readonly class Bind
     final protected function __construct(
         public Type $type,
         public Direction $direction,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         public mixed $value,
         public ?string $typeName = null,
     ) {}

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rajska\Oracle;
 
 use Rajska\Oracle\Exceptions\ConfigurationException;
+use SensitiveParameter;
+use SensitiveParameterValue;
 
 /**
  * Everything `Oracle::connect()` needs. It needs no Extension to build, and
@@ -28,11 +30,11 @@ final readonly class ConnectionConfig
     public function __construct(
         public string $dsn,
         public string $user,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         public string $password,
         public ?string $proxyUser = null,
         public ?string $walletLocation = null,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         public ?string $walletPassword = null,
         public ?string $configDir = null,
         public int|float $connectTimeout = 20,
@@ -76,9 +78,9 @@ final readonly class ConnectionConfig
     {
         /** @var array<string, mixed> $fields */
         $fields = get_object_vars($this);
-        $fields['password'] = new \SensitiveParameterValue($this->password);
+        $fields['password'] = new SensitiveParameterValue($this->password);
         if ($this->walletPassword !== null) {
-            $fields['walletPassword'] = new \SensitiveParameterValue($this->walletPassword);
+            $fields['walletPassword'] = new SensitiveParameterValue($this->walletPassword);
         }
 
         return $fields;

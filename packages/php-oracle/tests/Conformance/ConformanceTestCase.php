@@ -14,6 +14,7 @@ use Rajska\Oracle\RowShape;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
+use RuntimeException;
 
 /**
  * The conformance catalog of spec #32 runs at the Driver contract seam:
@@ -177,7 +178,7 @@ abstract class ConformanceTestCase extends TestCase
             $observer->select('select id from fx_items where id = :id for update nowait', ['id' => $item]);
 
             return false;
-        } catch (\RuntimeException $e) {
+        } catch (RuntimeException $e) {
             self::assertSame(54, $e->getCode(), $e->getMessage());
 
             return true;

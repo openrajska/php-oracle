@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Exception;
 use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverExecution;
@@ -12,6 +13,8 @@ use Rajska\Oracle\Exceptions\CarriesStatement;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
+use ReflectionProperty;
+use SensitiveParameter;
 
 /**
  * A Call: a stored procedure or function invoked by name. Core generates its
@@ -48,7 +51,7 @@ final readonly class Call
     private function __construct(
         public string $name,
         private string $arguments,
-        #[\SensitiveParameter]
+        #[SensitiveParameter]
         private array $binds,
         private array $parameters,
     ) {}
@@ -58,7 +61,7 @@ final readonly class Call
      *
      * @throws UsageException if the name or a parameter name is not valid
      */
-    public static function of(string $name, #[\SensitiveParameter] array $binds): self
+    public static function of(string $name, #[SensitiveParameter] array $binds): self
     {
         /**
          * Calls already validated, oldest first, by name and parameter
@@ -149,7 +152,7 @@ final readonly class Call
     /**
      * @param array<string, mixed> $binds
      */
-    private function execute(DriverConnection $driver, string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
+    private function execute(DriverConnection $driver, string $sql, #[SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
     {
         try {
             return $driver->execute($sql, $binds, $options);
@@ -172,7 +175,7 @@ final readonly class Call
                 return $e;
             }
         }
-        new \ReflectionProperty($class, 'call')->setValue($e, $this->name);
+        new ReflectionProperty($class, 'call')->setValue($e, $this->name);
 
         if ($e instanceof UsageException || $e instanceof UnsupportedException) {
             $message = preg_replace_callback(
@@ -184,7 +187,7 @@ final readonly class Call
                 },
                 $e->getMessage(),
             );
-            new \ReflectionProperty(\Exception::class, 'message')->setValue($e, $message);
+            new ReflectionProperty(Exception::class, 'message')->setValue($e, $message);
         }
 
         return $e;

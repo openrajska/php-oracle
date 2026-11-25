@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Closure;
+
 /**
  * The stream wrapper behind `Lob::stream()`: a read-only stream over the
  * LOB's chunks, holding at most one chunk at a time.
@@ -17,8 +19,8 @@ final class LobStream
     /** Set by PHP for every stream it opens through the wrapper. */
     public mixed $context = null;
 
-    /** @var \Closure(): string */
-    private \Closure $read;
+    /** @var Closure(): string */
+    private Closure $read;
 
     /** The last chunk, served from $offset on. */
     private string $buffer = '';
@@ -30,11 +32,11 @@ final class LobStream
     /**
      * A stream over the chunks `$read` gives, '' at the end.
      *
-     * @param \Closure(): string $read
+     * @param Closure(): string $read
      *
      * @return resource
      */
-    public static function open(\Closure $read)
+    public static function open(Closure $read)
     {
         if (!\in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
             stream_wrapper_register(self::PROTOCOL, self::class);
@@ -50,7 +52,7 @@ final class LobStream
     {
         $options = \is_resource($this->context) ? stream_context_get_options($this->context) : [];
         $read = \is_array($options[self::PROTOCOL] ?? null) ? ($options[self::PROTOCOL]['read'] ?? null) : null;
-        if (!$read instanceof \Closure || !\in_array($mode, ['r', 'rb'], true)) {
+        if (!$read instanceof Closure || !\in_array($mode, ['r', 'rb'], true)) {
             return false;
         }
         $this->read = $read;

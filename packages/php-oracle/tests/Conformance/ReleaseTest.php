@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Clob;
@@ -60,7 +61,7 @@ final class ReleaseTest extends ConformanceTestCase
     /**
      * What the last calls before a Release left: never a transaction.
      *
-     * @return iterable<string, array{\Closure(DriverConnection): mixed}>
+     * @return iterable<string, array{Closure(DriverConnection): mixed}>
      */
     public static function nothingOpen(): iterable
     {
@@ -83,11 +84,11 @@ final class ReleaseTest extends ConformanceTestCase
      * With no transaction open, connect() + close() through the Pool makes
      * no Round trip, as `oci_pconnect()` + `oci_close()` makes none.
      *
-     * @param \Closure(DriverConnection): mixed $work
+     * @param Closure(DriverConnection): mixed $work
      */
     #[Test]
     #[DataProvider('nothingOpen')]
-    public function a_release_with_no_transaction_open_makes_no_round_trip(\Closure $work): void
+    public function a_release_with_no_transaction_open_makes_no_round_trip(Closure $work): void
     {
         $fields = self::$pool;
         $this->connect(...$fields)->close();
@@ -109,7 +110,7 @@ final class ReleaseTest extends ConformanceTestCase
      * Work the server keeps open after the call, with Autocommit off: each
      * locks fx_tx_rows row 1 or holds the transaction some other way.
      *
-     * @return iterable<string, array{\Closure(DriverConnection): mixed}>
+     * @return iterable<string, array{Closure(DriverConnection): mixed}>
      */
     public static function leftOpen(): iterable
     {
@@ -158,11 +159,11 @@ final class ReleaseTest extends ConformanceTestCase
      * back: another Session sees none of its rows and none of its locks,
      * and the Session's next loan starts with no transaction of its own.
      *
-     * @param \Closure(DriverConnection): mixed $work
+     * @param Closure(DriverConnection): mixed $work
      */
     #[Test]
     #[DataProvider('leftOpen')]
-    public function a_release_rolls_back_whatever_the_server_reports_open(\Closure $work): void
+    public function a_release_rolls_back_whatever_the_server_reports_open(Closure $work): void
     {
         $fields = self::$pool;
         $this->connect(...$fields)->close();
@@ -179,9 +180,9 @@ final class ReleaseTest extends ConformanceTestCase
     }
 
     /**
-     * @param \Closure(): mixed $call
+     * @param Closure(): mixed $call
      */
-    private static function fails(\Closure $call): void
+    private static function fails(Closure $call): void
     {
         try {
             $call();

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Bind;
 
+use DateInterval;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * INTERVAL DAY TO SECOND, from a `DateInterval` of days, hours, minutes,
@@ -19,7 +21,7 @@ final readonly class IntervalDs extends Bind
     /**
      * @throws UsageException if the interval has years or months
      */
-    public static function in(#[\SensitiveParameter] ?\DateInterval $value): self
+    public static function in(#[SensitiveParameter] ?DateInterval $value): self
     {
         return new self(Type::IntervalDs, Direction::In, self::checked($value));
     }
@@ -32,17 +34,17 @@ final readonly class IntervalDs extends Bind
     /**
      * @throws UsageException if the interval has years or months
      */
-    public static function inOut(#[\SensitiveParameter] ?\DateInterval $value): self
+    public static function inOut(#[SensitiveParameter] ?DateInterval $value): self
     {
         return new self(Type::IntervalDs, Direction::InOut, self::checked($value));
     }
 
-    private static function checked(#[\SensitiveParameter] ?\DateInterval $value): ?\DateInterval
+    private static function checked(#[SensitiveParameter] ?DateInterval $value): ?DateInterval
     {
-        if ($value instanceof \DateInterval && ($value->y !== 0 || $value->m !== 0)) {
+        if ($value instanceof DateInterval && ($value->y !== 0 || $value->m !== 0)) {
             throw new UsageException('IntervalDs::in() takes days and smaller units, but the DateInterval has years or months; bind those with IntervalYm::in().');
         }
 
-        return $value instanceof \DateInterval ? clone $value : null;
+        return $value instanceof DateInterval ? clone $value : null;
     }
 }

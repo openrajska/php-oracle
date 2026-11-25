@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use ArrayObject;
+use DateTimeImmutable;
+use DateTimeZone;
+use JsonSerializable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Direction;
@@ -194,10 +198,10 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         yield 'list' => [[1, 'two', true, null, [3]], [1, 'two', true, null, [3]]];
         yield 'empty list' => [[], []];
         yield 'stdClass' => [(object) ['a' => 1, 'b' => (object) []], ['a' => 1, 'b' => []]];
-        yield 'JsonSerializable' => [new class implements \JsonSerializable {
+        yield 'JsonSerializable' => [new class implements JsonSerializable {
             public function jsonSerialize(): mixed
             {
-                return ['kind' => 'serialized', 'nested' => new \ArrayObject()];
+                return ['kind' => 'serialized', 'nested' => new ArrayObject()];
             }
         }, ['kind' => 'serialized', 'nested' => []]];
         yield 'object with public properties' => [new class {
@@ -210,7 +214,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         yield 'int' => [PHP_INT_MAX, PHP_INT_MAX];
         yield 'string' => ['héllo', 'héllo'];
         yield 'DateTimeInterface' => [
-            new \DateTimeImmutable('2026-03-01 10:00:00.5', new \DateTimeZone('Asia/Tokyo')),
+            new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('Asia/Tokyo')),
             '+2026-03-01 10:00:00.500000 America/Sao_Paulo',
         ];
         yield 'null' => [null, null];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Blob;
@@ -580,9 +581,9 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * @param \Closure(): mixed $call
+     * @param Closure(): mixed $call
      */
-    private static function failing(\Closure $call): ArrayDmlException
+    private static function failing(Closure $call): ArrayDmlException
     {
         try {
             $call();

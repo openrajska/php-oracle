@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Exceptions;
 
+use Throwable;
+
 /**
  * Rows of an Array DML call failed; none of that call's rows was applied.
  * `getCode()` is the first failing row's code.
@@ -19,7 +21,7 @@ final class ArrayDmlException extends QueryException
         private readonly array $rows,
         ?string $sql = null,
         ?string $call = null,
-        ?\Throwable $previous = null,
+        ?Throwable $previous = null,
     ) {
         parent::__construct($message, $code, $sql, $call, null, $previous);
     }

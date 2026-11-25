@@ -23,6 +23,13 @@ use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Extension\Lob as NativeLob;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
+use ReflectionClass;
+use ReflectionMethod;
+use ReflectionParameter;
+use SensitiveParameter;
+use SensitiveParameterValue;
+use Throwable;
+use TypeError;
 
 /**
  * Conformance catalog, Native surface (#31). The cases about the native
@@ -60,7 +67,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
 
         foreach ([$connection, $cursor, $lob, $exception] as $object) {
             $class = $object::class;
-            self::assertTrue(new \ReflectionClass($class)->isFinal(), "$class is final");
+            self::assertTrue(new ReflectionClass($class)->isFinal(), "$class is final");
             $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => new $class(), "new $class");
             $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => clone $object, "clone $class");
             $this->assertFails(static fn(): string => serialize($object), "serialize($class)");
@@ -97,12 +104,12 @@ final class NativeSurfaceTest extends ConformanceTestCase
     public function pool_binds_and_rows_are_sensitive_parameters(string $class, string $method, string $parameter): void
     {
         $parameters = array_filter(
-            new \ReflectionMethod($class, $method)->getParameters(),
-            static fn(\ReflectionParameter $p): bool => $p->getName() === $parameter,
+            new ReflectionMethod($class, $method)->getParameters(),
+            static fn(ReflectionParameter $p): bool => $p->getName() === $parameter,
         );
 
         self::assertCount(1, $parameters, "$class::$method() has \$$parameter");
-        self::assertCount(1, array_values($parameters)[0]->getAttributes(\SensitiveParameter::class));
+        self::assertCount(1, array_values($parameters)[0]->getAttributes(SensitiveParameter::class));
     }
 
     /**
@@ -129,10 +136,10 @@ final class NativeSurfaceTest extends ConformanceTestCase
             try {
                 $call();
                 self::fail("$method() accepted a string for an array.");
-            } catch (\TypeError $e) {
+            } catch (TypeError $e) {
                 $frame = $e->getTrace()[0];
                 self::assertSame([NativeConnection::class, $method], [$frame['class'] ?? null, $frame['function']]);
-                self::assertInstanceOf(\SensitiveParameterValue::class, $frame['args'][$position] ?? null, $method);
+                self::assertInstanceOf(SensitiveParameterValue::class, $frame['args'][$position] ?? null, $method);
                 self::assertStringNotContainsString(self::DISTINCTIVE, $e->getTraceAsString());
             }
         }
@@ -474,7 +481,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
     {
         try {
             $call();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             $this->addToAssertionCount(1);
 
             return;

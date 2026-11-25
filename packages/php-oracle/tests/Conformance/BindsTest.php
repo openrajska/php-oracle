@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use DateTime;
+use DateTimeImmutable;
+use DomainException;
+use JsonSerializable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Number;
@@ -15,6 +19,9 @@ use Rajska\Oracle\Tests\Support\Binds\Priority;
 use Rajska\Oracle\Tests\Support\Binds\StringableDate;
 use Rajska\Oracle\Tests\Support\Binds\Suit;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
+use stdClass;
+use Stringable;
+use Throwable;
 
 /**
  * Conformance catalog, Binds (#22): plain PHP values, named only.
@@ -39,7 +46,7 @@ final class BindsTest extends ConformanceTestCase
         yield 'numeric string' => ['12.30', 'Typ=1 Len=5: 49,50,46,51,48', '12.30'];
         yield 'int-backed enum' => [Priority::High, 'Typ=2 Len=2: 193,3', 2];
         yield 'string-backed enum' => [Color::Green, 'Typ=1 Len=5: 103,114,101,101,110', 'green'];
-        yield 'Stringable' => [new class implements \Stringable {
+        yield 'Stringable' => [new class implements Stringable {
             public function __toString(): string
             {
                 return 'from __toString';
@@ -241,17 +248,17 @@ final class BindsTest extends ConformanceTestCase
         $date = 'use Date::in() or Timestamp::in()';
         $json = 'use Json::in()';
 
-        yield 'DateTimeImmutable' => [['v' => new \DateTimeImmutable()], $one, $date];
-        yield 'DateTime' => [['v' => new \DateTime()], $one, $date];
+        yield 'DateTimeImmutable' => [['v' => new DateTimeImmutable()], $one, $date];
+        yield 'DateTime' => [['v' => new DateTime()], $one, $date];
         yield 'a Stringable date, as Carbon' => [['v' => new StringableDate()], $one, $date];
         yield 'array' => [['v' => [1, 2]], $one, $json];
-        yield 'JsonSerializable' => [['v' => new class implements \JsonSerializable {
+        yield 'JsonSerializable' => [['v' => new class implements JsonSerializable {
             public function jsonSerialize(): mixed
             {
                 return [];
             }
         }], $one, $json];
-        yield 'other object' => [['v' => new \stdClass()], $one, 'an object of class stdClass does not bind by itself; use Json::in() or a typed bind'];
+        yield 'other object' => [['v' => new stdClass()], $one, 'an object of class stdClass does not bind by itself; use Json::in() or a typed bind'];
         yield 'enum without backing value' => [['v' => Suit::Hearts], $one, 'an object of class ' . Suit::class . ' does not bind by itself'];
         yield 'resource' => [['v' => fopen('php://memory', 'r')], $one, 'use Clob::in() or Blob::in()'];
         yield 'bytes that are not UTF-8' => [['v' => "\xff\xfe"], $one, 'bind binary data with Raw::in() or Blob::in()'];
@@ -310,11 +317,11 @@ final class BindsTest extends ConformanceTestCase
     public function an_exception_from_to_string_reaches_the_caller(): void
     {
         $connection = $this->connect();
-        $thrown = new \DomainException('from __toString');
+        $thrown = new DomainException('from __toString');
 
         try {
-            $connection->execute('select :v from dual', ['v' => new readonly class ($thrown) implements \Stringable {
-                public function __construct(private \Throwable $thrown) {}
+            $connection->execute('select :v from dual', ['v' => new readonly class ($thrown) implements Stringable {
+                public function __construct(private Throwable $thrown) {}
 
                 public function __toString(): string
                 {
@@ -322,7 +329,7 @@ final class BindsTest extends ConformanceTestCase
                 }
             }], self::options());
             self::fail('The bind ran.');
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             self::assertSame($thrown, $e);
         }
 

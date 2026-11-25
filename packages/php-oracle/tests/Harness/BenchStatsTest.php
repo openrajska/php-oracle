@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Harness;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bench\Stats;
@@ -41,7 +42,7 @@ final class BenchStatsTest extends TestCase
     #[Test]
     public function an_empty_sample_set_has_no_median(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         Stats::median([]);
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * An Object of a named Object type, as an array keyed by attribute name:
@@ -33,7 +34,7 @@ final readonly class Struct extends Bind
     /**
      * @param array<string, mixed>|null $value
      */
-    public static function in(string $type, #[\SensitiveParameter] ?array $value): self
+    public static function in(string $type, #[SensitiveParameter] ?array $value): self
     {
         return new self(Type::Object, Direction::In, $value, $type);
     }
@@ -46,7 +47,7 @@ final readonly class Struct extends Bind
     /**
      * @param array<string, mixed>|null $value
      */
-    public static function inOut(string $type, #[\SensitiveParameter] ?array $value): self
+    public static function inOut(string $type, #[SensitiveParameter] ?array $value): self
     {
         return new self(Type::Object, Direction::InOut, $value, $type);
     }

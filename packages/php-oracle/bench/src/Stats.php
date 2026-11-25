@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Bench;
 
+use InvalidArgumentException;
+
 /**
  * Order statistics over timing samples (nanoseconds).
  */
@@ -55,7 +57,7 @@ final class Stats
     private static function sorted(array $samples): array
     {
         if ($samples === []) {
-            throw new \InvalidArgumentException('No samples.');
+            throw new InvalidArgumentException('No samples.');
         }
         sort($samples);
 

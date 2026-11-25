@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -361,8 +362,8 @@ final class CallsTest extends TestCase
     public function a_bind_error_names_the_parameter(): void
     {
         $calls = [
-            fn(): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new \DateTimeImmutable()]),
-            fn(): int|float|string|null => $this->connection->function('fx_call.f_fail', ['P_Value' => new \DateTimeImmutable()])->number(),
+            fn(): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new DateTimeImmutable()]),
+            fn(): int|float|string|null => $this->connection->function('fx_call.f_fail', ['P_Value' => new DateTimeImmutable()])->number(),
         ];
         foreach ($calls as $call) {
             try {

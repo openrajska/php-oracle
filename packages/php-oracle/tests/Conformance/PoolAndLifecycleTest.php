@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -328,7 +329,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     /**
      * Pool and lifecycle 3.
      *
-     * @return iterable<string, array{\Closure(DriverConnection): mixed}>
+     * @return iterable<string, array{Closure(DriverConnection): mixed}>
      */
     public static function connectionCalls(): iterable
     {
@@ -344,11 +345,11 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
      * Pool and lifecycle 3: every call after `close()` fails, and a second
      * `close()` is fine.
      *
-     * @param \Closure(DriverConnection): mixed $call
+     * @param Closure(DriverConnection): mixed $call
      */
     #[Test]
     #[DataProvider('connectionCalls')]
-    public function every_call_after_close_fails_as_usage(\Closure $call): void
+    public function every_call_after_close_fails_as_usage(Closure $call): void
     {
         $connection = $this->connect();
         $connection->close();

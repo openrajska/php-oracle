@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use Closure;
+use Error;
+use Exception;
 use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Bind\Collection;
 use Rajska\Oracle\Bind\PlsInteger;
@@ -12,6 +15,9 @@ use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Exceptions\ArrayDmlException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\UsageException;
+use ReflectionProperty;
+use SensitiveParameter;
+use Throwable;
 
 /**
  * A Session to run statements on. Get one from `Oracle::connect()`.
@@ -70,7 +76,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function run(string $sql, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
+    public function run(string $sql, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
     {
         return new Execution(
             $this->driver->execute($sql, $binds, $this->resolve($options)),
@@ -88,7 +94,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function select(string $sql, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Cursor
+    public function select(string $sql, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Cursor
     {
         return $this->run($sql, $binds, $options)->rows();
     }
@@ -103,7 +109,7 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function procedure(string $name, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
+    public function procedure(string $name, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): Execution
     {
         return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options), $this->state);
     }
@@ -118,7 +124,7 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function function(string $name, #[\SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): FunctionCall
+    public function function(string $name, #[SensitiveParameter] array $binds = [], ?ExecuteOptions $options = null): FunctionCall
     {
         $call = Call::of($name, $binds);
 
@@ -151,7 +157,7 @@ final class Connection
      * @throws ArrayDmlException listing every failing row
      * @throws UsageException for rows that differ in keys or column types, a query, a REF CURSOR or Implicit results
      */
-    public function runMany(string $sql, #[\SensitiveParameter] array $rows, ?ExecuteOptions $options = null): ArrayDml
+    public function runMany(string $sql, #[SensitiveParameter] array $rows, ?ExecuteOptions $options = null): ArrayDml
     {
         return new ArrayDml(
             $this->driver->executeMany($sql, $rows, $this->resolve($options)),
@@ -178,20 +184,20 @@ final class Connection
      *
      * @template T
      *
-     * @param \Closure(self): T $callback receives this Connection
+     * @param Closure(self): T $callback receives this Connection
      *
      * @return T
      *
      * @throws UsageException inside another transaction, before any Round trip
-     * @throws \Throwable what the closure throws, or the commit's failure
+     * @throws Throwable what the closure throws, or the commit's failure
      */
-    public function transaction(\Closure $callback): mixed
+    public function transaction(Closure $callback): mixed
     {
         $this->begin();
         $this->inCallback = true;
         try {
             $result = $callback($this);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $this->inCallback = false;
             $this->rollBackAfter($e);
         }
@@ -394,7 +400,7 @@ final class Connection
         $this->outputEnabled = false;
         try {
             $this->dbmsOutput('BEGIN DBMS_OUTPUT.DISABLE; END;');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Swallowed by design (spec #32 §10): the Release must happen.
         }
     }
@@ -403,21 +409,21 @@ final class Connection
      * Rolls back after the closure of `transaction()` threw `$e`, then
      * rethrows `$e`, with a failed rollback chained as its `previous`.
      */
-    private function rollBackAfter(\Throwable $e): never
+    private function rollBackAfter(Throwable $e): never
     {
         try {
             // A closure that closed the Connection has rolled back already.
             if (!$this->state->released) {
                 $this->driver->rollback();
             }
-        } catch (\Throwable $failure) {
+        } catch (Throwable $failure) {
             $last = $e;
-            while ($last !== $failure && ($previous = $last->getPrevious()) instanceof \Throwable) {
+            while ($last !== $failure && ($previous = $last->getPrevious()) instanceof Throwable) {
                 $last = $previous;
             }
             if ($last !== $failure) {
                 // Throwable has no setter: `previous` is private to Exception and to Error.
-                new \ReflectionProperty($last instanceof \Exception ? \Exception::class : \Error::class, 'previous')
+                new ReflectionProperty($last instanceof Exception ? Exception::class : Error::class, 'previous')
                     ->setValue($last, $failure);
             }
         } finally {

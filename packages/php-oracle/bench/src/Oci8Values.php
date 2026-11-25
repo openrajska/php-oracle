@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Bench;
 
+use DateTimeImmutable;
+use DateTimeInterface;
+
 /**
  * What an application over oci8 does to get Core's values out of oci8's
  * strings, plus a canonical form to prove both sides return the same thing.
@@ -49,9 +52,9 @@ final class Oci8Values
      * A DATE or TIMESTAMP as `TemporalMode::Object` gives it: the Wall clock
      * in PHP's default time zone.
      */
-    public static function dateTime(string $text): \DateTimeImmutable
+    public static function dateTime(string $text): DateTimeImmutable
     {
-        return new \DateTimeImmutable($text);
+        return new DateTimeImmutable($text);
     }
 
     /**
@@ -69,7 +72,7 @@ final class Oci8Values
     {
         return match (true) {
             \is_array($value) => array_map(self::tag(...), $value),
-            $value instanceof \DateTimeInterface => 'date:' . $value->format('Y-m-d H:i:s.u e'),
+            $value instanceof DateTimeInterface => 'date:' . $value->format('Y-m-d H:i:s.u e'),
             \is_float($value) => 'float:' . var_export($value, true),
             \is_object($value) => 'object:' . $value::class,
             // A digest keeps a 16 MiB LOB out of the JSON; hex keeps bytes in.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Exceptions\ArrayDmlException;
@@ -18,6 +19,7 @@ use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\TestDatabase;
+use RuntimeException;
 
 /**
  * Conformance catalog, Errors (#27).
@@ -29,16 +31,16 @@ final class ErrorsTest extends ConformanceTestCase
      */
     public static function hierarchy(): iterable
     {
-        yield 'QueryException' => [QueryException::class, \RuntimeException::class];
+        yield 'QueryException' => [QueryException::class, RuntimeException::class];
         yield 'UniqueViolationException' => [UniqueViolationException::class, QueryException::class];
         yield 'ArrayDmlException' => [ArrayDmlException::class, QueryException::class];
-        yield 'ConnectionException' => [ConnectionException::class, \RuntimeException::class];
+        yield 'ConnectionException' => [ConnectionException::class, RuntimeException::class];
         yield 'PoolExhaustedException' => [PoolExhaustedException::class, ConnectionException::class];
         yield 'ConnectionLostException' => [ConnectionLostException::class, ConnectionException::class];
-        yield 'TimeoutException' => [TimeoutException::class, \RuntimeException::class];
-        yield 'UnsupportedException' => [UnsupportedException::class, \RuntimeException::class];
-        yield 'ConfigurationException' => [ConfigurationException::class, \LogicException::class];
-        yield 'UsageException' => [UsageException::class, \LogicException::class];
+        yield 'TimeoutException' => [TimeoutException::class, RuntimeException::class];
+        yield 'UnsupportedException' => [UnsupportedException::class, RuntimeException::class];
+        yield 'ConfigurationException' => [ConfigurationException::class, LogicException::class];
+        yield 'UsageException' => [UsageException::class, LogicException::class];
     }
 
     /**

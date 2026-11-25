@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Closure;
+use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -15,6 +17,8 @@ use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
+use Throwable;
+use TypeError;
 
 /**
  * Transactions (catalog #26): Autocommit outside an Explicit transaction,
@@ -184,7 +188,7 @@ final class TransactionsTest extends TestCase
      * Transactions 3 and Errors 11: misuse of the transaction verbs throws
      * UsageException before any Round trip.
      *
-     * @return iterable<string, array{0: \Closure(Connection): void, 1: string, 2?: int}>
+     * @return iterable<string, array{0: Closure(Connection): void, 1: string, 2?: int}>
      */
     public static function misuses(): iterable
     {
@@ -233,12 +237,12 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * @param \Closure(Connection): void $misuse
+     * @param Closure(Connection): void $misuse
      * @param int $trips the Round trips of the surrounding transaction()
      */
     #[Test]
     #[DataProvider('misuses')]
-    public function misusing_a_transaction_verb_throws_usage_exception_before_any_round_trip(\Closure $misuse, string $message, int $trips = 0): void
+    public function misusing_a_transaction_verb_throws_usage_exception_before_any_round_trip(Closure $misuse, string $message, int $trips = 0): void
     {
         $sid = self::sid($this->connection);
 
@@ -246,7 +250,7 @@ final class TransactionsTest extends TestCase
         $made = self::$counter->during($sid, function () use ($misuse, &$thrown): void {
             try {
                 $misuse($this->connection);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 $thrown = $e;
             }
         });
@@ -314,7 +318,7 @@ final class TransactionsTest extends TestCase
     #[Test]
     public function transaction_rolls_back_and_rethrows_the_same_instance(): void
     {
-        $thrown = new \DomainException('the closure failed');
+        $thrown = new DomainException('the closure failed');
         $caught = null;
 
         try {
@@ -323,7 +327,7 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             $caught = $e;
         }
 
@@ -347,9 +351,9 @@ final class TransactionsTest extends TestCase
             $this->connection->transaction(static function (Connection $connection): never {
                 $connection->run('insert into fx_tx_rows (id) values (1)');
 
-                throw new \TypeError('not an exception');
+                throw new TypeError('not an exception');
             });
-        } catch (\TypeError $e) {
+        } catch (TypeError $e) {
             $caught = $e->getMessage();
         }
 
@@ -366,7 +370,7 @@ final class TransactionsTest extends TestCase
     public function a_failed_rollback_becomes_previous_of_the_rethrown_exception(): void
     {
         $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(standalone: true));
-        $thrown = new \DomainException('the closure failed');
+        $thrown = new DomainException('the closure failed');
         $caught = null;
 
         try {
@@ -380,7 +384,7 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             $caught = $e;
         } finally {
             $connection->close();
@@ -399,7 +403,7 @@ final class TransactionsTest extends TestCase
     #[Test]
     public function a_closure_that_closes_the_connection_rethrows_with_nothing_chained(): void
     {
-        $thrown = new \DomainException('the closure failed');
+        $thrown = new DomainException('the closure failed');
         $caught = null;
 
         try {
@@ -409,7 +413,7 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             $caught = $e;
         }
 

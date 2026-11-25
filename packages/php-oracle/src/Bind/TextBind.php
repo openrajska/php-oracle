@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Type;
+use SensitiveParameter;
+use Stringable;
 
 /**
  * The factories of the text binds. A `Stringable` is read once, here.
@@ -15,7 +17,7 @@ trait TextBind
 {
     abstract private static function type(): Type;
 
-    public static function in(#[\SensitiveParameter] string|\Stringable|null $value): self
+    public static function in(#[SensitiveParameter] string|Stringable|null $value): self
     {
         return new self(self::type(), Direction::In, self::text($value));
     }
@@ -31,13 +33,13 @@ trait TextBind
     /**
      * Declares the largest buffer: 32767 bytes in PL/SQL.
      */
-    public static function inOut(#[\SensitiveParameter] string|\Stringable|null $value): self
+    public static function inOut(#[SensitiveParameter] string|Stringable|null $value): self
     {
         return new self(self::type(), Direction::InOut, self::text($value));
     }
 
-    private static function text(#[\SensitiveParameter] string|\Stringable|null $value): ?string
+    private static function text(#[SensitiveParameter] string|Stringable|null $value): ?string
     {
-        return $value instanceof \Stringable ? (string) $value : $value;
+        return $value instanceof Stringable ? (string) $value : $value;
     }
 }

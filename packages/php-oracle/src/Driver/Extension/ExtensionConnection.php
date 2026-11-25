@@ -11,6 +11,7 @@ use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Extension\Connection as NativeConnection;
 use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Tracing;
+use SensitiveParameter;
 
 /**
  * @internal
@@ -30,7 +31,7 @@ final class ExtensionConnection implements DriverConnection
 
     public function __construct(private readonly NativeConnection $native) {}
 
-    public function execute(string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
+    public function execute(string $sql, #[SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
     {
         try {
             $result = $this->native->execute($sql, $binds, $this->options($options));
@@ -47,7 +48,7 @@ final class ExtensionConnection implements DriverConnection
         );
     }
 
-    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml
+    public function executeMany(string $sql, #[SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml
     {
         try {
             $result = $this->native->executeMany($sql, $rows, $this->options($options));

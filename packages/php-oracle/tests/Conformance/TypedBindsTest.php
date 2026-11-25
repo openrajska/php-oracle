@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Closure;
+use DateInterval;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\BinaryDouble;
@@ -107,21 +111,21 @@ final class TypedBindsTest extends ConformanceTestCase
      */
     public static function temporalClasses(): iterable
     {
-        $date = new \DateTimeImmutable('2026-03-01 10:00:00.123456', new \DateTimeZone('Asia/Kathmandu'));
+        $date = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Kathmandu'));
         $zone = 'America/Sao_Paulo';
         yield 'Date' => ['date', Date::in($date), "+2026-03-01 10:00:00.000000 $zone", Date::out(), Date::inOut($date), 'io + 1', "+2026-03-02 10:00:00.000000 $zone"];
         yield 'Timestamp' => ['timestamp', Timestamp::in($date), "+2026-03-01 10:00:00.123456 $zone", Timestamp::out(), Timestamp::inOut($date), "io + interval '0.5' second", "+2026-03-01 10:00:00.623456 $zone"];
         yield 'TimestampTz' => ['timestamp with time zone', TimestampTz::in($date), '+2026-03-01 10:00:00.123456 +05:45', TimestampTz::out(), TimestampTz::inOut($date), "io + interval '1' hour", '+2026-03-01 11:00:00.123456 +05:45'];
         // 10:00 at +05:45 is 04:15 UTC, 01:15 in São Paulo.
         yield 'TimestampLtz' => ['timestamp with local time zone', TimestampLtz::in($date), "+2026-03-01 01:15:00.123456 $zone", TimestampLtz::out(), TimestampLtz::inOut($date), "io + interval '1' hour", "+2026-03-01 02:15:00.123456 $zone"];
-        $ds = new \DateInterval('P3DT4H5M6S');
+        $ds = new DateInterval('P3DT4H5M6S');
         $ds->f = 0.789;
         yield 'IntervalDs' => ['interval day to second', IntervalDs::in($ds), '+0Y0M3DT4H5M6S.789000', IntervalDs::out(), IntervalDs::inOut($ds), 'io * 2', '+0Y0M6DT8H10M13S.578000'];
-        $negative = new \DateInterval('PT36H');
+        $negative = new DateInterval('PT36H');
         $negative->invert = 1;
         yield 'IntervalDs negative' => ['interval day to second', IntervalDs::in($negative), '-0Y0M1DT12H0M0S.000000', IntervalDs::out(), IntervalDs::inOut($negative), 'io * -1', '+0Y0M1DT12H0M0S.000000'];
-        yield 'IntervalYm' => ['interval year to month', IntervalYm::in(new \DateInterval('P2Y5M')), '+2Y5M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut(new \DateInterval('P1Y11M')), 'io * 2', '+3Y10M0DT0H0M0S.000000'];
-        $months = new \DateInterval('P14M');
+        yield 'IntervalYm' => ['interval year to month', IntervalYm::in(new DateInterval('P2Y5M')), '+2Y5M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut(new DateInterval('P1Y11M')), 'io * 2', '+3Y10M0DT0H0M0S.000000'];
+        $months = new DateInterval('P14M');
         $months->invert = 1;
         yield 'IntervalYm negative' => ['interval year to month', IntervalYm::in($months), '-1Y2M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut($months), 'io', '-1Y2M0DT0H0M0S.000000'];
     }
@@ -174,7 +178,7 @@ final class TypedBindsTest extends ConformanceTestCase
     {
         Temporals::inZone('America/Sao_Paulo', function (): void {
             $connection = $this->connect();
-            $tokyo = new \DateTimeImmutable('2026-03-01 10:00:00.123456', new \DateTimeZone('Asia/Tokyo'));
+            $tokyo = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Tokyo'));
 
             $execution = $connection->execute(
                 "declare
@@ -211,26 +215,26 @@ final class TypedBindsTest extends ConformanceTestCase
      * Binds 11: `IntervalDs` rejects years and months, `IntervalYm` days and
      * smaller units, when the bind is built: before any Round trip.
      *
-     * @return iterable<string, array{\Closure(): Bind, non-empty-string}>
+     * @return iterable<string, array{Closure(): Bind, non-empty-string}>
      */
     public static function incompatibleIntervals(): iterable
     {
-        yield 'IntervalDs with years' => [static fn(): IntervalDs => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalDs with months' => [static fn(): IntervalDs => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalYm with days' => [static fn(): IntervalYm => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
-        yield 'IntervalYm with seconds' => [static fn(): IntervalYm => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
-        $fraction = new \DateInterval('P1Y');
+        yield 'IntervalDs with years' => [static fn(): IntervalDs => IntervalDs::in(new DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalDs with months' => [static fn(): IntervalDs => IntervalDs::inOut(new DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalYm with days' => [static fn(): IntervalYm => IntervalYm::in(new DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with seconds' => [static fn(): IntervalYm => IntervalYm::inOut(new DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
+        $fraction = new DateInterval('P1Y');
         $fraction->f = 0.5;
         yield 'IntervalYm with a fraction' => [static fn(): IntervalYm => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
     }
 
     /**
-     * @param \Closure(): Bind $bind
+     * @param Closure(): Bind $bind
      * @param non-empty-string $message
      */
     #[Test]
     #[DataProvider('incompatibleIntervals')]
-    public function an_incompatible_date_interval_fails_when_the_bind_is_built(\Closure $bind, string $message): void
+    public function an_incompatible_date_interval_fails_when_the_bind_is_built(Closure $bind, string $message): void
     {
         try {
             $bind();
@@ -624,8 +628,8 @@ final class TypedBindsTest extends ConformanceTestCase
                             'lob' => Clob::out(),
                             // These travel as TIMESTAMP and TSTZ, and come back
                             // as the type declared.
-                            'd_io' => Date::inOut(new \DateTimeImmutable('2026-03-01 10:00:00.5')),
-                            'ltz_io' => TimestampLtz::inOut(new \DateTimeImmutable('2026-03-01 13:00:00', new \DateTimeZone('UTC'))),
+                            'd_io' => Date::inOut(new DateTimeImmutable('2026-03-01 10:00:00.5')),
+                            'ltz_io' => TimestampLtz::inOut(new DateTimeImmutable('2026-03-01 13:00:00', new DateTimeZone('UTC'))),
                         ],
                         new DriverOptions(true, null, 100, $values, RowShape::Assoc, KeyCase::Native),
                     );

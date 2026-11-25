@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Closure;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Boolean;
@@ -133,7 +135,7 @@ final class OutValuesTest extends TestCase
 
         $string = $this->connection->run($sql, $binds, new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String)));
         self::assertSame('2026-03-01 00:00:00', $string->out('d')->string());
-        self::assertFails(fn(): ?\DateTimeImmutable => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
+        self::assertFails(fn(): ?DateTimeImmutable => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
     }
 
     /**
@@ -288,7 +290,7 @@ final class OutValuesTest extends TestCase
         self::assertSame('12.', Number::in('12.')->value);
     }
 
-    private static function assertFails(\Closure $call, string $message, ?string $sql = null): void
+    private static function assertFails(Closure $call, string $message, ?string $sql = null): void
     {
         try {
             $call();

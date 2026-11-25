@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
+use DateInterval;
+use DateTimeImmutable;
 use Rajska\Oracle\Exceptions\UsageException;
 
 /**
@@ -60,21 +62,21 @@ final readonly class OutValue
      * A DATE, TIMESTAMP, TSTZ or TSLTZ value. Under `TemporalMode::String`
      * it arrives as ISO text: read it with `string()`.
      */
-    public function dateTime(): ?\DateTimeImmutable
+    public function dateTime(): ?DateTimeImmutable
     {
         $value = $this->one('dateTime()');
 
-        return $value === null || $value instanceof \DateTimeImmutable ? $value : throw $this->wrongType($value, 'a DateTimeImmutable');
+        return $value === null || $value instanceof DateTimeImmutable ? $value : throw $this->wrongType($value, 'a DateTimeImmutable');
     }
 
     /**
      * An INTERVAL DAY TO SECOND or YEAR TO MONTH value.
      */
-    public function interval(): ?\DateInterval
+    public function interval(): ?DateInterval
     {
         $value = $this->one('interval()');
 
-        return $value === null || $value instanceof \DateInterval ? $value : throw $this->wrongType($value, 'a DateInterval');
+        return $value === null || $value instanceof DateInterval ? $value : throw $this->wrongType($value, 'a DateInterval');
     }
 
     /**
@@ -154,8 +156,8 @@ final readonly class OutValue
             \is_string($value) && is_numeric($value) && $expected !== 'a string' => ' A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).',
             \is_string($value) && $expected === 'a DateTimeImmutable' => ' Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().',
             \is_string($value) && $expected === 'a Lob' => ' Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().',
-            $value instanceof \DateTimeImmutable => ' Read it with dateTime().',
-            $value instanceof \DateInterval => ' Read it with interval().',
+            $value instanceof DateTimeImmutable => ' Read it with dateTime().',
+            $value instanceof DateInterval => ' Read it with interval().',
             \is_int($value) => ' Read it with int().',
             \is_float($value) => ' Read it with float().',
             \is_string($value) => ' Read it with string().',

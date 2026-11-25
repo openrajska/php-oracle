@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Driver;
 
 use Rajska\Oracle\Tracing;
+use SensitiveParameter;
 
 /**
  * One Session of a Backend. No statement handle, no `prepare`, no ordering
@@ -17,12 +18,12 @@ interface DriverConnection
     /**
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function execute(string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution;
+    public function execute(string $sql, #[SensitiveParameter] array $binds, DriverOptions $options): DriverExecution;
 
     /**
      * @param list<array<string, mixed>> $rows one array of binds per row
      */
-    public function executeMany(string $sql, #[\SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml;
+    public function executeMany(string $sql, #[SensitiveParameter] array $rows, DriverOptions $options): DriverArrayDml;
 
     public function commit(): void;
 

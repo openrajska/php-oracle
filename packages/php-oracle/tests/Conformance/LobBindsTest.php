@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Closure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Bind;
@@ -15,6 +16,7 @@ use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
+use Stringable;
 
 /**
  * Conformance catalog, Binds (#22) for the LOB classes: `Clob`, `NClob`
@@ -323,7 +325,7 @@ final class LobBindsTest extends ConformanceTestCase
      * Anything but a string, an open stream or null fails when the bind is
      * built.
      *
-     * @return iterable<string, array{\Closure(): Bind, non-empty-string}>
+     * @return iterable<string, array{Closure(): Bind, non-empty-string}>
      */
     public static function wrongValues(): iterable
     {
@@ -335,7 +337,7 @@ final class LobBindsTest extends ConformanceTestCase
 
             return Blob::in($stream);
         }, 'Blob::in() takes a string, an open stream resource or null, but was given resource (closed).'];
-        yield 'a Stringable' => [static fn(): Clob => Clob::in(new class implements \Stringable { // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'a Stringable' => [static fn(): Clob => Clob::in(new class implements Stringable { // @phpstan-ignore argument.type (the mistake is the point)
             public function __toString(): string
             {
                 return 'x';
@@ -344,12 +346,12 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * @param \Closure(): Bind $bind
+     * @param Closure(): Bind $bind
      * @param non-empty-string $message
      */
     #[Test]
     #[DataProvider('wrongValues')]
-    public function a_value_that_is_not_a_string_or_a_stream_fails_when_the_bind_is_built(\Closure $bind, string $message): void
+    public function a_value_that_is_not_a_string_or_a_stream_fails_when_the_bind_is_built(Closure $bind, string $message): void
     {
         try {
             $bind();

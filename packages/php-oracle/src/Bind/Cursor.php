@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Cursor as Rows;
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * REF CURSOR: the server opens it and sends it back, read with
@@ -24,7 +25,7 @@ final readonly class Cursor extends Bind
      * Cursor back to the server is later, so a `$cursor` fails with
      * `UnsupportedException` when the statement runs.
      */
-    public static function inOut(#[\SensitiveParameter] ?Rows $cursor = null): self
+    public static function inOut(#[SensitiveParameter] ?Rows $cursor = null): self
     {
         return new self(Type::Cursor, Direction::InOut, $cursor);
     }

@@ -12,6 +12,7 @@ use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Extension\Connection as NativeConnection;
 use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Tracing;
+use WeakMap;
 
 /**
  * The Primary Backend, `oracledb`, behind the Driver contract.
@@ -62,9 +63,9 @@ final class ExtensionDriver implements Driver
      * with the same one every time. Weak, so what they copy (the passwords)
      * goes with the config.
      *
-     * @var ?\WeakMap<ConnectionConfig, array{PoolFields, SessionFields}>
+     * @var ?WeakMap<ConnectionConfig, array{PoolFields, SessionFields}>
      */
-    private static ?\WeakMap $arrays = null;
+    private static ?WeakMap $arrays = null;
 
     public function connect(ConnectionConfig $config): DriverConnection
     {
@@ -73,7 +74,7 @@ final class ExtensionDriver implements Driver
             throw new ConfigurationException(self::$refusal);
         }
 
-        self::$arrays ??= new \WeakMap();
+        self::$arrays ??= new WeakMap();
         [$pool, $session] = self::$arrays[$config] ??= [self::pool($config), self::session($config)];
 
         try {

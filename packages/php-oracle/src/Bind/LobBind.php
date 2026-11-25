@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Bind;
 
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Type;
+use SensitiveParameter;
 
 /**
  * The factories of the LOB binds. A value goes into a temporary LOB on the
@@ -24,7 +25,7 @@ trait LobBind
      *
      * @throws UsageException if the value is not a string, an open stream or null
      */
-    public static function in(#[\SensitiveParameter] mixed $value): self
+    public static function in(#[SensitiveParameter] mixed $value): self
     {
         return new self(self::type(), Direction::In, self::checked($value));
     }
@@ -45,7 +46,7 @@ trait LobBind
      *
      * @throws UsageException if the value is not a string, an open stream or null
      */
-    public static function inOut(#[\SensitiveParameter] mixed $value): self
+    public static function inOut(#[SensitiveParameter] mixed $value): self
     {
         return new self(self::type(), Direction::InOut, self::checked($value));
     }
@@ -53,7 +54,7 @@ trait LobBind
     /**
      * @return string|resource|null
      */
-    private static function checked(#[\SensitiveParameter] mixed $value): mixed
+    private static function checked(#[SensitiveParameter] mixed $value): mixed
     {
         if ($value === null || \is_string($value) || (\is_resource($value) && get_resource_type($value) === 'stream')) {
             return $value;
