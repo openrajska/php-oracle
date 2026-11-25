@@ -49,7 +49,7 @@ final class RefCursorsTest extends ConformanceTestCase
                 ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5'],
                 ['ID' => 3, 'NAME' => 'Item 0003', 'PRICE' => '3.75'],
             ],
-            self::drain(self::cursor($execution, 'o')),
+            $this->drain($this->cursor($execution, 'o')),
         );
     }
 
@@ -70,15 +70,15 @@ final class RefCursorsTest extends ConformanceTestCase
 
             self::assertSame(
                 ['+2026-01-01 00:00:00.000000 UTC', '+2026-01-01 01:00:00.000000 UTC'],
-                array_map(Temporals::shown(...), array_column(self::drain(self::cursor($items, 'o')), 'CREATED_AT')),
+                array_map(Temporals::shown(...), array_column($this->drain($this->cursor($items, 'o')), 'CREATED_AT')),
             );
             self::assertSame(
                 ['2026-01-01 00:00:00', '2026-01-01 01:00:00'],
-                array_column(self::drain(self::cursor($typed, 'o')), 'CREATED_AT'),
+                array_column($this->drain($this->cursor($typed, 'o')), 'CREATED_AT'),
             );
             self::assertSame(
                 [['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25', 'CREATED_AT' => '+2026-01-01 00:00:00.000000 UTC']],
-                array_map(static fn(array $row): array => array_map(Temporals::shown(...), $row), self::drain(self::cursor($two, 'items'))),
+                array_map(static fn(array $row): array => array_map(Temporals::shown(...), $row), $this->drain($this->cursor($two, 'items'))),
             );
         });
     }
@@ -93,7 +93,7 @@ final class RefCursorsTest extends ConformanceTestCase
             self::options(),
         );
 
-        self::assertSame([['NAME' => 'Plain'], ['NAME' => 'Ação']], self::drain(self::cursor($execution, 'io')));
+        self::assertSame([['NAME' => 'Plain'], ['NAME' => 'Ação']], $this->drain($this->cursor($execution, 'io')));
     }
 
     #[Test]
@@ -105,7 +105,7 @@ final class RefCursorsTest extends ConformanceTestCase
             self::options(rowShape: RowShape::List),
         );
 
-        $cursor = self::cursor($execution, 'o');
+        $cursor = $this->cursor($execution, 'o');
         self::assertSame(['ID', 'NAME', 'ITEMS'], array_column($cursor->columns(), 'name'));
         self::assertSame(['number', 'varchar', 'cursor'], array_column($cursor->columns(), 'type'));
     }
@@ -115,7 +115,7 @@ final class RefCursorsTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         $execution = $connection->execute('declare c sys_refcursor; begin :o := c; end;', ['o' => Cursor::out()], self::options());
-        $cursor = self::cursor($execution, 'o');
+        $cursor = $this->cursor($execution, 'o');
 
         try {
             $cursor->fetchBatch();
@@ -135,7 +135,7 @@ final class RefCursorsTest extends ConformanceTestCase
             ['o' => Cursor::out()],
             self::options(),
         );
-        $cursor = self::cursor($execution, 'o');
+        $cursor = $this->cursor($execution, 'o');
 
         self::assertSame(
             [
@@ -152,7 +152,7 @@ final class RefCursorsTest extends ConformanceTestCase
     {
         $parent = $this->connect()->execute(self::NESTED, [], self::options(fetchSize: 2))->cursor();
         self::assertNotNull($parent);
-        $rows = self::drain($parent);
+        $rows = $this->drain($parent);
 
         self::assertSame([1, 2, 3, 4, 5], array_column($rows, 'ID'));
         $items = [];
@@ -160,7 +160,7 @@ final class RefCursorsTest extends ConformanceTestCase
             $name = $row['NAME'];
             self::assertIsString($name);
             self::assertInstanceOf(DriverCursor::class, $row['ITEMS']);
-            $items[$name] = array_column(self::drain($row['ITEMS']), 'ID');
+            $items[$name] = array_column($this->drain($row['ITEMS']), 'ID');
         }
         self::assertSame(
             ['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]],
@@ -213,7 +213,7 @@ final class RefCursorsTest extends ConformanceTestCase
 
         $child = $children[3];
         self::assertInstanceOf(DriverCursor::class, $child);
-        self::assertSame([3, 8, 13, 18], array_column(self::drain($child), 'ID'));
+        self::assertSame([3, 8, 13, 18], array_column($this->drain($child), 'ID'));
     }
 
     #[Test]
@@ -226,7 +226,7 @@ final class RefCursorsTest extends ConformanceTestCase
             keyCase: KeyCase::Lower,
         );
         $execution = $this->connect()->execute('begin :o := fx_cursor.categories_with_items; end;', ['o' => Cursor::out()], $options);
-        $categories = self::cursor($execution, 'o');
+        $categories = $this->cursor($execution, 'o');
 
         self::assertSame(['id', 'name', 'items'], array_column($categories->columns(), 'name'));
         $batch = $categories->fetchBatch();
@@ -251,7 +251,7 @@ final class RefCursorsTest extends ConformanceTestCase
             ['o' => Cursor::out()],
             self::options(fetchSize: 10),
         );
-        $cursor = self::cursor($execution, 'o');
+        $cursor = $this->cursor($execution, 'o');
         $counter = RoundTripCounter::open();
 
         try {
@@ -276,7 +276,7 @@ final class RefCursorsTest extends ConformanceTestCase
         $connection = $this->connect(...$fields);
         $session = self::session($connection);
         $execution = $connection->execute('begin :o := fx_cursor.categories_with_items; end;', ['o' => Cursor::out()], self::options());
-        $categories = self::cursor($execution, 'o');
+        $categories = $this->cursor($execution, 'o');
         $items = $categories->fetchBatch()[0]['ITEMS'];
         self::assertInstanceOf(DriverCursor::class, $items);
 
@@ -297,7 +297,7 @@ final class RefCursorsTest extends ConformanceTestCase
         $next = $this->connect(...$fields);
         self::assertSame($session, self::session($next));
         $execution = $next->execute('begin :o := fx_cursor.categories_with_items; end;', ['o' => Cursor::out()], self::options());
-        self::assertSame([1, 2, 3, 4, 5], array_column(self::drain(self::cursor($execution, 'o')), 'ID'));
+        self::assertSame([1, 2, 3, 4, 5], array_column($this->drain($this->cursor($execution, 'o')), 'ID'));
     }
 
     /** `open_cursors` is 300. */
@@ -318,13 +318,13 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertNotNull($parent);
         $items = $parent->fetchBatch()[4]['ITEMS'];
         self::assertInstanceOf(DriverCursor::class, $items);
-        self::assertSame([5, 10, 15, 20], array_column(self::drain($items), 'ID'));
+        self::assertSame([5, 10, 15, 20], array_column($this->drain($items), 'ID'));
     }
 
     /**
      * The one REF CURSOR in an OUT value list.
      */
-    private static function cursor(DriverExecution $execution, string $name): DriverCursor
+    private function cursor(DriverExecution $execution, string $name): DriverCursor
     {
         $values = $execution->outValues()[$name] ?? null;
         self::assertIsArray($values);
@@ -337,7 +337,7 @@ final class RefCursorsTest extends ConformanceTestCase
     /**
      * @return list<array<int|string, mixed>>
      */
-    private static function drain(DriverCursor $cursor): array
+    private function drain(DriverCursor $cursor): array
     {
         $rows = [];
         while (($batch = $cursor->fetchBatch()) !== []) {

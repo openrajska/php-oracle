@@ -72,12 +72,12 @@ final class ArrayDml implements Countable
             ),
             $this->driver->outValues(),
         );
-        $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));
+        $key = \array_key_exists($name, $values) ? $name : $this->find($name, array_keys($values));
         if ($key !== null) {
             return array_map(fn(array $row): OutValue => new OutValue($key, $row, $this->sql), $values[$key]);
         }
 
-        $in = self::find($name, $this->bindNames);
+        $in = $this->find($name, $this->bindNames);
         if ($in !== null) {
             throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql);
         }
@@ -92,7 +92,7 @@ final class ArrayDml implements Countable
      *
      * @param list<int|string> $names
      */
-    private static function find(string $name, array $names): ?string
+    private function find(string $name, array $names): ?string
     {
         foreach ($names as $candidate) {
             if (strcasecmp((string) $candidate, $name) === 0) {

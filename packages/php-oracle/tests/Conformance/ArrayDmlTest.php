@@ -56,13 +56,13 @@ final class ArrayDmlTest extends ConformanceTestCase
 
     protected function setUp(): void
     {
-        self::clear();
+        $this->clear();
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
-        self::clear();
+        $this->clear();
     }
 
     #[Test]
@@ -81,7 +81,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertInstanceOf(DriverArrayDml::class, $arrayDml);
         self::assertSame(1000, $arrayDml->rowCount());
         self::assertSame([], $arrayDml->outValues());
-        self::assertSame(1000, self::committed());
+        self::assertSame(1000, $this->committed());
     }
 
     #[Test]
@@ -107,13 +107,13 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows()));
+        $e = $this->failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows()));
 
-        self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
+        self::assertSame([[3, 1], [5, 1400], [7, 2290]], $this->failures($e));
         self::assertSame(1, $e->getCode());
         self::assertStringStartsWith('3 of 10 rows failed; first: row 3: ORA-00001: ', $e->getMessage());
         self::assertSame(self::INSERT, $e->sql());
-        self::assertSame(0, self::committed());
+        self::assertSame(0, $this->committed());
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
     }
 
@@ -123,15 +123,15 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $connection->execute('insert into fx_tx_rows (id) values (1)', [], self::options(autocommit: false));
 
-        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
+        $e = $this->failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
 
-        self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
+        self::assertSame([[3, 1], [5, 1400], [7, 2290]], $this->failures($e));
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
         self::assertSame(1, self::value($connection, 'select count(*) from fx_tx_rows'));
         self::assertSame('0', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
         $connection->commit();
         self::assertSame('1', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
-        self::assertSame(0, self::committed());
+        self::assertSame(0, $this->committed());
     }
 
     #[Test]
@@ -142,11 +142,11 @@ final class ArrayDmlTest extends ConformanceTestCase
         $rows[1]['id'] = 1;
         $rows[3]['code'] = 'c1';
 
-        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, $rows));
+        $e = $this->failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, $rows));
 
         self::assertSame(ArrayDmlException::class, $e::class);
-        self::assertSame([[1, 1], [3, 1]], self::failures($e));
-        self::assertSame(0, self::committed());
+        self::assertSame([[1, 1], [3, 1]], $this->failures($e));
+        self::assertSame(0, $this->committed());
     }
 
     #[Test]
@@ -191,8 +191,8 @@ final class ArrayDmlTest extends ConformanceTestCase
             ['id' => 2, 't' => Clob::out(), 'b' => Blob::out()],
         ], autocommit: false);
         self::assertSame(3, $lobs->rowCount());
-        self::assertSame([["Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}"], [null], [], ['']], self::contents($lobs->outValues()['t']));
-        self::assertSame([["\xDE\xAD\xBE\xEF"], [null], [], ['']], self::contents($lobs->outValues()['b']));
+        self::assertSame([["Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}"], [null], [], ['']], $this->contents($lobs->outValues()['t']));
+        self::assertSame([["\xDE\xAD\xBE\xEF"], [null], [], ['']], $this->contents($lobs->outValues()['b']));
         $connection->rollback();
 
         $shapes = self::many($connection, 'update fx_shapes set id = id where id = :id returning center, tags into :center, :tags', [
@@ -338,7 +338,7 @@ final class ArrayDmlTest extends ConformanceTestCase
 
         self::assertSame(1, $dml);
         self::assertSame(2, $plsql);
-        self::assertSame(100, self::committed());
+        self::assertSame(100, $this->committed());
         self::assertSame('200', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
@@ -438,7 +438,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         }
 
         self::assertSame(1, self::value($connection, 'select count(*) from fx_batch_rows'), 'the earlier work');
-        self::assertSame(0, self::committed());
+        self::assertSame(0, $this->committed());
         self::assertSame('0', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
@@ -460,7 +460,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         }
 
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
-        self::assertSame(0, self::committed());
+        self::assertSame(0, $this->committed());
     }
 
     #[Test]
@@ -473,7 +473,7 @@ final class ArrayDmlTest extends ConformanceTestCase
 
         self::assertSame(2, $trips);
         self::assertSame(100, self::value($connection, 'select count(*) from fx_batch_rows'));
-        self::assertSame(0, self::committed());
+        self::assertSame(0, $this->committed());
     }
 
     #[Test]
@@ -513,7 +513,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     /**
      * @param Closure(): mixed $call
      */
-    private static function failing(Closure $call): ArrayDmlException
+    private function failing(Closure $call): ArrayDmlException
     {
         try {
             $call();
@@ -526,7 +526,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     /**
      * @return list<array{int, int}>
      */
-    private static function failures(ArrayDmlException $e): array
+    private function failures(ArrayDmlException $e): array
     {
         return array_map(static function (RowFailure $row): array {
             self::assertStringStartsWith(\sprintf('ORA-%05d: ', $row->code), $row->message);
@@ -546,12 +546,12 @@ final class ArrayDmlTest extends ConformanceTestCase
     /**
      * How many fx_batch_rows rows another Session sees: committed ones only.
      */
-    private static function committed(): int
+    private function committed(): int
     {
         return (int) self::$observer->select('select count(*) as n from fx_batch_rows')[0]['N'];
     }
 
-    private static function clear(): void
+    private function clear(): void
     {
         self::$observer->execute('delete from fx_batch_rows');
         self::$observer->execute('delete from fx_tx_rows');
@@ -563,7 +563,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      *
      * @return list<list<string|null>>
      */
-    private static function contents(array $lists): array
+    private function contents(array $lists): array
     {
         return array_map(static fn(array $list): array => array_map(static function (mixed $lob): ?string {
             if ($lob === null) {

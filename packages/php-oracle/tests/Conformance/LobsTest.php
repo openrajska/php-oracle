@@ -117,7 +117,7 @@ final class LobsTest extends ConformanceTestCase
         $counter = RoundTripCounter::open();
 
         try {
-            foreach ([[$text, self::largeText()], [$binary, self::largeBinary()]] as [$lob, $expected]) {
+            foreach ([[$text, $this->largeText()], [$binary, $this->largeBinary()]] as [$lob, $expected]) {
                 $contents = '';
                 $chunks = 0;
                 do {
@@ -236,7 +236,7 @@ final class LobsTest extends ConformanceTestCase
 
         $next = $this->connect(...$fields);
         self::assertSame($session, self::session($next), 'The same Session');
-        self::assertUseAfterClose($lob);
+        $this->assertUseAfterClose($lob);
         $lob->close();
 
         [$row] = self::rows($next, 'select text_value from fx_lobs where id = 1');
@@ -256,7 +256,7 @@ final class LobsTest extends ConformanceTestCase
 
         // The Pool's only Session is free again.
         $this->connect(...$fields)->close();
-        self::assertUseAfterClose($lob);
+        $this->assertUseAfterClose($lob);
     }
 
     #[Test]
@@ -307,8 +307,8 @@ final class LobsTest extends ConformanceTestCase
         [$row] = self::rows($connection, 'select text_value, binary_value from fx_lobs where id = 4', [], $inline);
         self::assertIsString($row['TEXT_VALUE']);
         self::assertIsString($row['BINARY_VALUE']);
-        self::assertSame(md5(self::largeText()), md5($row['TEXT_VALUE']));
-        self::assertSame(md5(self::largeBinary()), md5($row['BINARY_VALUE']));
+        self::assertSame(md5($this->largeText()), md5($row['TEXT_VALUE']));
+        self::assertSame(md5($this->largeBinary()), md5($row['BINARY_VALUE']));
     }
 
     /**
@@ -368,7 +368,7 @@ final class LobsTest extends ConformanceTestCase
                 } elseif ($case === 'one LOB of 16 MiB') {
                     $value = $inline[0]['TEXT_VALUE'];
                     self::assertIsString($value);
-                    self::assertSame(md5(self::largeText()), md5($value));
+                    self::assertSame(md5($this->largeText()), md5($value));
                 }
             }
         } finally {
@@ -463,16 +463,16 @@ final class LobsTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         $options = self::options(values: new ValueMapping(lobs: $mode));
-        $query = self::comparable(self::rows($connection, self::ALL_LOBS, [], $options));
+        $query = $this->comparable(self::rows($connection, self::ALL_LOBS, [], $options));
         [$cursor] = self::cursorOf($kind, $connection, self::ALL_LOBS, $options);
 
         self::assertSame(['number', 'clob', 'nClob', 'blob'], array_column($cursor->columns(), 'type'));
-        self::assertSame($query, self::comparable(self::drain($cursor)));
+        self::assertSame($query, $this->comparable(self::drain($cursor)));
         self::assertSame([
             ['ID' => 1, 'TEXT_VALUE' => self::SMALL, 'NATIONAL_VALUE' => self::SMALL, 'BINARY_VALUE' => "\xde\xad\xbe\xef"],
             ['ID' => 2, 'TEXT_VALUE' => '', 'NATIONAL_VALUE' => '', 'BINARY_VALUE' => ''],
             ['ID' => 3, 'TEXT_VALUE' => null, 'NATIONAL_VALUE' => null, 'BINARY_VALUE' => null],
-            ['ID' => 4, 'TEXT_VALUE' => md5(self::largeText()), 'NATIONAL_VALUE' => md5(self::largeText()), 'BINARY_VALUE' => md5(self::largeBinary())],
+            ['ID' => 4, 'TEXT_VALUE' => md5($this->largeText()), 'NATIONAL_VALUE' => md5($this->largeText()), 'BINARY_VALUE' => md5($this->largeBinary())],
         ], $query);
     }
 
@@ -579,7 +579,7 @@ final class LobsTest extends ConformanceTestCase
      *
      * @return list<array<int|string, mixed>>
      */
-    private static function comparable(array $rows): array
+    private function comparable(array $rows): array
     {
         return array_map(static fn(array $row): array => array_map(static function (mixed $value): mixed {
             $value = $value instanceof DriverLob ? self::read($value) : $value;
@@ -606,7 +606,7 @@ final class LobsTest extends ConformanceTestCase
         return $value;
     }
 
-    private static function assertUseAfterClose(DriverLob $lob): void
+    private function assertUseAfterClose(DriverLob $lob): void
     {
         foreach (['type()' => $lob->type(...), 'size()' => $lob->size(...), 'readChunk()' => $lob->readChunk(...)] as $call => $read) {
             try {
@@ -635,7 +635,7 @@ final class LobsTest extends ConformanceTestCase
     /**
      * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
      */
-    private static function largeText(): string
+    private function largeText(): string
     {
         $tail = " a\u{e7}\u{e3}o caf\u{e9} \u{65e5}\u{672c} " . str_repeat('x', 41) . "\n";
         $text = '';
@@ -649,7 +649,7 @@ final class LobsTest extends ConformanceTestCase
     /**
      * fx_lobs row 4's BLOB: the byte at offset k is k mod 256.
      */
-    private static function largeBinary(): string
+    private function largeBinary(): string
     {
         return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 65_536);
     }

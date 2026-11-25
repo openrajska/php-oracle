@@ -51,7 +51,7 @@ final class ImplicitResultsTest extends TestCase
         );
 
         self::assertSame(1000, $execution->out('total')->int());
-        [$items, $categories] = self::results($execution, 2);
+        [$items, $categories] = $this->results($execution, 2);
         $itemRows = $items->getIterator();
         $read = [];
         foreach ($categories as $category) {
@@ -70,7 +70,7 @@ final class ImplicitResultsTest extends TestCase
     {
         $execution = $this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 2]);
 
-        $results = self::results($execution, 2);
+        $results = $this->results($execution, 2);
         self::assertSame($results, $execution->results());
         self::assertSame([['ID' => 1, 'NAME' => 'Plain'], ['ID' => 2, 'NAME' => 'Ação']], \array_slice($results[1]->all(), 0, 2));
         self::assertSame([['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']], $results[0]->all());
@@ -110,7 +110,7 @@ final class ImplicitResultsTest extends TestCase
             rowShape: RowShape::List,
             keyCase: KeyCase::Lower,
         );
-        [$items] = self::results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 7], $options), 2);
+        [$items] = $this->results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 7], $options), 2);
         self::assertSame(['id', 'name', 'price'], array_map(static fn(Column $column): string => $column->name, $items->columns()));
         $counter = RoundTripCounter::open();
 
@@ -136,10 +136,7 @@ final class ImplicitResultsTest extends TestCase
     #[Test]
     public function after_close_implicit_results_fail_as_use_after_close(): void
     {
-        [$items, $categories] = self::results(
-            $this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 5], new ExecuteOptions(fetchSize: 2)),
-            2,
-        );
+        [$items, $categories] = $this->results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 5], new ExecuteOptions(fetchSize: 2)), 2);
         $iterator = $items->getIterator();
         self::assertSame(1, $iterator->current()['ID']);
 
@@ -158,7 +155,7 @@ final class ImplicitResultsTest extends TestCase
     /**
      * @return list<Cursor>
      */
-    private static function results(Execution $execution, int $count): array
+    private function results(Execution $execution, int $count): array
     {
         $results = $execution->results();
         self::assertCount($count, $results);

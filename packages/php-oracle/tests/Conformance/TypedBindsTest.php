@@ -261,8 +261,8 @@ final class TypedBindsTest extends ConformanceTestCase
 
         $values = $execution->outValues();
         self::assertSame(['o', 'io'], array_keys($values));
-        self::assertSameValue($out, $values['o'][0]);
-        self::assertSameValue($changed, $values['io'][0]);
+        $this->assertSameValue($out, $values['o'][0]);
+        $this->assertSameValue($changed, $values['io'][0]);
     }
 
     #[Test]
@@ -315,7 +315,7 @@ final class TypedBindsTest extends ConformanceTestCase
     /**
      * Same value and PHP type; NaN equals NaN.
      */
-    private static function assertSameValue(mixed $expected, mixed $actual): void
+    private function assertSameValue(mixed $expected, mixed $actual): void
     {
         if (\is_float($expected) && is_nan($expected)) {
             self::assertIsFloat($actual);

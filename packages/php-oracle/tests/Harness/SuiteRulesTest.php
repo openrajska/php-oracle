@@ -57,7 +57,7 @@ final class SuiteRulesTest extends TestCase
     #[DataProvider('issues')]
     public function an_issue_fails_the_run(string $probe, string $reported): void
     {
-        [$exitCode, $output] = self::runProbe($probe);
+        [$exitCode, $output] = $this->runProbe($probe);
 
         self::assertStringContainsString($reported, $output);
         self::assertSame(1, $exitCode, $output);
@@ -66,7 +66,7 @@ final class SuiteRulesTest extends TestCase
     #[Test]
     public function a_clean_test_passes_the_run(): void
     {
-        [$exitCode, $output] = self::runProbe('emits_nothing');
+        [$exitCode, $output] = $this->runProbe('emits_nothing');
 
         self::assertStringContainsString('OK (1 test, 1 assertion)', $output);
         self::assertSame(0, $exitCode, $output);
@@ -78,7 +78,7 @@ final class SuiteRulesTest extends TestCase
      *
      * @return array{int, string}
      */
-    private static function runProbe(string $method): array
+    private function runProbe(string $method): array
     {
         $root = \dirname(__DIR__, 2);
         $command = [

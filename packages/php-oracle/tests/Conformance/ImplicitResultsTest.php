@@ -40,7 +40,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
         $execution = $this->connect()->execute(self::REPORT, ['n' => 4, 'total' => Number::out()], self::options(fetchSize: 2));
 
         self::assertSame(['total' => [1000]], $execution->outValues());
-        [$items, $categories] = self::results($execution, 2);
+        [$items, $categories] = $this->results($execution, 2);
         self::assertSame(['ID', 'NAME', 'PRICE'], array_column($items->columns(), 'name'));
         self::assertSame(['ID', 'NAME'], array_column($categories->columns(), 'name'));
 
@@ -61,10 +61,10 @@ final class ImplicitResultsTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         $execution = $connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options());
-        $categories = self::results($execution, 2)[1];
+        $categories = $this->results($execution, 2)[1];
         unset($execution);
 
-        self::assertSame([1, 2, 3, 4, 5], array_column(self::drain($categories), 'ID'));
+        self::assertSame([1, 2, 3, 4, 5], array_column($this->drain($categories), 'ID'));
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
@@ -119,7 +119,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
             keyCase: KeyCase::Lower,
         );
         $execution = $this->connect()->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 5], $options);
-        [$items, $categories] = self::results($execution, 2);
+        [$items, $categories] = $this->results($execution, 2);
 
         self::assertSame(['id', 'name', 'price'], array_column($items->columns(), 'name'));
         self::assertSame([[1, 'Item 0001', 1.25], [2, 'Item 0002', 2.5], [3, 'Item 0003', 3.75]], $items->fetchBatch());
@@ -133,7 +133,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         $sid = self::sid($connection);
-        $cursor = self::results($connection->execute(self::LEVELS, [], self::options(fetchSize: 10)), 1)[0];
+        $cursor = $this->results($connection->execute(self::LEVELS, [], self::options(fetchSize: 10)), 1)[0];
         $counter = RoundTripCounter::open();
 
         try {
@@ -157,7 +157,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
         $fields = self::ownPool() + ['maxConnections' => 1];
         $connection = $this->connect(...$fields);
         $session = self::session($connection);
-        [$items, $categories] = self::results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options(fetchSize: 2)), 2);
+        [$items, $categories] = $this->results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options(fetchSize: 2)), 2);
         self::assertCount(2, $items->fetchBatch());
 
         $connection->close();
@@ -176,8 +176,8 @@ final class ImplicitResultsTest extends ConformanceTestCase
 
         $next = $this->connect(...$fields);
         self::assertSame($session, self::session($next));
-        $results = self::results($next->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
-        self::assertSame([1, 2, 3], array_column(self::drain($results[0]), 'ID'));
+        $results = $this->results($next->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
+        self::assertSame([1, 2, 3], array_column($this->drain($results[0]), 'ID'));
     }
 
     /**
@@ -194,14 +194,14 @@ final class ImplicitResultsTest extends ConformanceTestCase
         }
         unset($execution);
 
-        $results = self::results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
-        self::assertSame([1, 2, 3, 4, 5], array_column(self::drain($results[1]), 'ID'));
+        $results = $this->results($connection->execute('begin fx_cursor.implicit_results(:n); end;', ['n' => 3], self::options()), 2);
+        self::assertSame([1, 2, 3, 4, 5], array_column($this->drain($results[1]), 'ID'));
     }
 
     /**
      * @return list<DriverCursor>
      */
-    private static function results(DriverExecution $execution, int $count): array
+    private function results(DriverExecution $execution, int $count): array
     {
         $results = $execution->implicitResults();
         self::assertCount($count, $results);
@@ -212,7 +212,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
     /**
      * @return list<array<int|string, mixed>>
      */
-    private static function drain(DriverCursor $cursor): array
+    private function drain(DriverCursor $cursor): array
     {
         $rows = [];
         while (($batch = $cursor->fetchBatch()) !== []) {

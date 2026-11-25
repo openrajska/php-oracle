@@ -140,29 +140,29 @@ final class SeamAndRowsTest extends ConformanceTestCase
         self::assertNotNull($cursor);
 
         self::assertSame([
-            self::column('ID', 'number', nullable: false, precision: 10, scale: 0),
-            self::column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
-            self::column('NAME', 'varchar', nullable: false, maxSize: 100),
-            self::column('CREATED_AT', 'date', nullable: false),
-            self::column('ROWID', 'rowid', nullable: false),
-            self::column('UNCONSTRAINED', 'number'),
-            self::column('FLOAT53', 'number', precision: 53),
-            self::column('CH', 'char', maxSize: 5),
-            self::column('NCH', 'nChar', maxSize: 5),
-            self::column('NV', 'nVarchar', maxSize: 10),
-            self::column('R', 'raw', maxSize: 16),
-            self::column('TS', 'timestamp', scale: 3),
-            self::column('TSTZ', 'timestampTz', scale: 6),
-            self::column('TSLTZ', 'timestampLtz', scale: 9),
-            self::column('IDS', 'intervalDs', precision: 3, scale: 2),
-            self::column('IYM', 'intervalYm', precision: 4),
-            self::column('BF', 'binaryFloat'),
-            self::column('BD', 'binaryDouble'),
-            self::column('B', 'boolean'),
-            self::column('UR', 'urowid'),
-            self::column('CL', 'clob'),
-            self::column('NCL', 'nClob'),
-            self::column('BL', 'blob'),
+            $this->column('ID', 'number', nullable: false, precision: 10, scale: 0),
+            $this->column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
+            $this->column('NAME', 'varchar', nullable: false, maxSize: 100),
+            $this->column('CREATED_AT', 'date', nullable: false),
+            $this->column('ROWID', 'rowid', nullable: false),
+            $this->column('UNCONSTRAINED', 'number'),
+            $this->column('FLOAT53', 'number', precision: 53),
+            $this->column('CH', 'char', maxSize: 5),
+            $this->column('NCH', 'nChar', maxSize: 5),
+            $this->column('NV', 'nVarchar', maxSize: 10),
+            $this->column('R', 'raw', maxSize: 16),
+            $this->column('TS', 'timestamp', scale: 3),
+            $this->column('TSTZ', 'timestampTz', scale: 6),
+            $this->column('TSLTZ', 'timestampLtz', scale: 9),
+            $this->column('IDS', 'intervalDs', precision: 3, scale: 2),
+            $this->column('IYM', 'intervalYm', precision: 4),
+            $this->column('BF', 'binaryFloat'),
+            $this->column('BD', 'binaryDouble'),
+            $this->column('B', 'boolean'),
+            $this->column('UR', 'urowid'),
+            $this->column('CL', 'clob'),
+            $this->column('NCL', 'nClob'),
+            $this->column('BL', 'blob'),
         ], $cursor->columns());
         self::assertSame([], $cursor->fetchBatch());
 
@@ -181,14 +181,14 @@ final class SeamAndRowsTest extends ConformanceTestCase
         self::assertNotNull($cursor);
 
         self::assertSame([
-            self::column('J', 'json'),
-            self::column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
-            self::column('FLEXIBLE', 'vector'),
-            self::column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
-            self::column('POINT', 'object', objectType: "$schema.FX_POINT"),
-            self::column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
-            self::column('NESTED', 'cursor'),
-            self::column('LOCATOR', 'bfile'),
+            $this->column('J', 'json'),
+            $this->column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
+            $this->column('FLEXIBLE', 'vector'),
+            $this->column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
+            $this->column('POINT', 'object', objectType: "$schema.FX_POINT"),
+            $this->column('NUMBERS', 'collection', objectType: "$schema.FX_NUMBER_LIST"),
+            $this->column('NESTED', 'cursor'),
+            $this->column('LOCATOR', 'bfile'),
         ], $cursor->columns());
         $cursor->close();
     }
@@ -210,7 +210,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
                     self::options(keyCase: KeyCase::Lower),
                 )->cursor();
                 self::assertNotNull($cursor);
-                self::assertSame([self::column('text', 'long'), self::column('bytes', 'longRaw')], $cursor->columns());
+                self::assertSame([$this->column('text', 'long'), $this->column('bytes', 'longRaw')], $cursor->columns());
                 $cursor->close();
             } finally {
                 $connection->execute("drop table tmp_long_raw_$suffix purge", [], self::options());
@@ -262,7 +262,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
     /**
      * @return array<string, mixed>
      */
-    private static function column(
+    private function column(
         string $name,
         string $type,
         bool $nullable = true,

@@ -69,13 +69,13 @@ final class ExtensionDriver implements Driver
 
     public function connect(ConnectionConfig $config): DriverConnection
     {
-        self::$refusal ??= self::refusal();
+        self::$refusal ??= $this->refusal();
         if (self::$refusal !== '') {
             throw new ConfigurationException(self::$refusal);
         }
 
         self::$arrays ??= new WeakMap();
-        [$pool, $session] = self::$arrays[$config] ??= [self::pool($config), self::session($config)];
+        [$pool, $session] = self::$arrays[$config] ??= [$this->pool($config), $this->session($config)];
 
         try {
             return new ExtensionConnection(NativeConnection::connect($pool, $session));
@@ -89,7 +89,7 @@ final class ExtensionDriver implements Driver
      *
      * @return PoolFields
      */
-    private static function pool(ConnectionConfig $config): array
+    private function pool(ConnectionConfig $config): array
     {
         return [
             'dsn' => $config->dsn,
@@ -113,7 +113,7 @@ final class ExtensionDriver implements Driver
      *
      * @return SessionFields
      */
-    private static function session(ConnectionConfig $config): array
+    private function session(ConnectionConfig $config): array
     {
         return [
             'tracing' => self::tracing($config->tracing),
@@ -124,7 +124,7 @@ final class ExtensionDriver implements Driver
     /**
      * Why the loaded Extension cannot be used, or '' when it can.
      */
-    private static function refusal(): string
+    private function refusal(): string
     {
         // Unqualified on purpose: the detection tests shadow it in this namespace.
         $version = phpversion('oracledb');

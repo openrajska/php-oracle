@@ -74,7 +74,7 @@ final class ScopeTest extends ConformanceTestCase
         $connection = $this->connect();
         $sid = self::sid($connection);
 
-        $roundTrips = self::counter()->during($sid, function () use ($connection, $bind, $fix): void {
+        $roundTrips = $this->counter()->during($sid, function () use ($connection, $bind, $fix): void {
             try {
                 $connection->execute('insert into fx_long_rows (id, text) values (1000, :v)', ['v' => $bind], self::options(autocommit: false));
                 self::fail('A LONG bind over 32767 bytes ran.');
@@ -113,7 +113,7 @@ final class ScopeTest extends ConformanceTestCase
                 self::assertSame([], $cursor->fetchBatch());
                 continue;
             }
-            self::assertFetchFails($cursor, $type === 'object' ? 'SYS.ANYDATA' : strtoupper($type));
+            $this->assertFetchFails($cursor, $type === 'object' ? 'SYS.ANYDATA' : strtoupper($type));
         }
 
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
@@ -131,14 +131,14 @@ final class ScopeTest extends ConformanceTestCase
         )->outValues()['c'][0];
         self::assertInstanceOf(DriverCursor::class, $out);
         self::assertSame('xmltype', $out->columns()[0]['type']);
-        self::assertFetchFails($out, 'XMLTYPE');
+        $this->assertFetchFails($out, 'XMLTYPE');
 
         $parent = $connection->execute("select cursor(select xmltype('<a>1</a>') v from dual) nested from dual", [], self::options())->cursor();
         self::assertNotNull($parent);
         $nested = $parent->fetchBatch()[0]['NESTED'];
         self::assertInstanceOf(DriverCursor::class, $nested);
         self::assertSame('xmltype', $nested->columns()[0]['type']);
-        self::assertFetchFails($nested, 'XMLTYPE');
+        $this->assertFetchFails($nested, 'XMLTYPE');
         $parent->close();
 
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
@@ -173,7 +173,7 @@ final class ScopeTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
-    private static function assertFetchFails(DriverCursor $cursor, string $type): void
+    private function assertFetchFails(DriverCursor $cursor, string $type): void
     {
         try {
             $rows = $cursor->fetchBatch();
@@ -186,7 +186,7 @@ final class ScopeTest extends ConformanceTestCase
         }
     }
 
-    private static function counter(): RoundTripCounter
+    private function counter(): RoundTripCounter
     {
         return self::$counter ??= RoundTripCounter::open();
     }

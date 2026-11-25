@@ -393,7 +393,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
     public function cores_dist_archive_has_no_stubs(): void
     {
         $package = \dirname(__DIR__, 2);
-        [$status, $paths] = self::command(['git', '-C', $package, 'rev-parse', '--show-toplevel', '--show-prefix']);
+        [$status, $paths] = $this->command(['git', '-C', $package, 'rev-parse', '--show-toplevel', '--show-prefix']);
         if ($status !== 0) {
             self::markTestSkipped("No git repository here: $paths");
         }
@@ -402,9 +402,9 @@ final class NativeSurfaceTest extends ConformanceTestCase
         self::assertIsString($archive);
 
         try {
-            [$status, $output] = self::command(['git', '-C', $root, 'archive', '--format=tar', '-o', $archive, 'HEAD:' . rtrim($prefix, '/')]);
+            [$status, $output] = $this->command(['git', '-C', $root, 'archive', '--format=tar', '-o', $archive, 'HEAD:' . rtrim($prefix, '/')]);
             self::assertSame(0, $status, $output);
-            [$status, $listing] = self::command(['tar', '-tf', $archive]);
+            [$status, $listing] = $this->command(['tar', '-tf', $archive]);
             self::assertSame(0, $status, $listing);
         } finally {
             unlink($archive);
@@ -420,7 +420,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
      *
      * @return array{int, string} the exit status and the output (stdout, then stderr)
      */
-    private static function command(array $command): array
+    private function command(array $command): array
     {
         $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
         self::assertIsResource($process);

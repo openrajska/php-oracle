@@ -22,7 +22,7 @@ final class DetectionTest extends TestCase
     #[Test]
     public function without_the_extension_connect_says_how_to_install_it_and_classes_still_load(): void
     {
-        $result = self::child(extension: false);
+        $result = $this->child(extension: false);
 
         self::assertGreaterThan(50, $result['classes'], 'every Core class loads');
         self::assertSame(0, $result['phpversionBeforeConnect'], 'no check at autoload or class load');
@@ -54,7 +54,7 @@ final class DetectionTest extends TestCase
     #[DataProvider('outsideTheRange')]
     public function an_extension_outside_the_range_is_refused_naming_both_versions_the_range_and_the_upgrade_command(string $version): void
     {
-        $result = self::child(extension: true, reported: $version);
+        $result = $this->child(extension: true, reported: $version);
 
         foreach ($result['connects'] as $connect) {
             self::assertFalse($connect['connected']);
@@ -81,7 +81,7 @@ final class DetectionTest extends TestCase
     #[DataProvider('insideTheRange')]
     public function an_extension_inside_the_range_connects(string $version): void
     {
-        $result = self::child(extension: true, reported: $version);
+        $result = $this->child(extension: true, reported: $version);
 
         foreach ($result['connects'] as $connect) {
             self::assertTrue($connect['connected'], $connect['message'] ?? '');
@@ -91,7 +91,7 @@ final class DetectionTest extends TestCase
     #[Test]
     public function the_check_runs_once_per_process_on_the_first_connect(): void
     {
-        $result = self::child(extension: true);
+        $result = $this->child(extension: true);
 
         self::assertSame(0, $result['phpversionBeforeConnect']);
         self::assertTrue($result['connects'][0]['connected'], $result['connects'][0]['message'] ?? '');
@@ -118,7 +118,7 @@ final class DetectionTest extends TestCase
      *     phpversion: list<?string>,
      * }
      */
-    private static function child(bool $extension, ?string $reported = null): array
+    private function child(bool $extension, ?string $reported = null): array
     {
         $command = [\PHP_BINARY];
         if ($extension) {

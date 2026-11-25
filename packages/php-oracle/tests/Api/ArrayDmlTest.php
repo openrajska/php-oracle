@@ -45,25 +45,25 @@ final class ArrayDmlTest extends TestCase
 
     protected function setUp(): void
     {
-        self::clear();
+        $this->clear();
         $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
     }
 
     protected function tearDown(): void
     {
         $this->connection->close();
-        self::clear();
+        $this->clear();
     }
 
     #[Test]
     public function run_many_gives_an_array_dml_and_commits_under_autocommit(): void
     {
-        $arrayDml = $this->connection->runMany(self::INSERT, self::valid(3));
+        $arrayDml = $this->connection->runMany(self::INSERT, $this->valid(3));
 
         self::assertInstanceOf(ArrayDml::class, $arrayDml);
         self::assertSame(3, $arrayDml->affected());
         self::assertCount(3, $arrayDml);
-        self::assertSame(3, self::committed());
+        self::assertSame(3, $this->committed());
 
         $updated = $this->connection->runMany('update fx_batch_rows set qty = 0 where id >= :low', [['low' => 2], ['low' => 1]]);
         self::assertSame(2, $updated->count());
@@ -73,7 +73,7 @@ final class ArrayDmlTest extends TestCase
     #[Test]
     public function out_gives_one_out_value_per_row_in_order(): void
     {
-        $this->connection->runMany(self::INSERT, self::valid(3));
+        $this->connection->runMany(self::INSERT, $this->valid(3));
 
         $returning = $this->connection->runMany('update fx_batch_rows set qty = qty + 1 where id >= :low returning id into :ids', [
             ['low' => 3, 'ids' => Number::out()],
@@ -120,7 +120,7 @@ final class ArrayDmlTest extends TestCase
     {
         $this->connection->begin();
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
-        $rows = self::valid(8);
+        $rows = $this->valid(8);
         $rows[3]['id'] = 1;
         $rows[5]['code'] = null;
         $rows[7]['qty'] = -1;
@@ -134,11 +134,11 @@ final class ArrayDmlTest extends TestCase
             self::assertStringStartsWith('3 of 8 rows failed; first: row 3: ORA-00001', $e->getMessage());
             self::assertSame([[3, 1], [5, 1400], [7, 2290]], array_map(static fn(RowFailure $row): array => [$row->index, $row->code], $e->rows()));
         }
-        $this->connection->runMany(self::INSERT, self::valid(2));
-        self::assertSame(0, self::committed());
+        $this->connection->runMany(self::INSERT, $this->valid(2));
+        self::assertSame(0, $this->committed());
         $this->connection->commit();
 
-        self::assertSame(2, self::committed());
+        self::assertSame(2, $this->committed());
         self::assertSame('1', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
@@ -180,17 +180,17 @@ final class ArrayDmlTest extends TestCase
     /**
      * @return list<array{id: int, code: string, qty: int}>
      */
-    private static function valid(int $count): array
+    private function valid(int $count): array
     {
         return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
     }
 
-    private static function committed(): int
+    private function committed(): int
     {
         return (int) self::$observer->select('select count(*) as n from fx_batch_rows')[0]['N'];
     }
 
-    private static function clear(): void
+    private function clear(): void
     {
         self::$observer->execute('delete from fx_batch_rows');
         self::$observer->execute('delete from fx_tx_rows');

@@ -110,7 +110,7 @@ final class ExtensionConnection implements DriverConnection
     private function options(DriverOptions $options): array
     {
         if ($options !== $this->lastOptions || $this->lastArray === null) {
-            $this->lastArray = self::array($options);
+            $this->lastArray = $this->array($options);
             $this->lastOptions = $options;
         }
 
@@ -120,7 +120,7 @@ final class ExtensionConnection implements DriverConnection
     /**
      * @return array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}
      */
-    private static function array(DriverOptions $options): array
+    private function array(DriverOptions $options): array
     {
         return [
             'autocommit' => $options->autocommit,

@@ -59,13 +59,13 @@ final class Execution
      */
     public function out(string $name): OutValue
     {
-        $values = $this->outValues ??= self::wrap($this->driver->outValues(), $this->connection);
-        $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));
+        $values = $this->outValues ??= $this->wrap($this->driver->outValues(), $this->connection);
+        $key = \array_key_exists($name, $values) ? $name : $this->find($name, array_keys($values));
         if ($key !== null) {
             return new OutValue($key, $values[$key], $this->sql, $this->call);
         }
 
-        $in = self::find($name, $this->bindNames);
+        $in = $this->find($name, $this->bindNames);
         if ($in !== null) {
             throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql, $this->call);
         }
@@ -123,7 +123,7 @@ final class Execution
      *
      * @return array<string, list<mixed>>
      */
-    private static function wrap(array $outValues, ConnectionState $connection): array
+    private function wrap(array $outValues, ConnectionState $connection): array
     {
         foreach ($outValues as $name => $values) {
             foreach ($values as $value) {
@@ -143,7 +143,7 @@ final class Execution
      *
      * @param list<int|string> $names
      */
-    private static function find(string $name, array $names): ?string
+    private function find(string $name, array $names): ?string
     {
         foreach ($names as $candidate) {
             if (strcasecmp((string) $candidate, $name) === 0) {

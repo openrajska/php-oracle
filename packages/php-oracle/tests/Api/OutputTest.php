@@ -49,7 +49,7 @@ final class OutputTest extends TestCase
 
         try {
             $lines = [];
-            self::assertSame(3, $counter->during(self::sid($connection), static function () use ($connection, &$lines): void {
+            self::assertSame(3, $counter->during($this->sid($connection), static function () use ($connection, &$lines): void {
                 $lines = $connection->output();
             }));
         } finally {
@@ -144,8 +144,8 @@ final class OutputTest extends TestCase
     #[DataProvider('releasesAndNextUsers')]
     public function unread_output_enabled_through_the_api_is_purged_on_release(bool $close, bool $enable): void
     {
-        $first = self::fresh();
-        $session = self::session($first);
+        $first = $this->fresh();
+        $session = $this->session($first);
         $first->enableOutput();
         $first->run("begin dbms_output.put_line('secret of A'); end;");
         if ($close) {
@@ -154,7 +154,7 @@ final class OutputTest extends TestCase
         unset($first);
 
         $second = $this->next();
-        self::assertSame($session, self::session($second), 'B has A\'s Session.');
+        self::assertSame($session, $this->session($second), 'B has A\'s Session.');
         if ($enable) {
             $second->enableOutput();
         }
@@ -170,8 +170,8 @@ final class OutputTest extends TestCase
     #[Test]
     public function output_is_purged_when_a_connection_is_dropped_before_its_cursor(): void
     {
-        $first = self::fresh();
-        $session = self::session($first);
+        $first = $this->fresh();
+        $session = $this->session($first);
         $first->enableOutput();
         $first->run("begin dbms_output.put_line('secret of A'); end;");
         $cursor = $first->select('select level n from dual connect by level <= 3', [], new ExecuteOptions(fetchSize: 1));
@@ -186,7 +186,7 @@ final class OutputTest extends TestCase
         unset($cursor);
 
         $second = $this->next();
-        self::assertSame($session, self::session($second), 'B has A\'s Session.');
+        self::assertSame($session, $this->session($second), 'B has A\'s Session.');
         self::assertSame([], $second->output());
     }
 
@@ -198,7 +198,7 @@ final class OutputTest extends TestCase
     #[Test]
     public function output_enabled_through_raw_sql_stays_with_the_session(): void
     {
-        $first = self::fresh();
+        $first = $this->fresh();
         $first->run("begin dbms_output.enable(null); dbms_output.put_line('left by A'); end;");
         $first->close();
 
@@ -218,7 +218,7 @@ final class OutputTest extends TestCase
         try {
             $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(standalone: true));
             $connection->enableOutput();
-            $sid = self::sid($connection);
+            $sid = $this->sid($connection);
             $serial = $observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
             $observer->execute("alter system kill session '$sid,$serial' immediate");
 
@@ -259,7 +259,7 @@ final class OutputTest extends TestCase
         try {
             $observer->execute("insert into fx_tx_rows (id, note) values (1, 'committed')");
             $note = static fn(): ?string => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
-            $connection = self::fresh();
+            $connection = $this->fresh();
             $connection->begin();
             $connection->run("update fx_tx_rows set note = 'uncommitted' where id = 1");
             $connection->enableOutput();
@@ -314,7 +314,7 @@ final class OutputTest extends TestCase
      * the file: a Pool keeps its Session for the whole process. tearDown()
      * does not close it.
      */
-    private static function pooled(): Connection
+    private function pooled(): Connection
     {
         return Oracle::connect(TestDatabase::fromEnvironment()->config(maxConnections: 1, connectTimeout: 30.062));
     }
@@ -323,9 +323,9 @@ final class OutputTest extends TestCase
      * A pooled Connection whose Session has DBMS_OUTPUT off and empty,
      * whatever an earlier test left in it. tearDown() does not close it.
      */
-    private static function fresh(): Connection
+    private function fresh(): Connection
     {
-        $connection = self::pooled();
+        $connection = $this->pooled();
         $connection->run('begin dbms_output.disable; end;');
 
         return $connection;
@@ -337,7 +337,7 @@ final class OutputTest extends TestCase
      */
     private function next(): Connection
     {
-        $connection = self::pooled();
+        $connection = $this->pooled();
         $this->connections[] = $connection;
 
         return $connection;
@@ -346,7 +346,7 @@ final class OutputTest extends TestCase
     /**
      * Which Session is behind a Connection: its AUDSID, unique per logon.
      */
-    private static function session(Connection $connection): string
+    private function session(Connection $connection): string
     {
         $session = $connection->select("select sys_context('userenv', 'sessionid') from dual")->value();
         self::assertIsString($session);
@@ -356,13 +356,13 @@ final class OutputTest extends TestCase
 
     private function connect(): Connection
     {
-        $connection = self::fresh();
+        $connection = $this->fresh();
         $this->connections[] = $connection;
 
         return $connection;
     }
 
-    private static function sid(Connection $connection): int
+    private function sid(Connection $connection): int
     {
         $sid = $connection->select("select sys_context('userenv', 'sid') from dual")->value();
         self::assertIsString($sid);

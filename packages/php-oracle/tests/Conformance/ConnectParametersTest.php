@@ -190,7 +190,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             connectTimeout: self::ownPool()['connectTimeout'],
         );
 
-        self::assertSame('tcps', self::protocol($connection));
+        self::assertSame('tcps', $this->protocol($connection));
     }
 
     /**
@@ -219,7 +219,7 @@ final class ConnectParametersTest extends ConformanceTestCase
             connectTimeout: self::ownPool()['connectTimeout'],
         );
 
-        self::assertSame('tcps', self::protocol($connection));
+        self::assertSame('tcps', $this->protocol($connection));
     }
 
     /**
@@ -345,12 +345,12 @@ final class ConnectParametersTest extends ConformanceTestCase
     public function two_processes_without_a_class_share_one_drcp_connection_class(): void
     {
         $user = strtoupper(TestDatabase::fromEnvironment()->user);
-        $before = self::drcpClasses($user);
+        $before = $this->drcpClasses($user);
 
         $classes = [];
         for ($process = 0; $process < 2; $process++) {
-            self::runChild(TestDatabase::fromEnvironment()->connectString . ':pooled');
-            $after = self::drcpClasses($user);
+            $this->runChild(TestDatabase::fromEnvironment()->connectString . ':pooled');
+            $after = $this->drcpClasses($user);
             $classes[] = array_keys(array_filter($after, static fn(int $requests, string $class): bool => $requests > ($before[$class] ?? 0), ARRAY_FILTER_USE_BOTH));
             $before = $after;
         }
@@ -362,12 +362,12 @@ final class ConnectParametersTest extends ConformanceTestCase
     public function drcp_connection_class_names_the_class(): void
     {
         $user = strtoupper(TestDatabase::fromEnvironment()->user);
-        $before = self::drcpClasses($user);
+        $before = $this->drcpClasses($user);
 
         $connection = $this->connect(dsn: TestDatabase::fromEnvironment()->connectString . ':pooled', drcpConnectionClass: 'RAJSKA41', standalone: true);
         self::value($connection, 'select 1 from dual');
 
-        $after = self::drcpClasses($user);
+        $after = $this->drcpClasses($user);
         self::assertGreaterThan($before["$user.RAJSKA41"] ?? 0, $after["$user.RAJSKA41"] ?? 0);
     }
 
@@ -404,15 +404,15 @@ final class ConnectParametersTest extends ConformanceTestCase
         $password = 'Pa55-' . bin2hex(random_bytes(6));
         $config = TestDatabase::fromEnvironment()->config(password: $password, standalone: true);
         self::assertSame(1017, $this->failedConnect($config)->getCode());
-        self::assertTrue(self::adapterHolds($password), 'kept while the config lives');
+        self::assertTrue($this->adapterHolds($password), 'kept while the config lives');
 
         unset($config);
         gc_collect_cycles();
 
-        self::assertFalse(self::adapterHolds($password));
+        self::assertFalse($this->adapterHolds($password));
     }
 
-    private static function adapterHolds(string $secret): bool
+    private function adapterHolds(string $secret): bool
     {
         $holds = static function (mixed $value) use (&$holds, $secret): bool {
             if ($value === $secret) {
@@ -500,7 +500,7 @@ final class ConnectParametersTest extends ConformanceTestCase
         return TestDatabase::fromEnvironment()->user;
     }
 
-    private static function protocol(DriverConnection $connection): mixed
+    private function protocol(DriverConnection $connection): mixed
     {
         return self::value($connection, "select sys_context('userenv', 'network_protocol') from dual");
     }
@@ -511,7 +511,7 @@ final class ConnectParametersTest extends ConformanceTestCase
      *
      * @return array<string, int>
      */
-    private static function drcpClasses(string $user): array
+    private function drcpClasses(string $user): array
     {
         $classes = [];
         foreach (ConnectTargets::admin('select cclass_name, num_requests from v$cpool_cc_stats where cclass_name like :prefix', ['prefix' => "$user.%"]) as $row) {
@@ -525,7 +525,7 @@ final class ConnectParametersTest extends ConformanceTestCase
      * Connects in a child PHP process, as a second FPM worker would, and
      * runs one query there.
      */
-    private static function runChild(string $dsn): void
+    private function runChild(string $dsn): void
     {
         $autoload = \dirname(__DIR__, 2) . '/vendor/autoload.php';
         $code = <<<'PHP'

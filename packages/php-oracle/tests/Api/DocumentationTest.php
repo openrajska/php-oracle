@@ -153,7 +153,7 @@ final class DocumentationTest extends TestCase
     {
         $connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
         $file = (string) tempnam(sys_get_temp_dir(), 'example');
-        file_put_contents($file, self::script($code));
+        file_put_contents($file, $this->script($code));
         ob_start();
         try {
             (static function (string $example, Connection $connection): void {
@@ -168,12 +168,12 @@ final class DocumentationTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    private static function script(string $code): string
+    private function script(string $code): string
     {
         preg_match_all('/^\s*use\s+[\w\\\\]*?(\w+)(?:\s+as\s+(\w+))?;/m', $code, $uses, PREG_SET_ORDER);
         $imported = array_map(static fn(array $use): string => ($use[2] ?? '') !== '' ? $use[2] : $use[1], $uses);
         $imports = '';
-        foreach (self::publicClasses() as $short => $class) {
+        foreach ($this->publicClasses() as $short => $class) {
             if (!\in_array($short, $imported, true)) {
                 $imports .= "use $class;\n";
             }
@@ -188,7 +188,7 @@ final class DocumentationTest extends TestCase
      *
      * @return array<string, string>
      */
-    private static function publicClasses(): array
+    private function publicClasses(): array
     {
         $src = \dirname(__DIR__, 2) . '/src';
         $classes = [];

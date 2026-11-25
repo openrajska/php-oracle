@@ -52,11 +52,11 @@ final class LobsTest extends TestCase
         self::assertNotNull($row);
 
         self::assertSame(1, $row['ID']);
-        $text = self::lob($row['TEXT_VALUE']);
+        $text = $this->lob($row['TEXT_VALUE']);
         self::assertSame(LobType::Clob, $text->type());
         self::assertSame(19, $text->size());
         self::assertSame(self::SMALL, $text->contents());
-        $binary = self::lob($row['BINARY_VALUE']);
+        $binary = $this->lob($row['BINARY_VALUE']);
         self::assertSame(LobType::Blob, $binary->type());
         self::assertSame("\xde\xad\xbe\xef", $binary->contents());
     }
@@ -67,7 +67,7 @@ final class LobsTest extends TestCase
     #[Test]
     public function contents_and_stream_go_on_from_where_the_last_read_stopped(): void
     {
-        $lob = self::lob($this->connection->select('select text_value from fx_lobs where id = 1')->value());
+        $lob = $this->lob($this->connection->select('select text_value from fx_lobs where id = 1')->value());
 
         self::assertSame(self::SMALL, $lob->contents());
         self::assertSame('', $lob->contents());
@@ -80,7 +80,7 @@ final class LobsTest extends TestCase
         $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
         self::assertNotNull($row);
 
-        $text = self::lob($row['TEXT_VALUE'])->stream();
+        $text = $this->lob($row['TEXT_VALUE'])->stream();
         $hash = hash_init('md5');
         $lines = 0;
         while (($line = fgets($text)) !== false) {
@@ -90,10 +90,10 @@ final class LobsTest extends TestCase
         self::assertTrue(feof($text));
         fclose($text);
         self::assertSame(262_144, $lines);
-        self::assertSame(md5(self::largeText()), hash_final($hash));
+        self::assertSame(md5($this->largeText()), hash_final($hash));
 
-        $binary = self::lob($row['BINARY_VALUE'])->stream();
-        self::assertSame(md5(self::largeBinary()), md5((string) stream_get_contents($binary)));
+        $binary = $this->lob($row['BINARY_VALUE'])->stream();
+        self::assertSame(md5($this->largeBinary()), md5((string) stream_get_contents($binary)));
     }
 
     /**
@@ -130,7 +130,7 @@ final class LobsTest extends TestCase
         self::assertSame(100 * 1024 * 1024, $lob->size());
 
         $expected = hash_init('md5');
-        $mebibyte = self::largeBinary(1);
+        $mebibyte = $this->largeBinary(1);
         for ($i = 0; $i < 100; ++$i) {
             hash_update($expected, $mebibyte);
         }
@@ -138,14 +138,14 @@ final class LobsTest extends TestCase
 
         $stream = $lob->stream();
         $hash = hash_init('md5');
-        $start = self::residentSetSize();
+        $start = $this->residentSetSize();
         $peak = $start;
         $bytes = 0;
         while (!feof($stream)) {
             $data = (string) fread($stream, 1024 * 1024);
             hash_update($hash, $data);
             $bytes += \strlen($data);
-            $peak = max($peak, self::residentSetSize());
+            $peak = max($peak, $this->residentSetSize());
         }
         fclose($stream);
 
@@ -160,10 +160,10 @@ final class LobsTest extends TestCase
         $rows = $this->connection->select('select text_value, binary_value from fx_lobs where id in (2, 3) order by id')->all();
 
         foreach (['TEXT_VALUE', 'BINARY_VALUE'] as $column) {
-            $lob = self::lob($rows[0][$column]);
+            $lob = $this->lob($rows[0][$column]);
             self::assertSame(0, $lob->size());
             self::assertSame('', $lob->contents());
-            self::assertSame('', stream_get_contents(self::lob($rows[0][$column])->stream()));
+            self::assertSame('', stream_get_contents($this->lob($rows[0][$column])->stream()));
             self::assertNull($rows[1][$column]);
         }
     }
@@ -173,8 +173,8 @@ final class LobsTest extends TestCase
     {
         $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 4')->first();
         self::assertNotNull($row);
-        $lob = self::lob($row['TEXT_VALUE']);
-        $stream = self::lob($row['BINARY_VALUE'])->stream();
+        $lob = $this->lob($row['TEXT_VALUE']);
+        $stream = $this->lob($row['BINARY_VALUE'])->stream();
         self::assertSame(8192, \strlen((string) fread($stream, 8192)));
         $this->connection->close();
 
@@ -232,8 +232,8 @@ final class LobsTest extends TestCase
         );
         $row = $this->connection->select('select text_value, binary_value from fx_lobs where id = 100')->first();
         self::assertNotNull($row);
-        self::assertSame(str_repeat(self::TEXT . "\n", 100_000), self::lob($row['TEXT_VALUE'])->contents());
-        self::assertSame("\x00\xff", self::lob($row['BINARY_VALUE'])->contents());
+        self::assertSame(str_repeat(self::TEXT . "\n", 100_000), $this->lob($row['TEXT_VALUE'])->contents());
+        self::assertSame("\x00\xff", $this->lob($row['BINARY_VALUE'])->contents());
         $this->connection->rollback();
 
         self::assertSame(10, $this->connection->function('fx_lob.text_length', ['p_text' => NClob::in(self::TEXT . ' 😀')])->number());
@@ -304,7 +304,7 @@ final class LobsTest extends TestCase
         self::assertNull($this->connection->function('fx_call.f_blob', ['p_null' => true], $inline)->blob());
     }
 
-    private static function lob(mixed $value): Lob
+    private function lob(mixed $value): Lob
     {
         self::assertInstanceOf(Lob::class, $value);
 
@@ -314,7 +314,7 @@ final class LobsTest extends TestCase
     /**
      * This process's resident set size, in bytes (Linux).
      */
-    private static function residentSetSize(): int
+    private function residentSetSize(): int
     {
         $status = (string) file_get_contents('/proc/self/status');
         if (preg_match('/^VmRSS:\s+(\d+) kB$/m', $status, $match) !== 1) {
@@ -327,7 +327,7 @@ final class LobsTest extends TestCase
     /**
      * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
      */
-    private static function largeText(): string
+    private function largeText(): string
     {
         $tail = " a\u{e7}\u{e3}o caf\u{e9} \u{65e5}\u{672c} " . str_repeat('x', 41) . "\n";
         $text = '';
@@ -342,7 +342,7 @@ final class LobsTest extends TestCase
      * Bytes where the one at offset k is k mod 256 (fx_lobs row 4's BLOB is
      * 16 MiB of them).
      */
-    private static function largeBinary(int $mebibytes = 16): string
+    private function largeBinary(int $mebibytes = 16): string
     {
         return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 4096 * $mebibytes);
     }

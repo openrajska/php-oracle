@@ -126,8 +126,8 @@ final class LobBindsTest extends ConformanceTestCase
     public function a_16_mib_string_and_stream_go_through_sql_and_plsql_exactly(): void
     {
         $connection = $this->connect();
-        $text = self::largeText();
-        $binary = self::largeBinary();
+        $text = $this->largeText();
+        $binary = $this->largeBinary();
         $sources = [
             'string' => static fn(): array => [$text, $binary],
             'stream' => static fn(): array => [self::stream($text), self::stream($binary)],
@@ -421,7 +421,7 @@ final class LobBindsTest extends ConformanceTestCase
     /**
      * fx_lobs row 4's CLOB: 262,144 lines of 64 characters (README).
      */
-    private static function largeText(): string
+    private function largeText(): string
     {
         $tail = " a\u{e7}\u{e3}o caf\u{e9} \u{65e5}\u{672c} " . str_repeat('x', 41) . "\n";
         $text = '';
@@ -435,7 +435,7 @@ final class LobBindsTest extends ConformanceTestCase
     /**
      * fx_lobs row 4's BLOB: the byte at offset k is k mod 256.
      */
-    private static function largeBinary(): string
+    private function largeBinary(): string
     {
         return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 65_536);
     }

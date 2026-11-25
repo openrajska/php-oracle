@@ -53,7 +53,7 @@ final class TransactionsTest extends TestCase
     protected function setUp(): void
     {
         self::$observer->clear();
-        $this->connection = self::connect();
+        $this->connection = $this->connect();
     }
 
     protected function tearDown(): void
@@ -153,7 +153,7 @@ final class TransactionsTest extends TestCase
     #[Test]
     public function begin_costs_no_round_trip_and_commit_and_rollback_one_each(): void
     {
-        $sid = self::sid($this->connection);
+        $sid = $this->sid($this->connection);
 
         self::assertSame(0, self::$counter->during($sid, $this->connection->begin(...)));
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
@@ -221,7 +221,7 @@ final class TransactionsTest extends TestCase
     #[DataProvider('misuses')]
     public function misusing_a_transaction_verb_throws_usage_exception_before_any_round_trip(Closure $misuse, string $message, int $trips = 0): void
     {
-        $sid = self::sid($this->connection);
+        $sid = $this->sid($this->connection);
 
         $thrown = null;
         $made = self::$counter->during($sid, function () use ($misuse, &$thrown): void {
@@ -439,7 +439,7 @@ final class TransactionsTest extends TestCase
     {
         $this->connection->run("insert into fx_tx_rows (id, note) values (1, 'committed')");
 
-        $destroyed = self::connect();
+        $destroyed = $this->connect();
         $destroyed->begin();
         $destroyed->run("update fx_tx_rows set note = 'destroyed' where id = 1");
         $destroyed->run('insert into fx_tx_rows (id) values (2)');
@@ -449,7 +449,7 @@ final class TransactionsTest extends TestCase
         self::assertFalse(self::$observer->locked(1));
         self::assertSame([['ID' => '1', 'NOTE' => 'committed']], self::$observer->select('select id, note from fx_tx_rows'));
 
-        $closed = self::connect();
+        $closed = $this->connect();
         $closed->begin();
         $closed->run("update fx_tx_rows set note = 'closed' where id = 1");
         $closed->close();
@@ -477,12 +477,12 @@ final class TransactionsTest extends TestCase
 
     private function kill(Connection $connection): void
     {
-        $sid = self::sid($connection);
+        $sid = $this->sid($connection);
         $serial = self::$observer->select('select serial# as serial from v$session where sid = :sid', ['sid' => $sid])[0]['SERIAL'];
         self::$observer->execute("alter system kill session '$sid,$serial' immediate");
     }
 
-    private static function sid(Connection $connection): int
+    private function sid(Connection $connection): int
     {
         $sid = $connection->select("select sys_context('userenv', 'sid') from dual")->value();
         self::assertIsString($sid);
@@ -490,7 +490,7 @@ final class TransactionsTest extends TestCase
         return (int) $sid;
     }
 
-    private static function connect(): Connection
+    private function connect(): Connection
     {
         return Oracle::connect(TestDatabase::fromEnvironment()->config());
     }

@@ -104,7 +104,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         $observer = IndependentSession::open();
         try {
             self::assertTrue(
-                self::eventually(static fn(): bool => $observer->select(
+                $this->eventually(static fn(): bool => $observer->select(
                     'select count(*) as n from v$session where audsid = :audsid',
                     ['audsid' => $session],
                 ) === [['N' => '0']]),
@@ -430,7 +430,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     /**
      * @param callable(): bool $condition
      */
-    private static function eventually(callable $condition, float $seconds = 5): bool
+    private function eventually(callable $condition, float $seconds = 5): bool
     {
         $deadline = microtime(true) + $seconds;
         while (!$condition()) {

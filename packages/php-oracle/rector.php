@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Rector\CodeQuality\Rector\ClassMethod\LocallyCalledStaticMethodToNonStaticRector;
 use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Config\RectorConfig;
 use Rector\DeadCode\Rector\Node\RemoveNonExistingVarAnnotationRector;
@@ -16,7 +15,6 @@ return RectorConfig::configure()
     ])
     ->withSkip([
         __DIR__ . '/tests/Harness/Probes',
-        LocallyCalledStaticMethodToNonStaticRector::class,
         RemoveNonExistingVarAnnotationRector::class,
         SensitiveHereNowDocRector::class,
         ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
