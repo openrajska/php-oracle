@@ -83,7 +83,7 @@ $scalarBinds = static fn(int $i): array => [...scalar_in($i), 'p_date' => SCALAR
 // name => [iterations, [layer => closure(int $i): mixed]]
 $work = [
     'Call 3 IN + 3 OUT (block)' => [2000, [
-        'native' => static fn(int $i) => $native->execute(SQL_SCALAR, $scalarBinds($i), $nativeOptions()),
+        'native' => static fn(int $i): array => $native->execute(SQL_SCALAR, $scalarBinds($i), $nativeOptions()),
         'driver' => static fn(int $i): array => $driver->execute(SQL_SCALAR, $scalarBinds($i), $driverOptions)->outValues(),
         'core run()' => static function (int $i) use ($core, $scalarBinds): array {
             $e = $core->run(SQL_SCALAR, $scalarBinds($i));
@@ -95,8 +95,8 @@ $work = [
 
             return [$e->out('o_num')->int(), $e->out('o_str')->string(), $e->out('o_date')->dateTime()];
         },
-        'native, autocommit off' => static fn(int $i) => $native->execute(SQL_SCALAR, $scalarBinds($i), $nativeOptions(['autocommit' => false])),
-        'native, no binds (begin null; end;)' => static fn(int $i) => $native->execute('begin null; end;', [], $nativeOptions()),
+        'native, autocommit off' => static fn(int $i): array => $native->execute(SQL_SCALAR, $scalarBinds($i), $nativeOptions(['autocommit' => false])),
+        'native, no binds (begin null; end;)' => static fn(int $i): array => $native->execute('begin null; end;', [], $nativeOptions()),
     ]],
     'Fetch 10k × 9, default values' => [20, [
         'native' => static fn(): int => $nativeRows($native->execute(SQL_FETCH, [], $nativeOptions())),
@@ -152,11 +152,11 @@ $work = [
         'core, ConnectionConfig built each time' => static fn() => Oracle::connect($x->config())->close(),
     ]],
     'Insert 1k rows' => [20, [
-        'native executeMany' => static fn() => $native->executeMany(SQL_INSERT, insert_rows(), $nativeOptions()),
+        'native executeMany' => static fn(): array => $native->executeMany(SQL_INSERT, insert_rows(), $nativeOptions()),
         'core runMany()' => static fn(): int => $core->runMany(SQL_INSERT, insert_rows())->affected(),
     ]],
 ];
-$cleanup = ['Insert 1k rows' => static fn() => $native->execute(SQL_CLEANUP, [], $nativeOptions())];
+$cleanup = ['Insert 1k rows' => static fn(): array => $native->execute(SQL_CLEANUP, [], $nativeOptions())];
 
 $observer = oci_new_connect($x->user, $x->password, $x->dsn, 'AL32UTF8');
 $sid = (int) $core->select("select sys_context('userenv', 'sid') as sid from dual")->value();

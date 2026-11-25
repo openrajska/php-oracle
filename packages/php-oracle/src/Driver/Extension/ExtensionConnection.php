@@ -9,6 +9,7 @@ use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Driver\DriverOptions;
 use Rajska\Oracle\Extension\Connection as NativeConnection;
+use Rajska\Oracle\Extension\Cursor as NativeCursor;
 use Rajska\Oracle\Extension\Exception as NativeException;
 use Rajska\Oracle\Tracing;
 use SensitiveParameter;
@@ -45,7 +46,7 @@ final class ExtensionConnection implements DriverConnection
             $result['rowCount'],
             $result['cursor'] === null ? null : new ExtensionCursor($result['cursor'], $sql),
             $result['outValues'] === [] ? [] : ExtensionCursor::handles($result['outValues'], $sql),
-            $result['implicitResults'] === [] ? [] : array_map(static fn($cursor): ExtensionCursor => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
+            $result['implicitResults'] === [] ? [] : array_map(static fn(NativeCursor $cursor): ExtensionCursor => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
             $result['warning'],
         );
     }
