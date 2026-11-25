@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Rajska\Oracle\Driver\DriverExecution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Connection;
@@ -60,11 +61,11 @@ final class NativeSurfaceTest extends ConformanceTestCase
         foreach ([$connection, $cursor, $lob, $exception] as $object) {
             $class = $object::class;
             self::assertTrue(new \ReflectionClass($class)->isFinal(), "$class is final");
-            $this->assertFails(static fn () => new $class(), "new $class");
-            $this->assertFails(static fn () => clone $object, "clone $class");
-            $this->assertFails(static fn () => serialize($object), "serialize($class)");
+            $this->assertFails(static fn (): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => new $class(), "new $class");
+            $this->assertFails(static fn (): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => clone $object, "clone $class");
+            $this->assertFails(static fn (): string => serialize($object), "serialize($class)");
             $this->assertFails(
-                static fn () => unserialize(\sprintf('O:%d:"%s":0:{}', \strlen($class), $class)),
+                static fn (): mixed => unserialize(\sprintf('O:%d:"%s":0:{}', \strlen($class), $class)),
                 "unserialize($class)",
             );
         }
@@ -202,27 +203,27 @@ final class NativeSurfaceTest extends ConformanceTestCase
             'database' => [
                 QueryException::class,
                 fn () => $native->execute('select 1 fro dual', [], self::nativeOptions()),
-                fn () => $driver->execute('select 1 fro dual', [], self::options()),
+                fn (): DriverExecution => $driver->execute('select 1 fro dual', [], self::options()),
             ],
             'database, ORA-00001' => [
                 UniqueViolationException::class,
                 fn () => $native->execute($duplicate, [], self::nativeOptions()),
-                fn () => $driver->execute($duplicate, [], self::options()),
+                fn (): DriverExecution => $driver->execute($duplicate, [], self::options()),
             ],
             'connection' => [
                 ConnectionException::class,
                 fn () => NativeConnection::connect(['password' => 'not-the-password'] + self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession()),
-                fn () => $this->driver()->connect($wrongPassword),
+                fn (): DriverConnection => $this->driver()->connect($wrongPassword),
             ],
             'timeout' => [
                 TimeoutException::class,
                 fn () => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
-                fn () => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
+                fn (): ?array => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
             ],
             'unsupported' => [
                 UnsupportedException::class,
                 fn () => $native->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::nativeOptions())['cursor']?->fetchBatch(),
-                fn () => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
+                fn (): ?array => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
             ],
             'usage' => [
                 UsageException::class,
@@ -444,7 +445,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
     {
         $process = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
         self::assertIsResource($process);
-        $output = (string) stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+        $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
         fclose($pipes[1]);
         fclose($pipes[2]);
 

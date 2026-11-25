@@ -137,9 +137,11 @@ final class DetectionTest extends TestCase
     {
         $command = [\PHP_BINARY];
         if ($extension) {
-            array_push($command, '-d', 'extension=' . ConnectTargets::extensionPath());
+            $command[] = '-d';
+            $command[] = 'extension=' . ConnectTargets::extensionPath();
         }
-        array_push($command, \dirname(__DIR__) . '/Support/detect.php', \dirname(__DIR__, 2) . '/vendor/autoload.php');
+        $command[] = __DIR__ . '/../Support/detect.php';
+        $command[] = \dirname(__DIR__, 2) . '/vendor/autoload.php';
         if ($reported !== null) {
             $command[] = $reported;
         }

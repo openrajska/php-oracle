@@ -12,7 +12,7 @@ declare(strict_types=1);
 //
 // oci8 never sees Core's classes and Core never calls oci8: each case runs
 // in a process that loads only its own extension (see run.php).
-
+use Rajska\Oracle\Execution;
 use Rajska\Oracle\Bench\Oci8Values;
 use Rajska\Oracle\Bind\Cursor as CursorBind;
 use Rajska\Oracle\Bind\Date;
@@ -58,7 +58,7 @@ final class BenchContext
     private ?Connection $core = null;
 
     /** @var resource|null */
-    private $oci8 = null;
+    private $oci8;
 
     public function __construct(
         public readonly string $dsn,
@@ -300,7 +300,7 @@ function bench_cases(): array
 {
     $cases = [];
     $add = static function (string $id, string $driver, int $warmup, int $iters, int $expect, Closure $make, ?Closure $after = null) use (&$cases): void {
-        $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after ? ['after' => $after] : []);
+        $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after instanceof \Closure ? ['after' => $after] : []);
     };
 
     // (a) A Call with 3 scalar IN and 3 OUT binds: fx_scalar.echo_out.
@@ -422,7 +422,7 @@ function bench_cases(): array
         $rows = insert_rows();
 
         return static fn (): int => $x->core()->runMany(SQL_INSERT, $rows)->affected();
-    }, static fn (BenchContext $x) => $x->core()->run(SQL_CLEANUP));
+    }, static fn (BenchContext $x): Execution => $x->core()->run(SQL_CLEANUP));
     $add('insert.oci8.loop', 'oci8', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 
@@ -439,7 +439,7 @@ function bench_cases(): array
 
             return \count($rows);
         };
-    }, static fn (BenchContext $x) => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
+    }, static fn (BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
     $add('insert.oci8.forall', 'oci8', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 
@@ -455,7 +455,7 @@ function bench_cases(): array
 
             return \count($rows);
         };
-    }, static fn (BenchContext $x) => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
+    }, static fn (BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
 
     // Connecting: a Session from the Pool and back, against oci_pconnect.
     $add('connect.core.pool', 'core', 200, 5000, 1, static function (BenchContext $x): Closure {
@@ -494,7 +494,7 @@ function bench_cases(): array
     });
     // A new Session every time: logon and logoff. 20 ms apart, untimed: the
     // listener refuses logons that come faster for long (ORA-12516).
-    $pause = static fn () => usleep(20_000);
+    $pause = static fn (): null => usleep(20_000);
     $add('logon.core.standalone', 'core', 3, 30, 1, static function (BenchContext $x): Closure {
         $config = $x->config(standalone: true);
 
@@ -522,7 +522,7 @@ function bench_cases(): array
  */
 function bench_comparisons(): array
 {
-    $c = static fn (string $label, string $core, string $oci8, bool $same, ?string $spike = null): array => compact('label', 'core', 'oci8', 'same', 'spike');
+    $c = static fn (string $label, string $core, string $oci8, bool $same, ?string $spike = null): array => ['label' => $label, 'core' => $core, 'oci8' => $oci8, 'same' => $same, 'spike' => $spike];
 
     return [
         $c('Call 3 IN + 3 OUT, `procedure()`', 'call.core.procedure', 'call.oci8.typed', true, '1.28× (typed)'),

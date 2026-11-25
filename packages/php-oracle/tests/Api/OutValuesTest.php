@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Rajska\Oracle\Execution;
+use Rajska\Oracle\OutValue;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Boolean;
@@ -82,11 +84,11 @@ final class OutValuesTest extends TestCase
         self::assertNull($execution->out('nothing')->bool());
         self::assertNull($execution->out('nothing')->value());
 
-        self::assertFails(fn () => $execution->out('fraction')->int(), "OUT bind 'fraction' holds string, not an int. A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).");
-        self::assertFails(fn () => $execution->out('integral')->float(), "OUT bind 'integral' holds int, not a float. Read it with int().");
-        self::assertFails(fn () => $execution->out('integral')->string(), "OUT bind 'integral' holds int, not a string. Read it with int().");
-        self::assertFails(fn () => $execution->out('text')->int(), "OUT bind 'text' holds string, not an int.");
-        self::assertFails(fn () => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
+        self::assertFails(fn (): ?int => $execution->out('fraction')->int(), "OUT bind 'fraction' holds string, not an int. A NUMBER that is not an integer, or beyond 64 bits, arrives as its exact string: read it with string(), or map it to a float with ValueMapping(numbers: NumberMode::Float).");
+        self::assertFails(fn (): ?float => $execution->out('integral')->float(), "OUT bind 'integral' holds int, not a float. Read it with int().");
+        self::assertFails(fn (): ?string => $execution->out('integral')->string(), "OUT bind 'integral' holds int, not a string. Read it with int().");
+        self::assertFails(fn (): ?int => $execution->out('text')->int(), "OUT bind 'text' holds string, not an int.");
+        self::assertFails(fn (): ?bool => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
     }
 
     /**
@@ -117,7 +119,7 @@ final class OutValuesTest extends TestCase
                   :ds := interval '1 02:00:00' day to second; :nothing := null;
                 end;";
         $binds = ['d' => Date::out(), 'tz' => TimestampTz::out(), 'ds' => IntervalDs::out(), 'nothing' => IntervalYm::out()];
-        $execution = Temporals::inZone('UTC', fn () => $this->connection->run($sql, $binds));
+        $execution = Temporals::inZone('UTC', fn (): Execution => $this->connection->run($sql, $binds));
 
         self::assertSame('+2026-03-01 00:00:00.000000 UTC', Temporals::shown($execution->out('d')->dateTime()));
         self::assertSame('+2026-03-01 10:00:00.000000 +05:45', Temporals::shown($execution->out('tz')->dateTime()));
@@ -131,7 +133,7 @@ final class OutValuesTest extends TestCase
 
         $string = $this->connection->run($sql, $binds, new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String)));
         self::assertSame('2026-03-01 00:00:00', $string->out('d')->string());
-        self::assertFails(fn () => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
+        self::assertFails(fn (): ?\DateTimeImmutable => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
     }
 
     /**
@@ -158,8 +160,8 @@ final class OutValuesTest extends TestCase
         self::assertSame(['a', null], $execution->out('tags')->array());
         self::assertSame([-1 => 1], $execution->out('map')->array());
         self::assertNull($execution->out('none')->array());
-        self::assertFails(fn () => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
-        self::assertFails(fn () => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
+        self::assertFails(fn (): ?array => $execution->out('n')->array(), "OUT bind 'n' holds int, not an array. Read it with int().");
+        self::assertFails(fn (): ?string => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
     }
 
     /**
@@ -208,9 +210,9 @@ final class OutValuesTest extends TestCase
 
         self::assertEqualsCanonicalizing([3, 4], $two->out('id')->list());
         self::assertSame([], $none->out('id')->list());
-        self::assertFails(fn () => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
-        self::assertFails(fn () => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
-        self::assertFails(fn () => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
+        self::assertFails(fn (): ?int => $two->out('id')->int(), "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list().");
+        self::assertFails(fn (): ?int => $none->out('id')->int(), "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list().");
+        self::assertFails(fn (): mixed => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
     }
 
     /**
@@ -247,14 +249,14 @@ final class OutValuesTest extends TestCase
         $sql = 'begin :total := :a; :Label := \'x\'; end;';
         $execution = $this->connection->run($sql, ['a' => 1, 'total' => Number::out(), 'Label' => Varchar::inOut(null)]);
 
-        self::assertFails(fn () => $execution->out('missing'), "No OUT bind is named 'missing'; they are 'total', 'Label'.", $sql);
-        self::assertFails(fn () => $execution->out('a'), "Bind 'a' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", $sql);
+        self::assertFails(fn (): OutValue => $execution->out('missing'), "No OUT bind is named 'missing'; they are 'total', 'Label'.", $sql);
+        self::assertFails(fn (): OutValue => $execution->out('a'), "Bind 'a' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", $sql);
         self::assertFails(
-            fn () => $this->connection->run('begin null; end;')->out('x'),
+            fn (): OutValue => $this->connection->run('begin null; end;')->out('x'),
             "No OUT bind is named 'x'; the statement has none.",
         );
         self::assertFails(
-            fn () => $this->connection->run('select :v from dual', ['v' => Varchar::in('y')])->out('v'),
+            fn (): OutValue => $this->connection->run('select :v from dual', ['v' => Varchar::in('y')])->out('v'),
             "Bind 'v' is IN only",
         );
     }
@@ -279,8 +281,8 @@ final class OutValuesTest extends TestCase
     public function a_number_string_must_be_a_decimal_literal(): void
     {
         foreach (['1,5', '1e5', '', ' 1', 'abc', '1.2.3', '0x1A'] as $text) {
-            self::assertFails(fn () => Number::in($text), "Number::in() takes a decimal literal with '.' as the separator, such as '12.30'");
-            self::assertFails(fn () => Number::inOut($text), "Number::in() takes a decimal literal");
+            self::assertFails(fn (): Number => Number::in($text), "Number::in() takes a decimal literal with '.' as the separator, such as '12.30'");
+            self::assertFails(fn (): Number => Number::inOut($text), "Number::in() takes a decimal literal");
         }
         self::assertSame('-.5', Number::in('-.5')->value);
         self::assertSame('12.', Number::in('12.')->value);

@@ -188,7 +188,7 @@ final class LobsTest extends TestCase
             'size()' => $lob->size(...),
             'contents()' => $lob->contents(...),
             'stream()' => $lob->stream(...),
-            'reading the stream' => static fn () => stream_get_contents($stream),
+            'reading the stream' => static fn (): string|false => stream_get_contents($stream),
         ] as $call => $read) {
             try {
                 $read();
@@ -361,6 +361,6 @@ final class LobsTest extends TestCase
      */
     private static function largeBinary(int $mebibytes = 16): string
     {
-        return str_repeat(implode(array_map(\chr(...), range(0, 255))), 4096 * $mebibytes);
+        return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 4096 * $mebibytes);
     }
 }

@@ -11,7 +11,6 @@ use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\NClob;
 use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
 use Rajska\Oracle\Driver\DriverConnection;
 use Rajska\Oracle\Driver\DriverLob;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -328,15 +327,15 @@ final class LobBindsTest extends ConformanceTestCase
      */
     public static function wrongValues(): iterable
     {
-        yield 'an int' => [static fn () => Clob::in(5), 'Clob::in() takes a string, an open stream resource or null, but was given int.']; // @phpstan-ignore argument.type (the mistake is the point)
-        yield 'an array' => [static fn () => NClob::inOut([]), 'NClob::in() takes a string, an open stream resource or null, but was given array.']; // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'an int' => [static fn (): Clob => Clob::in(5), 'Clob::in() takes a string, an open stream resource or null, but was given int.']; // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'an array' => [static fn (): NClob => NClob::inOut([]), 'NClob::in() takes a string, an open stream resource or null, but was given array.']; // @phpstan-ignore argument.type (the mistake is the point)
         yield 'a closed stream' => [static function (): Bind {
             $stream = self::stream('x');
             fclose($stream);
 
             return Blob::in($stream);
         }, 'Blob::in() takes a string, an open stream resource or null, but was given resource (closed).'];
-        yield 'a Stringable' => [static fn () => Clob::in(new class () implements \Stringable { // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'a Stringable' => [static fn (): Clob => Clob::in(new class () implements \Stringable { // @phpstan-ignore argument.type (the mistake is the point)
             public function __toString(): string
             {
                 return 'x';
@@ -477,6 +476,6 @@ final class LobBindsTest extends ConformanceTestCase
      */
     private static function largeBinary(): string
     {
-        return str_repeat(implode(array_map(\chr(...), range(0, 255))), 65_536);
+        return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 65_536);
     }
 }

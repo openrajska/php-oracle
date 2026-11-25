@@ -19,7 +19,7 @@ final class IndependentSession
     /** @var resource|null */
     private $connection;
 
-    private int $sid;
+    private readonly int $sid;
 
     /**
      * @param resource $connection

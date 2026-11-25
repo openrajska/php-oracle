@@ -39,10 +39,10 @@ final readonly class IntervalDs extends Bind
 
     private static function checked(#[\SensitiveParameter] ?\DateInterval $value): ?\DateInterval
     {
-        if ($value !== null && ($value->y !== 0 || $value->m !== 0)) {
+        if ($value instanceof \DateInterval && ($value->y !== 0 || $value->m !== 0)) {
             throw new UsageException('IntervalDs::in() takes days and smaller units, but the DateInterval has years or months; bind those with IntervalYm::in().');
         }
 
-        return $value === null ? null : clone $value;
+        return $value instanceof \DateInterval ? clone $value : null;
     }
 }

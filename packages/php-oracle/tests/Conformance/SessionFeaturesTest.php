@@ -82,7 +82,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
             self::assertSame(1, self::$counter->during($sid, function () use ($connection, $count, &$rows): void {
                 $rows = $this->readAll($connection, $count, self::options());
             }), "$count rows");
-            self::assertSame([$count], array_map('count', $rows), "$count rows");
+            self::assertSame([$count], array_map(count(...), $rows), "$count rows");
         }
     }
 

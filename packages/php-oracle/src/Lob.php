@@ -18,14 +18,14 @@ use Rajska\Oracle\Exceptions\UsageException;
  * gone), every call fails with `UsageException`. It does not keep the
  * Session itself.
  */
-final class Lob
+final readonly class Lob
 {
     /**
      * @internal use a column, OutValue::lob() or a FunctionCall terminal
      */
     public function __construct(
-        private readonly DriverLob $driver,
-        private readonly ConnectionState $connection,
+        private DriverLob $driver,
+        private ConnectionState $connection,
     ) {
     }
 

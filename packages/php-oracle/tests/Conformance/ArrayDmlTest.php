@@ -123,7 +123,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $e = self::failing(static fn () => self::many($connection, self::INSERT, self::withBadRows()));
+        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows()));
 
         self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
         self::assertSame(1, $e->getCode());
@@ -143,7 +143,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $connection->execute('insert into fx_tx_rows (id) values (1)', [], self::options(autocommit: false));
 
-        $e = self::failing(static fn () => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
+        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
 
         self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
@@ -166,7 +166,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $rows[1]['id'] = 1;
         $rows[3]['code'] = 'c1';
 
-        $e = self::failing(static fn () => self::many($connection, self::INSERT, $rows));
+        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, $rows));
 
         self::assertSame(ArrayDmlException::class, $e::class);
         self::assertSame([[1, 1], [3, 1]], self::failures($e));
@@ -382,8 +382,8 @@ final class ArrayDmlTest extends ConformanceTestCase
         $ids = static fn (int $from): array => array_map(static fn (int $id): array => ['id' => $id], range($from, $from + 99));
         self::many($connection, $block, $ids(1));
 
-        $dml = self::$counter->during($sid, static fn () => self::many($connection, self::INSERT, self::valid(100)));
-        $plsql = self::$counter->during($sid, static fn () => self::many($connection, $block, $ids(101)));
+        $dml = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100)));
+        $plsql = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, $block, $ids(101)));
 
         self::assertSame(1, $dml);
         self::assertSame(2, $plsql);
@@ -534,7 +534,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $sid = self::sid($connection);
 
-        $trips = self::$counter->during($sid, static fn () => self::many($connection, self::INSERT, self::valid(100), autocommit: false));
+        $trips = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100), autocommit: false));
 
         self::assertSame(2, $trips);
         self::assertSame(100, self::value($connection, 'select count(*) from fx_batch_rows'));

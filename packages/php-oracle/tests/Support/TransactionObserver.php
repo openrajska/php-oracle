@@ -12,9 +12,9 @@ namespace Rajska\Oracle\Tests\Support;
  * or even per test, adds to the listener's load, which refuses logons with
  * ORA-12516 when it runs high.
  */
-final class TransactionObserver
+final readonly class TransactionObserver
 {
-    private function __construct(private readonly IndependentSession $session)
+    private function __construct(private IndependentSession $session)
     {
     }
 

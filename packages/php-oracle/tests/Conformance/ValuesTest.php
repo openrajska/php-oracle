@@ -258,7 +258,7 @@ final class ValuesTest extends ConformanceTestCase
             // CURRENT_TIMESTAMP carries the zone's region name, so its offset
             // is read on the server.
             self::assertSame(
-                (new \DateTimeImmutable('now'))->format('P'),
+                new \DateTimeImmutable('now')->format('P'),
                 self::value($connection, "select to_char(current_timestamp, 'TZH:TZM') from dual"),
             );
         });

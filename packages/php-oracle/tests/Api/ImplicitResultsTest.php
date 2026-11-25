@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Rajska\Oracle\Column;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Bind\Number;
@@ -128,7 +129,7 @@ final class ImplicitResultsTest extends TestCase
             keyCase: KeyCase::Lower,
         );
         [$items] = self::results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 7], $options), 2);
-        self::assertSame(['id', 'name', 'price'], array_map(static fn ($column): string => $column->name, $items->columns()));
+        self::assertSame(['id', 'name', 'price'], array_map(static fn (Column $column): string => $column->name, $items->columns()));
         $counter = RoundTripCounter::open();
 
         try {

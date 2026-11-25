@@ -166,8 +166,8 @@ final class ArrayDmlTest extends TestCase
     {
         $secret = 'zq60secret';
         $calls = [
-            'row errors' => fn () => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
-            'refused row' => fn () => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
+            'row errors' => fn (): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
+            'refused row' => fn (): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
         ];
         foreach ($calls as $kind => $call) {
             try {

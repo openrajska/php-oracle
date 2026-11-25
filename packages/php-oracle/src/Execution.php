@@ -99,7 +99,7 @@ final class Execution
      */
     public function rows(): Cursor
     {
-        if ($this->rows !== null) {
+        if ($this->rows instanceof Cursor) {
             return $this->rows;
         }
         $cursor = $this->driver->cursor() ?? throw new UsageException(

@@ -730,6 +730,6 @@ final class LobsTest extends ConformanceTestCase
      */
     private static function largeBinary(): string
     {
-        return str_repeat(implode(array_map(\chr(...), range(0, 255))), 65_536);
+        return str_repeat(implode('', array_map(\chr(...), range(0, 255))), 65_536);
     }
 }

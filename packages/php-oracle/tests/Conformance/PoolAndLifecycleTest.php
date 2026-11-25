@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -330,12 +332,12 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
      */
     public static function connectionCalls(): iterable
     {
-        yield 'execute()' => [static fn (DriverConnection $c) => $c->execute('select 1 from dual', [], self::options())];
-        yield 'executeMany()' => [static fn (DriverConnection $c) => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], self::options())];
+        yield 'execute()' => [static fn (DriverConnection $c): DriverExecution => $c->execute('select 1 from dual', [], self::options())];
+        yield 'executeMany()' => [static fn (DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], self::options())];
         yield 'commit()' => [static fn (DriverConnection $c) => $c->commit()];
         yield 'rollback()' => [static fn (DriverConnection $c) => $c->rollback()];
         yield 'trace()' => [static fn (DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
-        yield 'serverVersion()' => [static fn (DriverConnection $c) => $c->serverVersion()];
+        yield 'serverVersion()' => [static fn (DriverConnection $c): string => $c->serverVersion()];
     }
 
     /**
@@ -441,12 +443,12 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
             self::assertStringStartsNotWith('Connection is broken: ', $lost->getMessage());
         }
         foreach ([
-            'execute()' => static fn () => $connection->execute('select 1 from dual', [], self::options()),
+            'execute()' => static fn (): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
             'commit()' => static fn () => $connection->commit(),
             'rollback()' => static fn () => $connection->rollback(),
-            'serverVersion()' => static fn () => $connection->serverVersion(),
-            'fetchBatch()' => static fn () => $cursor->fetchBatch(),
-            'columns()' => static fn () => $cursor->columns(),
+            'serverVersion()' => static fn (): string => $connection->serverVersion(),
+            'fetchBatch()' => static fn (): array => $cursor->fetchBatch(),
+            'columns()' => static fn (): array => $cursor->columns(),
         ] as $what => $call) {
             try {
                 $call();

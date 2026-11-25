@@ -313,8 +313,8 @@ final class BindsTest extends ConformanceTestCase
         $thrown = new \DomainException('from __toString');
 
         try {
-            $connection->execute('select :v from dual', ['v' => new class ($thrown) implements \Stringable {
-                public function __construct(private readonly \Throwable $thrown)
+            $connection->execute('select :v from dual', ['v' => new readonly class ($thrown) implements \Stringable {
+                public function __construct(private \Throwable $thrown)
                 {
                 }
 

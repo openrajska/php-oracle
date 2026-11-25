@@ -56,7 +56,7 @@ final readonly class ConnectionConfig
             throw new ConfigurationException("ConnectionConfig: statementCacheSize must be 0 (no Statement cache) or more, got $statementCacheSize.");
         }
         foreach (['connectTimeout' => $connectTimeout, 'acquireTimeout' => $acquireTimeout, 'callTimeout' => $callTimeout] as $field => $seconds) {
-            if ($seconds !== null && !($seconds > 0 && is_finite($seconds))) {
+            if ($seconds !== null && (!($seconds > 0) || !is_finite($seconds))) {
                 $or = $field === 'callTimeout' ? ' or null' : '';
                 throw new ConfigurationException("ConnectionConfig: $field must be a positive number of seconds$or, got $seconds.");
             }

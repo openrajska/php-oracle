@@ -17,7 +17,7 @@ namespace Rajska\Oracle\Tests\Support;
  * Get the observed Session's SID once, before counting, with
  * `select sys_context('userenv', 'sid') from dual`.
  */
-final class RoundTripCounter
+final readonly class RoundTripCounter
 {
     private const string SQL = <<<'SQL'
         select s.value
@@ -27,7 +27,7 @@ final class RoundTripCounter
            and s.sid = :sid
         SQL;
 
-    private function __construct(private readonly IndependentSession $observer)
+    private function __construct(private IndependentSession $observer)
     {
     }
 

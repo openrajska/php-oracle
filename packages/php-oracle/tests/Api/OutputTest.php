@@ -311,7 +311,7 @@ final class OutputTest extends TestCase
     public static function outputCalls(): iterable
     {
         yield 'enableOutput()' => [static fn (Connection $connection) => $connection->enableOutput()];
-        yield 'output()' => [static fn (Connection $connection) => $connection->output()];
+        yield 'output()' => [static fn (Connection $connection): array => $connection->output()];
         yield 'disableOutput()' => [static fn (Connection $connection) => $connection->disableOutput()];
     }
 

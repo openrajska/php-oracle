@@ -28,7 +28,7 @@ final readonly class ExecuteOptions
         if ($fetchSize !== null && $fetchSize < 1) {
             throw new UsageException("ExecuteOptions: fetchSize must be at least 1, got $fetchSize.");
         }
-        if ($timeout !== null && !($timeout > 0 && is_finite($timeout))) {
+        if ($timeout !== null && (!($timeout > 0) || !is_finite($timeout))) {
             throw new UsageException("ExecuteOptions: timeout must be a positive number of seconds or null, got $timeout.");
         }
     }

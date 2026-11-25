@@ -215,13 +215,13 @@ final class TypedBindsTest extends ConformanceTestCase
      */
     public static function incompatibleIntervals(): iterable
     {
-        yield 'IntervalDs with years' => [static fn () => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalDs with months' => [static fn () => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalYm with days' => [static fn () => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
-        yield 'IntervalYm with seconds' => [static fn () => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalDs with years' => [static fn (): IntervalDs => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalDs with months' => [static fn (): IntervalDs => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalYm with days' => [static fn (): IntervalYm => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with seconds' => [static fn (): IntervalYm => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
         $fraction = new \DateInterval('P1Y');
         $fraction->f = 0.5;
-        yield 'IntervalYm with a fraction' => [static fn () => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with a fraction' => [static fn (): IntervalYm => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
     }
 
     /**

@@ -13,18 +13,15 @@ class QueryException extends \RuntimeException implements OracleException
         CarriesStatement::__construct as private carry;
     }
 
-    private ?int $offset;
-
     public function __construct(
         string $message,
         int $code = 0,
         ?string $sql = null,
         ?string $call = null,
-        ?int $offset = null,
+        private ?int $offset = null,
         ?\Throwable $previous = null,
     ) {
         $this->carry($message, $code, $sql, $call, $previous);
-        $this->offset = $offset;
     }
 
     /**

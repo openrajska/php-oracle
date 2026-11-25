@@ -412,7 +412,7 @@ final class Connection
             }
         } catch (\Throwable $failure) {
             $last = $e;
-            while ($last !== $failure && ($previous = $last->getPrevious()) !== null) {
+            while ($last !== $failure && ($previous = $last->getPrevious()) instanceof \Throwable) {
                 $last = $previous;
             }
             if ($last !== $failure) {
@@ -471,7 +471,7 @@ final class Connection
 
     private function resolve(?ExecuteOptions $options): DriverOptions
     {
-        if ($options === null) {
+        if (!$options instanceof ExecuteOptions) {
             // The ConnectionConfig is immutable: these never change.
             return $this->defaults[(int) !$this->inTransaction] ??= $this->resolve(new ExecuteOptions());
         }

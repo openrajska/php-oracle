@@ -44,7 +44,7 @@ final class ExtensionConnection implements DriverConnection
             $result['rowCount'],
             $result['cursor'] === null ? null : new ExtensionCursor($result['cursor'], $sql),
             $result['outValues'] === [] ? [] : ExtensionCursor::handles($result['outValues'], $sql),
-            $result['implicitResults'] === [] ? [] : array_map(static fn ($cursor) => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
+            $result['implicitResults'] === [] ? [] : array_map(static fn ($cursor): ExtensionCursor => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
             $result['warning'],
         );
     }

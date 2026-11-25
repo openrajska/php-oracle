@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Rajska\Oracle\Execution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -103,9 +104,9 @@ final class BindsTest extends TestCase
         self::assertSame('0', \ini_get('zend.exception_ignore_args'), 'the suite keeps exceptions\' arguments');
         $secret = 'zq32secret';
         $calls = [
-            'server error' => fn () => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),
-            'typed bind, server error' => fn () => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => Varchar::in($secret)]),
-            'refused bind' => fn () => $this->connection->run('begin :n := :text; end;', ['n' => Number::out(), 'text' => [$secret]]),
+            'server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),
+            'typed bind, server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => Varchar::in($secret)]),
+            'refused bind' => fn (): Execution => $this->connection->run('begin :n := :text; end;', ['n' => Number::out(), 'text' => [$secret]]),
         ];
         foreach ($calls as $kind => $call) {
             try {

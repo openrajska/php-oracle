@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Rajska\Oracle\Execution;
+use Rajska\Oracle\FunctionCall;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -300,8 +302,8 @@ final class CallsTest extends TestCase
     public function a_failing_call_carries_its_name_and_generated_block(): void
     {
         $calls = [
-            'BEGIN fx_call.fail(p_value => :b1); END;' => fn () => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
-            'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn () => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
+            'BEGIN fx_call.fail(p_value => :b1); END;' => fn (): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
+            'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn (): int|float|string|null => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
         ];
         foreach ($calls as $sql => $call) {
             try {
@@ -337,8 +339,8 @@ final class CallsTest extends TestCase
         $this->connection->close();
 
         $calls = [
-            'fx_call.echo' => fn () => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)]),
-            'fx_call.f_number' => fn () => $function->number(),
+            'fx_call.echo' => fn (): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)]),
+            'fx_call.f_number' => fn (): int|float|string|null => $function->number(),
         ];
         foreach ($calls as $name => $call) {
             try {
@@ -359,8 +361,8 @@ final class CallsTest extends TestCase
     public function a_bind_error_names_the_parameter(): void
     {
         $calls = [
-            fn () => $this->connection->procedure('fx_call.fail', ['P_Value' => new \DateTimeImmutable()]),
-            fn () => $this->connection->function('fx_call.f_fail', ['P_Value' => new \DateTimeImmutable()])->number(),
+            fn (): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new \DateTimeImmutable()]),
+            fn (): int|float|string|null => $this->connection->function('fx_call.f_fail', ['P_Value' => new \DateTimeImmutable()])->number(),
         ];
         foreach ($calls as $call) {
             try {
@@ -383,10 +385,10 @@ final class CallsTest extends TestCase
     {
         $secret = 'zq46secret';
         $calls = [
-            'procedure' => fn () => $this->connection->procedure('fx_call.echo', ['p_num' => $secret, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut($secret)]),
-            'function' => fn () => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
-            'procedure, usage' => fn () => $this->connection->procedure('fx_call.fail', ['p_value' => [$secret]]),
-            'function, usage' => fn () => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
+            'procedure' => fn (): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => $secret, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut($secret)]),
+            'function' => fn (): int|float|string|null => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
+            'procedure, usage' => fn (): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => [$secret]]),
+            'function, usage' => fn (): int|float|string|null => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
         ];
         foreach ($calls as $kind => $call) {
             try {
@@ -461,9 +463,9 @@ final class CallsTest extends TestCase
         try {
             $calls = [
                 // @phpstan-ignore argument.type (a list is one of the mistakes under test)
-                fn () => $this->connection->procedure($name, $binds),
+                fn (): Execution => $this->connection->procedure($name, $binds),
                 // @phpstan-ignore argument.type (a list is one of the mistakes under test)
-                fn () => $this->connection->function($name, $binds),
+                fn (): FunctionCall => $this->connection->function($name, $binds),
             ];
             foreach ($calls as $call) {
                 $trips = $counter->during((int) $sid, static function () use ($call, $name, $message): void {

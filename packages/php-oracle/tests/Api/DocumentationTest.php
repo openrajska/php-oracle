@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
+use Rajska\Oracle\Bind\Cursor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -203,7 +204,7 @@ final class DocumentationTest extends TestCase
                 $classes[$short] ??= "Rajska\\Oracle\\$namespace$short";
             }
         }
-        $classes['Cursor'] = 'Rajska\\Oracle\\Bind\\Cursor';
+        $classes['Cursor'] = Cursor::class;
         unset($classes['ConnectionState'], $classes['Call'], $classes['CallExecution']);
 
         return $classes;

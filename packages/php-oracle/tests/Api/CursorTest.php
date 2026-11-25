@@ -436,10 +436,10 @@ final class CursorTest extends TestCase
     private function assertClosed(Cursor $cursor): void
     {
         foreach ([
-            'foreach' => static fn () => iterator_to_array($cursor),
-            'all()' => static fn () => $cursor->all(),
-            'first()' => static fn () => $cursor->first(),
-            'value()' => static fn () => $cursor->value(),
+            'foreach' => static fn (): array => iterator_to_array($cursor),
+            'all()' => static fn (): array => $cursor->all(),
+            'first()' => static fn (): ?array => $cursor->first(),
+            'value()' => static fn (): mixed => $cursor->value(),
         ] as $read => $call) {
             try {
                 $call();

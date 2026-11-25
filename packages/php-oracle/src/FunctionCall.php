@@ -41,7 +41,7 @@ use Rajska\Oracle\Exceptions\UsageException;
  * A function that also has OUT parameters is called through `run()` with a
  * hand-written block.
  */
-final class FunctionCall
+final readonly class FunctionCall
 {
     /**
      * @internal use Connection::function()
@@ -49,8 +49,8 @@ final class FunctionCall
      * @param \Closure(Bind): OutValue $run runs the Call with the return value bound as given
      */
     public function __construct(
-        private readonly Call $call,
-        private readonly \Closure $run,
+        private Call $call,
+        private \Closure $run,
     ) {
     }
 

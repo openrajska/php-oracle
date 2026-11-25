@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Rajska\Oracle\Driver\DriverCursor;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
@@ -74,7 +75,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
         foreach ($kinds as $kind => [$sql, $count, $query]) {
             $execution = $connection->execute($sql, [], self::options());
             self::assertSame($count, $execution->rowCount(), $kind);
-            self::assertSame($query, $execution->cursor() !== null, $kind);
+            self::assertSame($query, $execution->cursor() instanceof DriverCursor, $kind);
             self::assertSame([], $execution->outValues(), $kind);
             self::assertSame([], $execution->implicitResults(), $kind);
             self::assertNull($execution->warning(), $kind);
@@ -278,7 +279,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
 
         $connection->close();
 
-        foreach (['fetchBatch()' => static fn () => $cursor->fetchBatch(), 'columns()' => static fn () => $cursor->columns()] as $call => $read) {
+        foreach (['fetchBatch()' => static fn (): array => $cursor->fetchBatch(), 'columns()' => static fn (): array => $cursor->columns()] as $call => $read) {
             try {
                 $read();
                 self::fail("$call after close() succeeded.");

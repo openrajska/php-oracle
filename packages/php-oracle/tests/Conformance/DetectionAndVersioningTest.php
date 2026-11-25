@@ -67,7 +67,7 @@ final class DetectionAndVersioningTest extends ConformanceTestCase
             $pipes,
         );
         self::assertIsResource($process);
-        $info = (string) stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+        $info = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
         fclose($pipes[1]);
         fclose($pipes[2]);
         self::assertSame(0, proc_close($process), $info);

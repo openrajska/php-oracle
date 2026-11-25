@@ -416,7 +416,7 @@ final class ConnectParametersTest extends ConformanceTestCase
 
         ob_start();
         var_dump($config);
-        $dumped = (string) ob_get_clean() . print_r($config, true);
+        $dumped = ob_get_clean() . print_r($config, true);
 
         self::assertStringContainsString('SensitiveParameterValue', $dumped);
         self::assertStringContainsString(TestDatabase::fromEnvironment()->user, $dumped);

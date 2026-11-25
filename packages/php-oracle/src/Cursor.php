@@ -215,7 +215,7 @@ final class Cursor implements IteratorAggregate
         if ($this->connection->released) {
             throw new UsageException('The Connection is closed.');
         }
-        for ($parent = $this->parent; $parent !== null; $parent = $parent->parent) {
+        for ($parent = $this->parent; $parent instanceof \Rajska\Oracle\Cursor; $parent = $parent->parent) {
             if ($parent->closed) {
                 throw new UsageException('The Cursor this one is nested in is closed, which closed this one too.');
             }

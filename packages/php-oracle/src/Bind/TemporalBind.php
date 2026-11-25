@@ -34,6 +34,6 @@ trait TemporalBind
 
     private static function frozen(#[\SensitiveParameter] ?\DateTimeInterface $value): ?\DateTimeImmutable
     {
-        return $value === null ? null : \DateTimeImmutable::createFromInterface($value);
+        return $value instanceof \DateTimeInterface ? \DateTimeImmutable::createFromInterface($value) : null;
     }
 }

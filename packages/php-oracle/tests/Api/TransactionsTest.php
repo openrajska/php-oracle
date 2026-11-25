@@ -206,7 +206,7 @@ final class TransactionsTest extends TestCase
         yield 'transaction() inside begin()' => [
             static function (Connection $c): void {
                 $c->begin();
-                $c->transaction(static fn () => null);
+                $c->transaction(static fn (): null => null);
             },
             'Transactions do not nest',
         ];
@@ -216,7 +216,7 @@ final class TransactionsTest extends TestCase
             1,
         ];
         yield 'transaction() inside transaction()' => [
-            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->transaction(static fn () => null)),
+            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->transaction(static fn (): null => null)),
             'Transactions do not nest',
             1,
         ];
@@ -318,7 +318,7 @@ final class TransactionsTest extends TestCase
         $caught = null;
 
         try {
-            $this->connection->transaction(static function (Connection $connection) use ($thrown): void {
+            $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
                 $connection->run('insert into fx_tx_rows (id) values (1)');
 
                 throw $thrown;
@@ -344,7 +344,7 @@ final class TransactionsTest extends TestCase
         $caught = 'nothing';
 
         try {
-            $this->connection->transaction(static function (Connection $connection): void {
+            $this->connection->transaction(static function (Connection $connection): never {
                 $connection->run('insert into fx_tx_rows (id) values (1)');
 
                 throw new \TypeError('not an exception');
@@ -403,7 +403,7 @@ final class TransactionsTest extends TestCase
         $caught = null;
 
         try {
-            $this->connection->transaction(static function (Connection $connection) use ($thrown): void {
+            $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
                 $connection->run('insert into fx_tx_rows (id) values (1)');
                 $connection->close();
 
@@ -527,7 +527,7 @@ final class TransactionsTest extends TestCase
             }
         }
         $this->expectException(UsageException::class);
-        $this->connection->transaction(static fn () => self::fail('The closure ran.'));
+        $this->connection->transaction(static fn (): never => self::fail('The closure ran.'));
     }
 
     /**

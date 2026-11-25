@@ -14,7 +14,7 @@ use Rajska\Oracle\Exceptions\UsageException;
  * With `RETURNING … INTO`, the bind holds one value per returned row:
  * `list()` gives them all, and a scalar getter needs exactly one row.
  */
-final class OutValue
+final readonly class OutValue
 {
     /**
      * @internal use Execution::out()
@@ -22,10 +22,10 @@ final class OutValue
      * @param list<mixed> $values one per row the bind produced
      */
     public function __construct(
-        private readonly string $name,
-        private readonly array $values,
-        private readonly ?string $sql = null,
-        private readonly ?string $call = null,
+        private string $name,
+        private array $values,
+        private ?string $sql = null,
+        private ?string $call = null,
     ) {
     }
 
