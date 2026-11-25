@@ -11,8 +11,10 @@
         "laravel/pint": "^1.32",
         "pestphp/pest": "^5.3",
         "pestphp/pest-plugin-drift": "^5.0",
+        "pestphp/pest-plugin-phpstan": "^5.3",
         "pestphp/pest-plugin-rector": "^5.0",
         "pestphp/pest-plugin-type-coverage": "^5.1",
+        "phpstan/extension-installer": "^1.4",
         "phpstan/phpstan": "^2.3",
         "rector/rector": "^2.9"
     },
@@ -30,7 +32,8 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
         }
     },
     "scripts": {
