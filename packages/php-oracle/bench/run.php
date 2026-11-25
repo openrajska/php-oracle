@@ -34,7 +34,7 @@ $rounds = (int) ($options['rounds'] ?? 10);
 $scale = (float) ($options['scale'] ?? 1);
 $only = isset($options['only']) ? explode(',', (string) $options['only']) : null;
 
-$cases = array_filter(bench_cases(), static fn (array $case): bool => $only === null || in_array($case['scenario'], $only, true));
+$cases = array_filter(bench_cases(), static fn(array $case): bool => $only === null || in_array($case['scenario'], $only, true));
 $scenarios = [];
 foreach ($cases as $id => $case) {
     $scenarios[$case['scenario']][] = $id;
@@ -70,7 +70,7 @@ if ($from === null) {
     file_put_contents($rawFile, '');
 }
 $started = time();
-$load = static fn (): string => implode(' ', array_slice(explode(' ', (string) @file_get_contents('/proc/loadavg')), 0, 3));
+$load = static fn(): string => implode(' ', array_slice(explode(' ', (string) @file_get_contents('/proc/loadavg')), 0, 3));
 $loadStart = $load();
 for ($round = 1; $from === null && $round <= $rounds; $round++) {
     // Written once per round: a file appended after every case keeps a
@@ -132,7 +132,7 @@ function verdict(float $speedup): string
 /** @return list<int|float> */
 function pooled(array $runs): array
 {
-    return array_merge(...array_map(static fn (array $run): array => $run['samples_ns'], $runs));
+    return array_merge(...array_map(static fn(array $run): array => $run['samples_ns'], $runs));
 }
 
 if ($from === null) {
@@ -144,10 +144,12 @@ $first = reset($results)[0];
 $md = "# Benchmark summary: $tag\n\n";
 $md .= sprintf(
     "PHP %s; %d rounds (%s)%s; each (case, round) is a fresh process with `bench/php.ini` and one driver. A sample is one iteration: the Call or query, every row read into PHP, and freeing it. Speedup = oci8 median / Core median (> 1: Core is faster). %s\n\n",
-    $first['php'], $rounds, $scale == 1 ? 'full iterations' : "iterations × $scale",
-    $from === null ? '' : sprintf(', pooled from %d runs (%s)', count($from), implode(', ', array_map(static fn (string $run): string => "`raw-$run.jsonl`", $from))),
+    $first['php'],
+    $rounds,
+    $scale == 1 ? 'full iterations' : "iterations × $scale",
+    $from === null ? '' : sprintf(', pooled from %d runs (%s)', count($from), implode(', ', array_map(static fn(string $run): string => "`raw-$run.jsonl`", $from))),
     implode(' ', array_map(
-        static fn (array $run): string => sprintf('A run of %d rounds took %d min; load average %s at the start, %s at the end.', $run['rounds'], $run['minutes'], $run['load_start'], $run['load_end']),
+        static fn(array $run): string => sprintf('A run of %d rounds took %d min; load average %s at the start, %s at the end.', $run['rounds'], $run['minutes'], $run['load_start'], $run['load_end']),
         $runs,
     )),
 );
@@ -158,16 +160,22 @@ foreach (bench_comparisons() as $comparison) {
         continue;
     }
     $cell = static function (string $id) use ($results): string {
-        [$low, $high] = Stats::spread(array_map(static fn (array $run): array => $run['samples_ns'], $results[$id]));
+        [$low, $high] = Stats::spread(array_map(static fn(array $run): array => $run['samples_ns'], $results[$id]));
 
         return sprintf('%s (%s–%s)', duration(Stats::median(pooled($results[$id]))), duration($low), duration($high));
     };
     $speedup = Stats::median(pooled($results[$comparison['oci8']])) / Stats::median(pooled($results[$comparison['core']]));
     $md .= sprintf(
         "| %s%s | `%s` | `%s` | %s | %s | %.2f× | %s | %s |\n",
-        $comparison['label'], $comparison['same'] ? ' (same values)' : '',
-        $comparison['core'], $comparison['oci8'], $cell($comparison['core']), $cell($comparison['oci8']),
-        $speedup, $comparison['spike'] ?? '–', verdict($speedup),
+        $comparison['label'],
+        $comparison['same'] ? ' (same values)' : '',
+        $comparison['core'],
+        $comparison['oci8'],
+        $cell($comparison['core']),
+        $cell($comparison['oci8']),
+        $speedup,
+        $comparison['spike'] ?? '–',
+        verdict($speedup),
     );
 }
 
@@ -175,18 +183,25 @@ $md .= "\n## Every case\n\n| Case | Driver | Iterations × rounds | Median | p95
 foreach ($results as $id => $runs) {
     $samples = pooled($runs);
     $median = Stats::median($samples);
-    [$low, $high] = Stats::spread(array_map(static fn (array $run): array => $run['samples_ns'], $runs));
+    [$low, $high] = Stats::spread(array_map(static fn(array $run): array => $run['samples_ns'], $runs));
     $md .= sprintf(
         "| `%s` | %s | %d × %d | %s | %s | %s–%s | %s |\n",
-        $id, $runs[0]['driver'], count($runs[0]['samples_ns']), count($runs), duration($median), duration(Stats::percentile($samples, 95)),
-        duration($low), duration($high), $runs[0]['rows'] >= 1000 ? number_format($runs[0]['rows'] / ($median / 1e9)) : '–',
+        $id,
+        $runs[0]['driver'],
+        count($runs[0]['samples_ns']),
+        count($runs),
+        duration($median),
+        duration(Stats::percentile($samples, 95)),
+        duration($low),
+        duration($high),
+        $runs[0]['rows'] >= 1000 ? number_format($runs[0]['rows'] / ($median / 1e9)) : '–',
     );
 }
 
 $md .= "\n## Memory (kB, median over rounds)\n\n`rss_start` is before connecting, `rss_connected` after, `hwm_end` the process's peak RSS (Rust or Instant Client heaps included), `zend_peak` PHP's own allocator peak.\n\n";
 $md .= "| Case | Driver | rss_start | rss_connected | hwm_end | zend_peak |\n|---|---|---|---|---|---|\n";
 foreach ($results as $id => $runs) {
-    $memory = static fn (string $key): int => (int) Stats::median(array_map(static fn (array $run): int => $run['mem_kb'][$key], $runs));
+    $memory = static fn(string $key): int => (int) Stats::median(array_map(static fn(array $run): int => $run['mem_kb'][$key], $runs));
     $md .= sprintf("| `%s` | %s | %d | %d | %d | %d |\n", $id, $runs[0]['driver'], $memory('rss_start'), $memory('rss_connected'), $memory('hwm_end'), $memory('zend_peak'));
 }
 

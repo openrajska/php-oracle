@@ -18,9 +18,9 @@ final readonly class TestDatabase
     private function __construct(
         public string $connectString,
         public string $user,
-        #[\SensitiveParameter] public string $password,
-    ) {
-    }
+        #[\SensitiveParameter]
+        public string $password,
+    ) {}
 
     /**
      * A ConnectionConfig for the test database; named arguments override

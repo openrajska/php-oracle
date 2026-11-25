@@ -29,9 +29,7 @@ final class ExtensionCursor implements DriverCursor
     /**
      * @param string $sql the SQL of the Execution the Cursor was born of, for `sql()`
      */
-    public function __construct(private readonly NativeCursor $native, private readonly string $sql)
-    {
-    }
+    public function __construct(private readonly NativeCursor $native, private readonly string $sql) {}
 
     /**
      * OUT values with each native handle (a REF CURSOR, a LOB) wrapped.
@@ -65,7 +63,7 @@ final class ExtensionCursor implements DriverCursor
     public static function handlesPerRow(array $outValues, string $sql): array
     {
         foreach ($outValues as $name => $rows) {
-            $outValues[$name] = array_map(static fn (array $values): array => self::handles(['row' => $values], $sql)['row'], $rows);
+            $outValues[$name] = array_map(static fn(array $values): array => self::handles(['row' => $values], $sql)['row'], $rows);
         }
 
         return $outValues;
@@ -89,7 +87,7 @@ final class ExtensionCursor implements DriverCursor
             }
             $this->handles ??= array_keys(array_filter(
                 $this->native->columns(),
-                static fn (array $column): bool => \in_array($column['type'], self::HANDLES, true),
+                static fn(array $column): bool => \in_array($column['type'], self::HANDLES, true),
             ));
         } catch (NativeException $e) {
             throw ExceptionTranslator::translate($e, $this->sql);

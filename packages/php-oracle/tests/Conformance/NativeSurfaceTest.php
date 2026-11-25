@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
-use Rajska\Oracle\Driver\DriverExecution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Driver\Extension\ExtensionConnection;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\OracleException;
@@ -56,16 +56,16 @@ final class NativeSurfaceTest extends ConformanceTestCase
         self::assertInstanceOf(NativeCursor::class, $cursor);
         $lob = $connection->execute("select to_clob('x') as c from dual", [], self::nativeOptions())['cursor']?->fetchBatch()[0]['C'] ?? null;
         self::assertInstanceOf(NativeLob::class, $lob);
-        $exception = $this->nativeException(fn () => $connection->execute('select 1 from dual', [], ['unknown' => 1] + self::nativeOptions()));
+        $exception = $this->nativeException(fn() => $connection->execute('select 1 from dual', [], ['unknown' => 1] + self::nativeOptions()));
 
         foreach ([$connection, $cursor, $lob, $exception] as $object) {
             $class = $object::class;
             self::assertTrue(new \ReflectionClass($class)->isFinal(), "$class is final");
-            $this->assertFails(static fn (): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => new $class(), "new $class");
-            $this->assertFails(static fn (): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => clone $object, "clone $class");
-            $this->assertFails(static fn (): string => serialize($object), "serialize($class)");
+            $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => new $class(), "new $class");
+            $this->assertFails(static fn(): \Rajska\Oracle\Extension\Connection|NativeCursor|NativeLob|NativeException => clone $object, "clone $class");
+            $this->assertFails(static fn(): string => serialize($object), "serialize($class)");
             $this->assertFails(
-                static fn (): mixed => unserialize(\sprintf('O:%d:"%s":0:{}', \strlen($class), $class)),
+                static fn(): mixed => unserialize(\sprintf('O:%d:"%s":0:{}', \strlen($class), $class)),
                 "unserialize($class)",
             );
         }
@@ -98,7 +98,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
     {
         $parameters = array_filter(
             new \ReflectionMethod($class, $method)->getParameters(),
-            static fn (\ReflectionParameter $p): bool => $p->getName() === $parameter,
+            static fn(\ReflectionParameter $p): bool => $p->getName() === $parameter,
         );
 
         self::assertCount(1, $parameters, "$class::$method() has \$$parameter");
@@ -118,11 +118,11 @@ final class NativeSurfaceTest extends ConformanceTestCase
         // each passes a string for an array on purpose.
         $calls = [
             // @phpstan-ignore argument.type, argument.type
-            [static fn () => NativeConnection::connect($secret, 'not an array'), 'connect', 0],
+            [static fn() => NativeConnection::connect($secret, 'not an array'), 'connect', 0],
             // @phpstan-ignore argument.type
-            [static fn () => $native->execute('select 1 from dual', $secret, 'not an array'), 'execute', 1],
+            [static fn() => $native->execute('select 1 from dual', $secret, 'not an array'), 'execute', 1],
             // @phpstan-ignore argument.type
-            [static fn () => $native->executeMany('select 1 from dual', [$secret], 'not an array'), 'executeMany', 1],
+            [static fn() => $native->executeMany('select 1 from dual', [$secret], 'not an array'), 'executeMany', 1],
         ];
 
         foreach ($calls as [$call, $method, $position]) {
@@ -147,12 +147,12 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $database = TestDatabase::fromEnvironment();
         // The arrays break the documented shapes on purpose.
         // @phpstan-ignore argument.type, argument.type
-        $connect = fn (array $pool, array $session) => NativeConnection::connect($pool, $session);
+        $connect = fn(array $pool, array $session) => NativeConnection::connect($pool, $session);
 
         foreach ([
-            '$pool' => fn () => $connect(['unknown' => 1] + self::nativePool($database), self::nativeSession()),
-            '$session' => fn () => $connect(self::nativePool($database), ['unknown' => 1] + self::nativeSession()),
-            '$session[tracing]' => fn () => $connect(
+            '$pool' => fn() => $connect(['unknown' => 1] + self::nativePool($database), self::nativeSession()),
+            '$session' => fn() => $connect(self::nativePool($database), ['unknown' => 1] + self::nativeSession()),
+            '$session[tracing]' => fn() => $connect(
                 self::nativePool($database),
                 ['tracing' => ['unknown' => 1] + self::nativeSession()['tracing']] + self::nativeSession(),
             ),
@@ -169,13 +169,13 @@ final class NativeSurfaceTest extends ConformanceTestCase
 
         try {
             self::assertSame(0, $counter->during($sid, function () use ($native): void {
-                $exception = $this->nativeException(fn () => $native->execute(
+                $exception = $this->nativeException(fn() => $native->execute(
                     'select 1 from dual',
                     [],
                     ['unknown' => 1] + self::nativeOptions(),
                 ));
                 self::assertSame('usage', $exception->kind, 'an unknown key in $options');
-                $exception = $this->nativeException(fn () => $native->trace(
+                $exception = $this->nativeException(fn() => $native->trace(
                     ['unknown' => 1] + self::nativeSession()['tracing'],
                 ));
                 self::assertSame('usage', $exception->kind, 'an unknown key in $tracing');
@@ -202,28 +202,28 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $cases = [
             'database' => [
                 QueryException::class,
-                fn () => $native->execute('select 1 fro dual', [], self::nativeOptions()),
-                fn (): DriverExecution => $driver->execute('select 1 fro dual', [], self::options()),
+                fn() => $native->execute('select 1 fro dual', [], self::nativeOptions()),
+                fn(): DriverExecution => $driver->execute('select 1 fro dual', [], self::options()),
             ],
             'database, ORA-00001' => [
                 UniqueViolationException::class,
-                fn () => $native->execute($duplicate, [], self::nativeOptions()),
-                fn (): DriverExecution => $driver->execute($duplicate, [], self::options()),
+                fn() => $native->execute($duplicate, [], self::nativeOptions()),
+                fn(): DriverExecution => $driver->execute($duplicate, [], self::options()),
             ],
             'connection' => [
                 ConnectionException::class,
-                fn () => NativeConnection::connect(['password' => 'not-the-password'] + self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession()),
-                fn (): DriverConnection => $this->driver()->connect($wrongPassword),
+                fn() => NativeConnection::connect(['password' => 'not-the-password'] + self::nativePool(TestDatabase::fromEnvironment()), self::nativeSession()),
+                fn(): DriverConnection => $this->driver()->connect($wrongPassword),
             ],
             'timeout' => [
                 TimeoutException::class,
-                fn () => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
-                fn (): ?array => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
+                fn() => $native->execute($cpuBound, [], ['timeout' => 500] + self::nativeOptions())['cursor']?->fetchBatch(),
+                fn(): ?array => $driver->execute($cpuBound, [], self::options(timeout: 0.5))->cursor()?->fetchBatch(),
             ],
             'unsupported' => [
                 UnsupportedException::class,
-                fn () => $native->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::nativeOptions())['cursor']?->fetchBatch(),
-                fn (): ?array => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
+                fn() => $native->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::nativeOptions())['cursor']?->fetchBatch(),
+                fn(): ?array => $driver->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') from dual", [], self::options())->cursor()?->fetchBatch(),
             ],
             'usage' => [
                 UsageException::class,
@@ -312,7 +312,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
     public function a_call_timeout_under_1_ms_fails_with_kind_usage(string $key, int $ms): void
     {
         $native = $this->native();
-        $exception = $this->nativeException(static fn () => $key === 'callTimeout'
+        $exception = $this->nativeException(static fn() => $key === 'callTimeout'
             ? NativeConnection::connect(self::nativePool(TestDatabase::fromEnvironment()), ['callTimeout' => $ms] + self::nativeSession())
             : $native->execute('select 1 from dual', [], ['timeout' => $ms] + self::nativeOptions()));
 
@@ -386,7 +386,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
             $orphans[] = $cursor;
         }
 
-        foreach (['fetchBatch()' => static fn () => $cursor->fetchBatch(), 'columns()' => static fn () => $cursor->columns()] as $call => $read) {
+        foreach (['fetchBatch()' => static fn() => $cursor->fetchBatch(), 'columns()' => static fn() => $cursor->columns()] as $call => $read) {
             $e = $this->nativeException($read);
             self::assertSame('usage', $e->kind, $call);
             self::assertSame('The Connection is closed.', $e->getMessage(), $call);
@@ -433,7 +433,7 @@ final class NativeSurfaceTest extends ConformanceTestCase
         $entries = explode("\n", trim($listing));
 
         self::assertContains('src/Oracle.php', $entries, $listing);
-        self::assertSame([], array_values(array_filter($entries, static fn (string $entry): bool => str_starts_with($entry, 'stubs'))));
+        self::assertSame([], array_values(array_filter($entries, static fn(string $entry): bool => str_starts_with($entry, 'stubs'))));
     }
 
     /**

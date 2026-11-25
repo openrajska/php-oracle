@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle;
 
-use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Bind\BinaryDouble;
 use Rajska\Oracle\Bind\BinaryFloat;
+use Rajska\Oracle\Bind\Bind;
 use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Boolean;
 use Rajska\Oracle\Bind\Char;
@@ -51,8 +51,7 @@ final readonly class FunctionCall
     public function __construct(
         private Call $call,
         private \Closure $run,
-    ) {
-    }
+    ) {}
 
     public function varchar(): ?string
     {
@@ -91,7 +90,7 @@ final readonly class FunctionCall
 
         return $value === null || \is_int($value) || \is_float($value) || \is_string($value)
             ? $value
-            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a NUMBER.', 0, null, $this->call->name);
+            : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a NUMBER.', 0, null, $this->call->name);
     }
 
     /**
@@ -104,7 +103,7 @@ final readonly class FunctionCall
 
         return $value === null || $value instanceof \DateTimeImmutable || \is_string($value)
             ? $value
-            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a date.', 0, null, $this->call->name);
+            : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a date.', 0, null, $this->call->name);
     }
 
     public function binaryFloat(): ?float
@@ -213,7 +212,7 @@ final readonly class FunctionCall
 
         return $value === null || $value instanceof Lob || \is_string($value)
             ? $value
-            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a LOB.', 0, null, $this->call->name);
+            : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a LOB.', 0, null, $this->call->name);
     }
 
     /**
@@ -236,7 +235,7 @@ final readonly class FunctionCall
         /** @var list<int|float>|SparseVector|null */
         return $value === null || \is_array($value) || $value instanceof SparseVector
             ? $value
-            : throw new UsageException("The return value of {$this->call->name} is ".get_debug_type($value).', not a VECTOR.', 0, null, $this->call->name);
+            : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a VECTOR.', 0, null, $this->call->name);
     }
 
     /**

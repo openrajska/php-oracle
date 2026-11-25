@@ -93,9 +93,9 @@ final class ArrayDmlTest extends TestCase
         ]);
 
         $ids = $returning->out('IDS');
-        self::assertSame([[3], []], array_map(static fn (OutValue $value): array => $value->list(), $ids));
+        self::assertSame([[3], []], array_map(static fn(OutValue $value): array => $value->list(), $ids));
         self::assertSame(3, $ids[0]->int());
-        self::assertSame(['a1', 'b2'], array_map(static fn (OutValue $value): ?string => $value->string(), $block->out('label')));
+        self::assertSame(['a1', 'b2'], array_map(static fn(OutValue $value): ?string => $value->string(), $block->out('label')));
     }
 
     /**
@@ -146,7 +146,7 @@ final class ArrayDmlTest extends TestCase
             self::assertSame(1, $e->getCode());
             self::assertSame(self::INSERT, $e->sql());
             self::assertStringStartsWith('3 of 8 rows failed; first: row 3: ORA-00001', $e->getMessage());
-            self::assertSame([[3, 1], [5, 1400], [7, 2290]], array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $e->rows()));
+            self::assertSame([[3, 1], [5, 1400], [7, 2290]], array_map(static fn(RowFailure $row): array => [$row->index, $row->code], $e->rows()));
         }
         $this->connection->runMany(self::INSERT, self::valid(2));
         self::assertSame(0, self::committed());
@@ -166,8 +166,8 @@ final class ArrayDmlTest extends TestCase
     {
         $secret = 'zq60secret';
         $calls = [
-            'row errors' => fn (): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
-            'refused row' => fn (): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
+            'row errors' => fn(): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
+            'refused row' => fn(): ArrayDml => $this->connection->runMany(self::INSERT, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
         ];
         foreach ($calls as $kind => $call) {
             try {
@@ -204,7 +204,7 @@ final class ArrayDmlTest extends TestCase
      */
     private static function valid(int $count): array
     {
-        return array_map(static fn (int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
+        return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
     }
 
     private static function committed(): int

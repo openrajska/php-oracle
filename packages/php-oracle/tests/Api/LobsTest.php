@@ -11,8 +11,8 @@ use Rajska\Oracle\Bind\Blob;
 use Rajska\Oracle\Bind\Clob;
 use Rajska\Oracle\Bind\NClob;
 use Rajska\Oracle\Connection;
-use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Exceptions\UsageException;
+use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Lob;
 use Rajska\Oracle\LobMode;
 use Rajska\Oracle\LobType;
@@ -188,7 +188,7 @@ final class LobsTest extends TestCase
             'size()' => $lob->size(...),
             'contents()' => $lob->contents(...),
             'stream()' => $lob->stream(...),
-            'reading the stream' => static fn (): string|false => stream_get_contents($stream),
+            'reading the stream' => static fn(): string|false => stream_get_contents($stream),
         ] as $call => $read) {
             try {
                 $read();

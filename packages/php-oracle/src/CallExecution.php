@@ -21,8 +21,7 @@ final readonly class CallExecution implements DriverExecution
     public function __construct(
         private DriverExecution $execution,
         private array $parameters,
-    ) {
-    }
+    ) {}
 
     public function rowCount(): int
     {

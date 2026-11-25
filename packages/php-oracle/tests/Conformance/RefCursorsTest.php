@@ -88,7 +88,7 @@ final class RefCursorsTest extends ConformanceTestCase
             );
             self::assertSame(
                 [['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25', 'CREATED_AT' => '+2026-01-01 00:00:00.000000 UTC']],
-                array_map(static fn (array $row): array => array_map(Temporals::shown(...), $row), self::drain(self::cursor($two, 'items'))),
+                array_map(static fn(array $row): array => array_map(Temporals::shown(...), $row), self::drain(self::cursor($two, 'items'))),
             );
         });
     }

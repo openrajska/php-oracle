@@ -138,8 +138,8 @@ final class LobBindsTest extends ConformanceTestCase
         $text = self::largeText();
         $binary = self::largeBinary();
         $sources = [
-            'string' => static fn (): array => [$text, $binary],
-            'stream' => static fn (): array => [self::stream($text), self::stream($binary)],
+            'string' => static fn(): array => [$text, $binary],
+            'stream' => static fn(): array => [self::stream($text), self::stream($binary)],
         ];
 
         foreach ($sources as $source => $values) {
@@ -327,15 +327,15 @@ final class LobBindsTest extends ConformanceTestCase
      */
     public static function wrongValues(): iterable
     {
-        yield 'an int' => [static fn (): Clob => Clob::in(5), 'Clob::in() takes a string, an open stream resource or null, but was given int.']; // @phpstan-ignore argument.type (the mistake is the point)
-        yield 'an array' => [static fn (): NClob => NClob::inOut([]), 'NClob::in() takes a string, an open stream resource or null, but was given array.']; // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'an int' => [static fn(): Clob => Clob::in(5), 'Clob::in() takes a string, an open stream resource or null, but was given int.']; // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'an array' => [static fn(): NClob => NClob::inOut([]), 'NClob::in() takes a string, an open stream resource or null, but was given array.']; // @phpstan-ignore argument.type (the mistake is the point)
         yield 'a closed stream' => [static function (): Bind {
             $stream = self::stream('x');
             fclose($stream);
 
             return Blob::in($stream);
         }, 'Blob::in() takes a string, an open stream resource or null, but was given resource (closed).'];
-        yield 'a Stringable' => [static fn (): Clob => Clob::in(new class () implements \Stringable { // @phpstan-ignore argument.type (the mistake is the point)
+        yield 'a Stringable' => [static fn(): Clob => Clob::in(new class implements \Stringable { // @phpstan-ignore argument.type (the mistake is the point)
             public function __toString(): string
             {
                 return 'x';
@@ -382,8 +382,8 @@ final class LobBindsTest extends ConformanceTestCase
             ['v' => Clob::in('one'), 'w' => Blob::in("\x01"), 'id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
             ['v' => Clob::in('two'), 'w' => Blob::in("\x02"), 'id' => 2, 't' => Clob::out(), 'b' => Blob::out()],
         ], $options)->outValues();
-        self::assertSame([['one'], ['two']], array_map(static fn (array $list): array => array_map(self::read(...), $list), $many['t']));
-        self::assertSame([["\x01"], ["\x02"]], array_map(static fn (array $list): array => array_map(self::read(...), $list), $many['b']));
+        self::assertSame([['one'], ['two']], array_map(static fn(array $list): array => array_map(self::read(...), $list), $many['t']));
+        self::assertSame([["\x01"], ["\x02"]], array_map(static fn(array $list): array => array_map(self::read(...), $list), $many['b']));
         $connection->rollback();
     }
 

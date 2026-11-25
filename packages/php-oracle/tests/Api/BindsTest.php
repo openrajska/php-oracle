@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
-use Rajska\Oracle\Execution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -16,6 +15,7 @@ use Rajska\Oracle\Connection;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
+use Rajska\Oracle\Execution;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\Binds\Priority;
 use Rajska\Oracle\Tests\Support\TestDatabase;
@@ -65,12 +65,12 @@ final class BindsTest extends TestCase
      */
     public static function rejectedValues(): iterable
     {
-        yield 'Number::in(), not a decimal literal' => [static fn (#[\SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
-        yield 'Number::inOut(), not a decimal literal' => [static fn (#[\SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
+        yield 'Number::in(), not a decimal literal' => [static fn(#[\SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
+        yield 'Number::inOut(), not a decimal literal' => [static fn(#[\SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
         // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'Boolean::in(), a string' => [static fn (#[\SensitiveParameter] string $secret): mixed => Boolean::in($secret)];
+        yield 'Boolean::in(), a string' => [static fn(#[\SensitiveParameter] string $secret): mixed => Boolean::in($secret)];
         // @phpstan-ignore argument.type (a caller without static analysis)
-        yield 'PlsInteger::inOut(), a string' => [static fn (#[\SensitiveParameter] string $secret): mixed => PlsInteger::inOut($secret)];
+        yield 'PlsInteger::inOut(), a string' => [static fn(#[\SensitiveParameter] string $secret): mixed => PlsInteger::inOut($secret)];
     }
 
     /**
@@ -104,9 +104,9 @@ final class BindsTest extends TestCase
         self::assertSame('0', \ini_get('zend.exception_ignore_args'), 'the suite keeps exceptions\' arguments');
         $secret = 'zq32secret';
         $calls = [
-            'server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),
-            'typed bind, server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => Varchar::in($secret)]),
-            'refused bind' => fn (): Execution => $this->connection->run('begin :n := :text; end;', ['n' => Number::out(), 'text' => [$secret]]),
+            'server error' => fn(): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),
+            'typed bind, server error' => fn(): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => Varchar::in($secret)]),
+            'refused bind' => fn(): Execution => $this->connection->run('begin :n := :text; end;', ['n' => Number::out(), 'text' => [$secret]]),
         ];
         foreach ($calls as $kind => $call) {
             try {

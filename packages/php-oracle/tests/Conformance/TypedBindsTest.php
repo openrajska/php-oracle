@@ -59,7 +59,7 @@ final class TypedBindsTest extends ConformanceTestCase
         // largest buffer, 32767 bytes (16383 UTF-16 code units for NCHAR).
         yield 'Char' => ['char', Char::in('AB'), str_pad('AB', 32767), Char::out(), Char::inOut('x'), "rtrim(io) || 'y'", str_pad('xy', 32767)];
         yield 'NVarchar' => ['nvarchar2', NVarchar::in('çã日😀'), 'çã日😀', NVarchar::out(), NVarchar::inOut('é'), "io || n'日'", 'é日'];
-        yield 'NChar' => ['nchar', NChar::in('ç日😀'), 'ç日😀'.str_repeat(' ', 16383 - 4), NChar::out(), NChar::inOut('é'), "rtrim(io) || n'😀'", 'é😀'.str_repeat(' ', 16383 - 3)];
+        yield 'NChar' => ['nchar', NChar::in('ç日😀'), 'ç日😀' . str_repeat(' ', 16383 - 4), NChar::out(), NChar::inOut('é'), "rtrim(io) || n'😀'", 'é😀' . str_repeat(' ', 16383 - 3)];
         yield 'Number' => ['number', Number::in('12.30'), '12.3', Number::out(), Number::inOut(41), 'io + 1', 42];
         yield 'Number from a float' => ['number', Number::in(0.1), '0.1', Number::out(), Number::inOut(0.5), 'io * 3', '1.5'];
         yield 'BinaryFloat' => ['binary_float', BinaryFloat::in(0.1), 0.1, BinaryFloat::out(), BinaryFloat::inOut(1.5), 'io * 2', 3.0];
@@ -158,7 +158,7 @@ final class TypedBindsTest extends ConformanceTestCase
 
             $values = $execution->outValues();
             self::assertSame(['o' => [$out], 'io' => [$changed]], array_map(
-                static fn (array $list): array => array_map(Temporals::shown(...), $list),
+                static fn(array $list): array => array_map(Temporals::shown(...), $list),
                 $values,
             ));
         });
@@ -215,13 +215,13 @@ final class TypedBindsTest extends ConformanceTestCase
      */
     public static function incompatibleIntervals(): iterable
     {
-        yield 'IntervalDs with years' => [static fn (): IntervalDs => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalDs with months' => [static fn (): IntervalDs => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
-        yield 'IntervalYm with days' => [static fn (): IntervalYm => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
-        yield 'IntervalYm with seconds' => [static fn (): IntervalYm => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalDs with years' => [static fn(): IntervalDs => IntervalDs::in(new \DateInterval('P1Y')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalDs with months' => [static fn(): IntervalDs => IntervalDs::inOut(new \DateInterval('P1M2D')), 'IntervalDs::in() takes days and smaller units'];
+        yield 'IntervalYm with days' => [static fn(): IntervalYm => IntervalYm::in(new \DateInterval('P1Y1D')), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with seconds' => [static fn(): IntervalYm => IntervalYm::inOut(new \DateInterval('PT1S')), 'IntervalYm::in() takes years and months only'];
         $fraction = new \DateInterval('P1Y');
         $fraction->f = 0.5;
-        yield 'IntervalYm with a fraction' => [static fn (): IntervalYm => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
+        yield 'IntervalYm with a fraction' => [static fn(): IntervalYm => IntervalYm::in($fraction), 'IntervalYm::in() takes years and months only'];
     }
 
     /**
@@ -434,7 +434,7 @@ final class TypedBindsTest extends ConformanceTestCase
             ['v' => str_repeat('y', 8000), 'o' => Varchar::out()],
             self::options(),
         )->outValues();
-        self::assertSame(['o' => ['Item 0001'.str_repeat('y', 8000)]], $returned);
+        self::assertSame(['o' => ['Item 0001' . str_repeat('y', 8000)]], $returned);
 
         try {
             $connection->execute('insert into fx_bind_rows (name) values (:v)', ['v' => Varchar::in(str_repeat('y', 4001))], self::options());
@@ -485,7 +485,7 @@ final class TypedBindsTest extends ConformanceTestCase
         );
 
         self::assertSame(
-            ['from_null' => [str_repeat('b', 32767)], 'from_a' => ['a'.str_repeat('b', 32766)]],
+            ['from_null' => [str_repeat('b', 32767)], 'from_a' => ['a' . str_repeat('b', 32766)]],
             $execution->outValues(),
         );
     }
@@ -546,7 +546,7 @@ final class TypedBindsTest extends ConformanceTestCase
                 ['i' => NVarchar::in($text), 'o' => NVarchar::out(), 'io' => NVarchar::inOut($text)],
                 self::options(),
             );
-            self::assertSame(['o' => [$text], 'io' => [$text.$text]], $execution->outValues());
+            self::assertSame(['o' => [$text], 'io' => [$text . $text]], $execution->outValues());
         }
     }
 

@@ -123,7 +123,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
 
-        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows()));
+        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows()));
 
         self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
         self::assertSame(1, $e->getCode());
@@ -143,7 +143,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $connection->execute('insert into fx_tx_rows (id) values (1)', [], self::options(autocommit: false));
 
-        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
+        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::withBadRows(), autocommit: false));
 
         self::assertSame([[3, 1], [5, 1400], [7, 2290]], self::failures($e));
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
@@ -166,7 +166,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $rows[1]['id'] = 1;
         $rows[3]['code'] = 'c1';
 
-        $e = self::failing(static fn (): DriverArrayDml => self::many($connection, self::INSERT, $rows));
+        $e = self::failing(static fn(): DriverArrayDml => self::many($connection, self::INSERT, $rows));
 
         self::assertSame(ArrayDmlException::class, $e::class);
         self::assertSame([[1, 1], [3, 1]], self::failures($e));
@@ -287,7 +287,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      */
     public static function refusals(): iterable
     {
-        $row = static fn (mixed $id, mixed $code = 'a'): array => ['id' => $id, 'code' => $code, 'qty' => 1];
+        $row = static fn(mixed $id, mixed $code = 'a'): array => ['id' => $id, 'code' => $code, 'qty' => 1];
         yield 'different keys' => [self::INSERT, [$row(1), ['id' => 2, 'code' => 'b']], "Row 1 has no bind 'qty', which row 0 has; every row needs the same keys."];
         yield 'an extra key' => [self::INSERT, [$row(1), [...$row(2), 'note' => 'x']], "Row 1 has a bind 'note', which row 0 has not; every row needs the same keys."];
         yield 'an int and a string' => [self::INSERT, [$row(1), $row('2')], "Row 1, bind 'id': a string, but row 0 made the column a NUMBER (int or float); a column takes one type (an int and a float mix as NUMBER)."];
@@ -379,11 +379,11 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $sid = self::sid($connection);
         $block = 'begin insert into fx_tx_rows (id) values (:id); end;';
-        $ids = static fn (int $from): array => array_map(static fn (int $id): array => ['id' => $id], range($from, $from + 99));
+        $ids = static fn(int $from): array => array_map(static fn(int $id): array => ['id' => $id], range($from, $from + 99));
         self::many($connection, $block, $ids(1));
 
-        $dml = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100)));
-        $plsql = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, $block, $ids(101)));
+        $dml = self::$counter->during($sid, static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100)));
+        $plsql = self::$counter->during($sid, static fn(): DriverArrayDml => self::many($connection, $block, $ids(101)));
 
         self::assertSame(1, $dml);
         self::assertSame(2, $plsql);
@@ -447,7 +447,7 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         $block = 'begin fx_object.move_point(:point, 1, 2); :sum := fx_object.sum_numbers(:numbers) + fx_object.sum_map(:map); end;';
-        $row = static fn (int $n): array => [
+        $row = static fn(int $n): array => [
             'point' => Struct::inOut('fx_point', ['x' => $n, 'y' => $n, 'label' => "p$n"]),
             'numbers' => Collection::in('fx_number_list', range(1, $n)),
             'map' => Indexed::in('fx_object.t_number_map', [-$n => $n]),
@@ -534,7 +534,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection = $this->connect();
         $sid = self::sid($connection);
 
-        $trips = self::$counter->during($sid, static fn (): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100), autocommit: false));
+        $trips = self::$counter->during($sid, static fn(): DriverArrayDml => self::many($connection, self::INSERT, self::valid(100), autocommit: false));
 
         self::assertSame(2, $trips);
         self::assertSame(100, self::value($connection, 'select count(*) from fx_batch_rows'));
@@ -614,7 +614,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      */
     private static function valid(int $count): array
     {
-        return array_map(static fn (int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
+        return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
     }
 
     /**
@@ -641,7 +641,7 @@ final class ArrayDmlTest extends ConformanceTestCase
      */
     private static function contents(array $lists): array
     {
-        return array_map(static fn (array $list): array => array_map(static function (mixed $lob): ?string {
+        return array_map(static fn(array $list): array => array_map(static function (mixed $lob): ?string {
             if ($lob === null) {
                 return null;
             }

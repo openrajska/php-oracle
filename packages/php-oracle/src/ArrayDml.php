@@ -32,8 +32,7 @@ final class ArrayDml implements \Countable
         private readonly string $sql,
         private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
-    ) {
-    }
+    ) {}
 
     /**
      * The INSERT / UPDATE / DELETE / MERGE count, across every bind row; 0
@@ -66,22 +65,22 @@ final class ArrayDml implements \Countable
     public function out(string $name): array
     {
         $values = $this->outValues ??= array_map(
-            fn (array $rows): array => array_map(
-                fn (array $values): array => Lob::wrap(Cursor::wrap($values, $this->connection), $this->connection),
+            fn(array $rows): array => array_map(
+                fn(array $values): array => Lob::wrap(Cursor::wrap($values, $this->connection), $this->connection),
                 $rows,
             ),
             $this->driver->outValues(),
         );
         $key = \array_key_exists($name, $values) ? $name : self::find($name, array_keys($values));
         if ($key !== null) {
-            return array_map(fn (array $row): OutValue => new OutValue($key, $row, $this->sql), $values[$key]);
+            return array_map(fn(array $row): OutValue => new OutValue($key, $row, $this->sql), $values[$key]);
         }
 
         $in = self::find($name, $this->bindNames);
         if ($in !== null) {
             throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql);
         }
-        $names = $values === [] ? 'the statement has none' : "they are '".implode("', '", array_keys($values))."'";
+        $names = $values === [] ? 'the statement has none' : "they are '" . implode("', '", array_keys($values)) . "'";
 
         throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql);
     }

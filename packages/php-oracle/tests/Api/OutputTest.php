@@ -57,7 +57,7 @@ final class OutputTest extends TestCase
             $counter->close();
         }
 
-        self::assertSame(array_map(static fn (int $i): string => "line $i", range(1, 2500)), $lines);
+        self::assertSame(array_map(static fn(int $i): string => "line $i", range(1, 2500)), $lines);
         self::assertSame([], $connection->output());
     }
 
@@ -281,7 +281,7 @@ final class OutputTest extends TestCase
         $observer = TransactionObserver::open();
         try {
             $observer->execute("insert into fx_tx_rows (id, note) values (1, 'committed')");
-            $note = static fn (): ?string => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
+            $note = static fn(): ?string => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
             $connection = self::fresh();
             $connection->begin();
             $connection->run("update fx_tx_rows set note = 'uncommitted' where id = 1");
@@ -310,9 +310,9 @@ final class OutputTest extends TestCase
      */
     public static function outputCalls(): iterable
     {
-        yield 'enableOutput()' => [static fn (Connection $connection) => $connection->enableOutput()];
-        yield 'output()' => [static fn (Connection $connection): array => $connection->output()];
-        yield 'disableOutput()' => [static fn (Connection $connection) => $connection->disableOutput()];
+        yield 'enableOutput()' => [static fn(Connection $connection) => $connection->enableOutput()];
+        yield 'output()' => [static fn(Connection $connection): array => $connection->output()];
+        yield 'disableOutput()' => [static fn(Connection $connection) => $connection->disableOutput()];
     }
 
     /**

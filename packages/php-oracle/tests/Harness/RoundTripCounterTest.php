@@ -30,8 +30,7 @@ final class RoundTripCounterTest extends TestCase
     #[Test]
     public function an_idle_session_makes_no_round_trip(): void
     {
-        self::assertSame(0, $this->counter->during($this->observed->sid(), static function (): void {
-        }));
+        self::assertSame(0, $this->counter->during($this->observed->sid(), static function (): void {}));
     }
 
     #[Test]
@@ -50,7 +49,7 @@ final class RoundTripCounterTest extends TestCase
     {
         self::assertSame(1, $this->counter->during(
             $this->observed->sid(),
-            fn () => $this->observed->execute('begin null; end;'),
+            fn() => $this->observed->execute('begin null; end;'),
         ));
     }
 

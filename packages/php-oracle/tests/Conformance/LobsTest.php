@@ -87,7 +87,7 @@ final class LobsTest extends ConformanceTestCase
             self::assertInstanceOf(DriverLob::class, $empty, $column);
             self::assertSame($type, $empty->type(), $column);
             self::assertSame(0, $empty->size(), $column);
-            self::assertSame(0, $this->roundTrips($connection, static fn () => self::assertSame('', $empty->readChunk())), $column);
+            self::assertSame(0, $this->roundTrips($connection, static fn() => self::assertSame('', $empty->readChunk())), $column);
             self::assertNull($rows[1][$column], $column);
         }
 
@@ -236,10 +236,10 @@ final class LobsTest extends ConformanceTestCase
             self::options(autocommit: false),
         )->outValues();
         $rows = array_map(null, $returned['id'], $returned['t'], $returned['b']);
-        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        usort($rows, static fn(array $a, array $b): int => $a[0] <=> $b[0]);
         self::assertSame(
             [[1, self::SMALL, "\xDE\xAD\xBE\xEF"], [2, '', ''], [3, null, null]],
-            array_map(static fn (array $row): array => [
+            array_map(static fn(array $row): array => [
                 $row[0],
                 $row[1] === null ? null : self::read(self::lob($row[1])),
                 $row[2] === null ? null : self::read(self::lob($row[2])),
@@ -379,7 +379,7 @@ final class LobsTest extends ConformanceTestCase
         };
         // `Ação 日本 😀😀 `: multibyte text and surrogate pairs.
         $text = 'A\\00e7\\00e3o \\65e5\\672c \\D83D\\DE00\\D83D\\DE00 ';
-        $chars = static fn (int $count): string => implode(' || ', array_fill(0, intdiv($count, 4000), "to_clob(rpad('x', 4000, 'x'))"))
+        $chars = static fn(int $count): string => implode(' || ', array_fill(0, intdiv($count, 4000), "to_clob(rpad('x', 4000, 'x'))"))
             . " || rpad('x', " . ($count % 4000) . ", 'x')";
 
         try {
@@ -404,7 +404,7 @@ final class LobsTest extends ConformanceTestCase
                 if ($case === 'five rows of three LOBs') {
                     $grins = "\u{1f600}\u{1f600}";
                     self::assertSame(array_map(
-                        static fn (int $level): array => ["Ação 日本 $grins $level", "Ação 日本 $grins $level", "\xde\xad" . \chr($level)],
+                        static fn(int $level): array => ["Ação 日本 $grins $level", "Ação 日本 $grins $level", "\xde\xad" . \chr($level)],
                         range(1, 5),
                     ), array_map(array_values(...), $inline));
                 } elseif (str_starts_with($case, 'one LOB of 3276')) {
@@ -657,7 +657,7 @@ final class LobsTest extends ConformanceTestCase
      */
     private static function comparable(array $rows): array
     {
-        return array_map(static fn (array $row): array => array_map(static function (mixed $value): mixed {
+        return array_map(static fn(array $row): array => array_map(static function (mixed $value): mixed {
             $value = $value instanceof DriverLob ? self::read($value) : $value;
 
             return \is_string($value) && \strlen($value) > 1024 ? md5($value) : $value;

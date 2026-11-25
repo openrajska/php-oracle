@@ -189,11 +189,11 @@ final class TransactionsTest extends TestCase
     public static function misuses(): iterable
     {
         yield 'commit() outside a transaction' => [
-            static fn (Connection $c) => $c->commit(),
+            static fn(Connection $c) => $c->commit(),
             'There is no transaction to commit',
         ];
         yield 'rollback() outside a transaction' => [
-            static fn (Connection $c) => $c->rollback(),
+            static fn(Connection $c) => $c->rollback(),
             'There is no transaction to roll back',
         ];
         yield 'begin() inside begin()' => [
@@ -206,27 +206,27 @@ final class TransactionsTest extends TestCase
         yield 'transaction() inside begin()' => [
             static function (Connection $c): void {
                 $c->begin();
-                $c->transaction(static fn (): null => null);
+                $c->transaction(static fn(): null => null);
             },
             'Transactions do not nest',
         ];
         yield 'begin() inside transaction()' => [
-            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->begin()),
+            static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->begin()),
             'Transactions do not nest',
             1,
         ];
         yield 'transaction() inside transaction()' => [
-            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->transaction(static fn (): null => null)),
+            static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->transaction(static fn(): null => null)),
             'Transactions do not nest',
             1,
         ];
         yield 'commit() inside transaction()' => [
-            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->commit()),
+            static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->commit()),
             'commit() inside transaction()',
             1,
         ];
         yield 'rollback() inside transaction()' => [
-            static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->rollback()),
+            static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->rollback()),
             'rollback() inside transaction()',
             1,
         ];
@@ -527,7 +527,7 @@ final class TransactionsTest extends TestCase
             }
         }
         $this->expectException(UsageException::class);
-        $this->connection->transaction(static fn (): never => self::fail('The closure ran.'));
+        $this->connection->transaction(static fn(): never => self::fail('The closure ran.'));
     }
 
     /**

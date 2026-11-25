@@ -14,9 +14,7 @@ namespace Rajska\Oracle\Tests\Support;
  */
 final readonly class TransactionObserver
 {
-    private function __construct(private IndependentSession $session)
-    {
-    }
+    private function __construct(private IndependentSession $session) {}
 
     /**
      * Opens the observer and empties fx_tx_rows.
@@ -38,7 +36,7 @@ final readonly class TransactionObserver
      */
     public function committed(): array
     {
-        return array_map(static fn (array $row): int => (int) $row['ID'], $this->select('select id from fx_tx_rows order by id'));
+        return array_map(static fn(array $row): int => (int) $row['ID'], $this->select('select id from fx_tx_rows order by id'));
     }
 
     /**

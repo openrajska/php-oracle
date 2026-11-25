@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
-use Rajska\Oracle\Driver\DriverExecution;
-use Rajska\Oracle\Driver\DriverArrayDml;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Clob;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
@@ -64,11 +64,11 @@ final class ReleaseTest extends ConformanceTestCase
      */
     public static function nothingOpen(): iterable
     {
-        yield 'no call' => [static fn (DriverConnection $c): null => null];
-        yield 'a query' => [static fn (DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows')];
-        yield 'a DML under Autocommit' => [static fn (DriverConnection $c): DriverExecution => $c->execute('insert into fx_tx_rows (id) values (2)', [], self::options())];
-        yield 'a block under Autocommit' => [static fn (DriverConnection $c): DriverExecution => $c->execute("begin update fx_tx_rows set note = 'block' where id = 1; end;", [], self::options())];
-        yield 'SELECT … FOR UPDATE under Autocommit' => [static fn (DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows for update')];
+        yield 'no call' => [static fn(DriverConnection $c): null => null];
+        yield 'a query' => [static fn(DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows')];
+        yield 'a DML under Autocommit' => [static fn(DriverConnection $c): DriverExecution => $c->execute('insert into fx_tx_rows (id) values (2)', [], self::options())];
+        yield 'a block under Autocommit' => [static fn(DriverConnection $c): DriverExecution => $c->execute("begin update fx_tx_rows set note = 'block' where id = 1; end;", [], self::options())];
+        yield 'SELECT … FOR UPDATE under Autocommit' => [static fn(DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows for update')];
         yield 'commit()' => [static function (DriverConnection $c): void {
             $c->execute('insert into fx_tx_rows (id) values (2)', [], self::options(autocommit: false));
             $c->commit();
@@ -114,24 +114,24 @@ final class ReleaseTest extends ConformanceTestCase
     public static function leftOpen(): iterable
     {
         $open = self::options(autocommit: false);
-        $lock = static fn (DriverConnection $c): DriverExecution => $c->execute("update fx_tx_rows set note = 'open' where id = 1", [], $open);
+        $lock = static fn(DriverConnection $c): DriverExecution => $c->execute("update fx_tx_rows set note = 'open' where id = 1", [], $open);
 
-        yield 'DML in a PL/SQL block' => [static fn (DriverConnection $c): DriverExecution => $c->execute(
+        yield 'DML in a PL/SQL block' => [static fn(DriverConnection $c): DriverExecution => $c->execute(
             "begin update fx_tx_rows set note = 'open' where id = 1; insert into fx_tx_rows (id) values (2); end;",
             [],
             $open,
         )];
-        yield 'SELECT … FOR UPDATE' => [static fn (DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows where id = 1 for update', [], $open)];
-        yield 'LOCK TABLE' => [static fn (DriverConnection $c): DriverExecution => $c->execute('lock table fx_tx_rows in exclusive mode', [], $open)];
-        yield 'SET TRANSACTION READ ONLY' => [static fn (DriverConnection $c): DriverExecution => $c->execute('set transaction read only', [], $open)];
-        yield 'runMany()' => [static fn (DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_tx_rows (id) values (:id)', [['id' => 2], ['id' => 3]], $open)];
+        yield 'SELECT … FOR UPDATE' => [static fn(DriverConnection $c): array => self::rows($c, 'select id from fx_tx_rows where id = 1 for update', [], $open)];
+        yield 'LOCK TABLE' => [static fn(DriverConnection $c): DriverExecution => $c->execute('lock table fx_tx_rows in exclusive mode', [], $open)];
+        yield 'SET TRANSACTION READ ONLY' => [static fn(DriverConnection $c): DriverExecution => $c->execute('set transaction read only', [], $open)];
+        yield 'runMany()' => [static fn(DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_tx_rows (id) values (:id)', [['id' => 2], ['id' => 3]], $open)];
         yield 'runMany() with a failing row, after a DML' => [static function (DriverConnection $c) use ($lock, $open): void {
             $lock($c);
-            self::fails(static fn (): DriverArrayDml => $c->executeMany('insert into fx_tx_rows (id) values (:id)', [['id' => 2], ['id' => 1]], $open));
+            self::fails(static fn(): DriverArrayDml => $c->executeMany('insert into fx_tx_rows (id) values (:id)', [['id' => 2], ['id' => 1]], $open));
         }];
         yield 'a failed execute, after a DML' => [static function (DriverConnection $c) use ($lock, $open): void {
             $lock($c);
-            self::fails(static fn (): DriverExecution => $c->execute('insert into fx_tx_rows (id) values (1)', [], $open));
+            self::fails(static fn(): DriverExecution => $c->execute('insert into fx_tx_rows (id) values (1)', [], $open));
         }];
         yield 'a query, after a DML' => [static function (DriverConnection $c) use ($lock): void {
             $lock($c);
@@ -142,7 +142,7 @@ final class ReleaseTest extends ConformanceTestCase
             $c->execute("begin dbms_output.enable(null); dbms_output.put_line('line'); end;", [], $open);
             $c->execute('begin dbms_output.disable; end;', [], $open);
         }];
-        yield 'a DML with a LOB bind' => [static fn (DriverConnection $c): DriverExecution => $c->execute(
+        yield 'a DML with a LOB bind' => [static fn(DriverConnection $c): DriverExecution => $c->execute(
             'update fx_tx_rows set note = dbms_lob.substr(:note, 10) where id = 1',
             ['note' => Clob::in(str_repeat('x', 40_000))],
             $open,

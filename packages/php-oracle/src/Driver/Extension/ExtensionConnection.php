@@ -28,9 +28,7 @@ final class ExtensionConnection implements DriverConnection
      */
     private ?array $lastArray = null;
 
-    public function __construct(private readonly NativeConnection $native)
-    {
-    }
+    public function __construct(private readonly NativeConnection $native) {}
 
     public function execute(string $sql, #[\SensitiveParameter] array $binds, DriverOptions $options): DriverExecution
     {
@@ -44,7 +42,7 @@ final class ExtensionConnection implements DriverConnection
             $result['rowCount'],
             $result['cursor'] === null ? null : new ExtensionCursor($result['cursor'], $sql),
             $result['outValues'] === [] ? [] : ExtensionCursor::handles($result['outValues'], $sql),
-            $result['implicitResults'] === [] ? [] : array_map(static fn ($cursor): ExtensionCursor => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
+            $result['implicitResults'] === [] ? [] : array_map(static fn($cursor): ExtensionCursor => new ExtensionCursor($cursor, $sql), $result['implicitResults']),
             $result['warning'],
         );
     }

@@ -30,8 +30,7 @@ final readonly class Column
         public ?int $vectorDimensions,
         public ?VectorFormat $vectorFormat,
         public bool $sparse,
-    ) {
-    }
+    ) {}
 
     /**
      * @internal from the Driver contract's description, enums as backing values

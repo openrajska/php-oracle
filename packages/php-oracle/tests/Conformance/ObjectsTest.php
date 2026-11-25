@@ -141,7 +141,7 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertNotNull($cursor);
 
         $columns = array_map(
-            static fn (array $column): array => [$column['type'], $column['objectType']],
+            static fn(array $column): array => [$column['type'], $column['objectType']],
             $cursor->columns(),
         );
 
@@ -218,7 +218,7 @@ final class ObjectsTest extends ConformanceTestCase
     public function a_boolean_attribute_reads_as_stored(): void
     {
         $connection = $this->connect();
-        $built = static fn (string $flag): string => "fx_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
+        $built = static fn(string $flag): string => "fx_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
 
         foreach (['true' => true, 'false' => false, 'null' => null] as $flag => $expected) {
             $plsql = $connection->execute("begin :o := {$built($flag)}; end;", ['o' => Struct::out('fx_all_scalars')], self::options());
@@ -317,7 +317,7 @@ final class ObjectsTest extends ConformanceTestCase
             $options,
         );
         $rows = array_map(null, $updated->outValues()['id_o'], $updated->outValues()['center_o'], $updated->outValues()['tags_o']);
-        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        usort($rows, static fn(array $a, array $b): int => $a[0] <=> $b[0]);
         self::assertSame([
             [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
             [2, null, null],
@@ -544,15 +544,15 @@ final class ObjectsTest extends ConformanceTestCase
         // @phpstan-ignore argument.type (deliberately the wrong shape)
         yield 'an Indexed string key' => [Indexed::in('fx_object.t_number_map', ['a' => 1]), "Bind 'i': an Associative array has int keys, but key 'a' is a string; INDEX BY VARCHAR2 is not supported yet."];
         yield 'an Indexed key beyond 32 bits' => [Indexed::in('fx_object.t_number_map', [2147483648 => 1]), "Bind 'i': key 2147483648 is outside the 32-bit range of an Associative array's keys (INDEX BY PLS_INTEGER)."];
-        yield 'an unknown Struct key' => [Struct::in('fx_point', $point + ['z' => 1]), "Bind 'i': ".self::schemaPlaceholder().".FX_POINT has no attribute 'z'; its attributes are X, Y, LABEL."];
-        yield 'a missing Struct key' => [Struct::in('fx_point', ['x' => 1]), "Bind 'i': the value has no key for attributes Y, LABEL of ".self::schemaPlaceholder().'.FX_POINT; give every attribute, null for a NULL one.'];
+        yield 'an unknown Struct key' => [Struct::in('fx_point', $point + ['z' => 1]), "Bind 'i': " . self::schemaPlaceholder() . ".FX_POINT has no attribute 'z'; its attributes are X, Y, LABEL."];
+        yield 'a missing Struct key' => [Struct::in('fx_point', ['x' => 1]), "Bind 'i': the value has no key for attributes Y, LABEL of " . self::schemaPlaceholder() . '.FX_POINT; give every attribute, null for a NULL one.'];
         yield 'Struct keys differing only in case' => [Struct::in('fx_point', $point + ['X' => 1]), "Bind 'i': keys 'x' and 'X' differ only in case and name the same attribute; keep one of them."];
         // @phpstan-ignore argument.type (deliberately the wrong shape)
         yield 'a list as a Struct' => [Struct::in('fx_point', [1, 2, null]), "Bind 'i': an Object is keyed by attribute name, but key 0 is an int (is the array a list?)."];
-        yield 'Struct of a Collection type' => [Struct::in('fx_number_list', ['x' => 1]), "Bind 'i': ".self::schemaPlaceholder().'.FX_NUMBER_LIST is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.'];
-        yield 'Collection of an Object type' => [Collection::in('fx_point', []), "Bind 'i': ".self::schemaPlaceholder().'.FX_POINT is an Object type, not a Collection type (nested table or VARRAY); use Struct, not Collection.'];
-        yield 'Collection of an Associative array type' => [Collection::in('fx_object.t_number_map', []), "Bind 'i': ".self::schemaPlaceholder().'.FX_OBJECT.T_NUMBER_MAP is an Associative array type (INDEX BY PLS_INTEGER), not a Collection type (nested table or VARRAY); use Indexed, not Collection.'];
-        yield 'Indexed of a nested table type' => [Indexed::in('fx_number_list', []), "Bind 'i': ".self::schemaPlaceholder().'.FX_NUMBER_LIST is a Collection type (nested table or VARRAY), not an Associative array type (INDEX BY PLS_INTEGER); use Collection, not Indexed.'];
+        yield 'Struct of a Collection type' => [Struct::in('fx_number_list', ['x' => 1]), "Bind 'i': " . self::schemaPlaceholder() . '.FX_NUMBER_LIST is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.'];
+        yield 'Collection of an Object type' => [Collection::in('fx_point', []), "Bind 'i': " . self::schemaPlaceholder() . '.FX_POINT is an Object type, not a Collection type (nested table or VARRAY); use Struct, not Collection.'];
+        yield 'Collection of an Associative array type' => [Collection::in('fx_object.t_number_map', []), "Bind 'i': " . self::schemaPlaceholder() . '.FX_OBJECT.T_NUMBER_MAP is an Associative array type (INDEX BY PLS_INTEGER), not a Collection type (nested table or VARRAY); use Indexed, not Collection.'];
+        yield 'Indexed of a nested table type' => [Indexed::in('fx_number_list', []), "Bind 'i': " . self::schemaPlaceholder() . '.FX_NUMBER_LIST is a Collection type (nested table or VARRAY), not an Associative array type (INDEX BY PLS_INTEGER); use Collection, not Indexed.'];
         yield 'an invalid type name' => [Struct::in('fx point', $point), "Bind 'i': the type name 'fx point' is not valid: each dot-separated part must be an identifier (a letter, then letters, digits, _, $ or #) or a double-quoted name, of at most 128 bytes."];
         yield 'a type name with four parts' => [Struct::in('a.b.c.d', $point), "Bind 'i': the type name 'a.b.c.d' has 4 parts; a type name has at most 3: schema.package.type."];
         yield 'text for a NUMBER' => [Struct::in('fx_point', ['x' => 'one'] + $point), "Bind 'i', attribute X: a NUMBER takes a decimal literal with '.', such as '12.30', as text."];
@@ -618,7 +618,7 @@ final class ObjectsTest extends ConformanceTestCase
         yield 'uppercase' => ['FX_POINT'];
         yield 'quoted' => ['"FX_POINT"'];
         yield 'mixed case' => ['Fx_Point'];
-        yield 'schema-qualified' => [self::schemaPlaceholder().'.fx_point'];
+        yield 'schema-qualified' => [self::schemaPlaceholder() . '.fx_point'];
         yield 'a synonym' => ['fx_point_alias'];
     }
 
@@ -678,21 +678,21 @@ final class ObjectsTest extends ConformanceTestCase
         $connection = $this->connect(...$pool);
         $sid = self::sid($connection);
         $counter = RoundTripCounter::open();
-        $echo = static fn (DriverConnection $connection, string $name): mixed => $connection->execute(
+        $echo = static fn(DriverConnection $connection, string $name): mixed => $connection->execute(
             self::ECHO,
             ['i' => Collection::in($name, [[1], []]), 'o' => Collection::out($name)],
             self::options(),
         )->outValues()['o'];
 
         try {
-            $first = $counter->during($sid, static fn (): mixed => $echo($connection, 'fx_number_matrix'));
-            $again = $counter->during($sid, static fn (): mixed => $echo($connection, 'FX_NUMBER_MATRIX'));
+            $first = $counter->during($sid, static fn(): mixed => $echo($connection, 'fx_number_matrix'));
+            $again = $counter->during($sid, static fn(): mixed => $echo($connection, 'FX_NUMBER_MATRIX'));
             $connection->close();
             $next = $this->connect(...$pool);
             self::assertSame($sid, self::sid($next));
-            $nextLoan = $counter->during($sid, static fn (): mixed => $echo($next, 'Fx_Number_Matrix'));
+            $nextLoan = $counter->during($sid, static fn(): mixed => $echo($next, 'Fx_Number_Matrix'));
             $query = 'select fx_number_matrix(fx_number_list(1)) from dual';
-            $column = $counter->during($sid, static fn (): array => self::rows($next, $query));
+            $column = $counter->during($sid, static fn(): array => self::rows($next, $query));
         } finally {
             $counter->close();
         }
@@ -719,13 +719,13 @@ final class ObjectsTest extends ConformanceTestCase
     #[Test]
     public function after_alter_type_elsewhere_a_session_fails_loudly_or_stays_consistent(): void
     {
-        $type = 'fx_evolving_'.bin2hex(random_bytes(3));
+        $type = 'fx_evolving_' . bin2hex(random_bytes(3));
         $connection = $this->connect(standalone: true);
         $other = $this->connect();
         $connection->execute("create type $type as object (a number)", [], self::options());
 
         try {
-            $echo = static fn (array $value): mixed => $connection->execute(
+            $echo = static fn(array $value): mixed => $connection->execute(
                 self::ECHO,
                 ['i' => Struct::in($type, self::struct($value)), 'o' => Struct::out($type)],
                 self::options(),
@@ -738,18 +738,18 @@ final class ObjectsTest extends ConformanceTestCase
             $outcomes = [];
             $messages = [];
             foreach ([
-                'bind the old shape' => static fn (): mixed => $echo(['a' => 2]),
-                'bind the new shape' => static fn (): mixed => $echo(['a' => 3, 'b' => 'x']),
-                'fetch a value' => fn (): mixed => self::value($connection, "select $type(4, 'y') from dual"),
-                'fetch a value again' => fn (): mixed => self::value($connection, "select $type(4, 'y') from dual"),
-                'still usable' => fn (): mixed => self::value($connection, 'select 1 from dual'),
-                'a new Session fetches' => fn (): mixed => self::value($fresh, "select $type(5, 'z') from dual"),
-                'a new Session binds' => fn (): mixed => $fresh->execute(
+                'bind the old shape' => static fn(): mixed => $echo(['a' => 2]),
+                'bind the new shape' => static fn(): mixed => $echo(['a' => 3, 'b' => 'x']),
+                'fetch a value' => fn(): mixed => self::value($connection, "select $type(4, 'y') from dual"),
+                'fetch a value again' => fn(): mixed => self::value($connection, "select $type(4, 'y') from dual"),
+                'still usable' => fn(): mixed => self::value($connection, 'select 1 from dual'),
+                'a new Session fetches' => fn(): mixed => self::value($fresh, "select $type(5, 'z') from dual"),
+                'a new Session binds' => fn(): mixed => $fresh->execute(
                     "declare v $type := :i; begin :o := v.a || v.b; end;",
                     ['i' => Struct::in($type, ['a' => 6, 'b' => 'w']), 'o' => Varchar::out()],
                     self::options(),
                 )->outValues()['o'][0],
-                'a new Session binds OUT' => fn (): mixed => $fresh->execute(
+                'a new Session binds OUT' => fn(): mixed => $fresh->execute(
                     "begin :o := $type(7, 'v'); end;",
                     ['o' => Struct::out($type)],
                     self::options(),
@@ -758,14 +758,14 @@ final class ObjectsTest extends ConformanceTestCase
                 try {
                     $outcomes[$case] = $run();
                 } catch (OracleException $e) {
-                    $outcomes[$case] = $e::class.($e->getCode() === 0 ? '' : ' '.$e->getCode());
+                    $outcomes[$case] = $e::class . ($e->getCode() === 0 ? '' : ' ' . $e->getCode());
                     $messages[$case] = $e->getMessage();
                 }
             }
 
             self::assertSame(
                 [
-                    'bind the old shape' => QueryException::class.' 3101',
+                    'bind the old shape' => QueryException::class . ' 3101',
                     'bind the new shape' => UsageException::class,
                     'fetch a value' => QueryException::class,
                     'fetch a value again' => QueryException::class,
@@ -777,7 +777,7 @@ final class ObjectsTest extends ConformanceTestCase
                 $outcomes,
             );
             self::assertStringContainsString(
-                strtoupper($type).' has changed since this connection described it',
+                strtoupper($type) . ' has changed since this connection described it',
                 $messages['fetch a value'] ?? '',
             );
         } finally {
@@ -849,7 +849,7 @@ final class ObjectsTest extends ConformanceTestCase
                 $connection->execute(self::ECHO, ['i' => Struct::in('fx_lob_holder', $holder), 'o' => Struct::out('fx_lob_holder')], self::options());
                 self::fail("A value for $attribute was bound.");
             } catch (UnsupportedException $e) {
-                self::assertStringStartsWith("Bind 'i', attribute ".strtoupper($attribute).': ', $e->getMessage());
+                self::assertStringStartsWith("Bind 'i', attribute " . strtoupper($attribute) . ': ', $e->getMessage());
                 self::assertStringEndsWith(' values in an Object or Collection are not supported yet.', $e->getMessage());
             }
         }

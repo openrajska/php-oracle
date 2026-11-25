@@ -17,6 +17,5 @@ final readonly class RowFailure
         public int $index,
         public int $code,
         public string $message,
-    ) {
-    }
+    ) {}
 }

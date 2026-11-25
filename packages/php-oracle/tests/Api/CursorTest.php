@@ -95,7 +95,7 @@ final class CursorTest extends TestCase
     #[Test]
     public function select_of_an_update_runs_it_then_fails_in_rows(): void
     {
-        $table = 'tmp_select_'.bin2hex(random_bytes(4));
+        $table = 'tmp_select_' . bin2hex(random_bytes(4));
         $this->connection->run("create table $table (id number)");
 
         try {
@@ -240,7 +240,7 @@ final class CursorTest extends TestCase
         foreach ($fibers as $fiber) {
             $fiber->start();
         }
-        while (array_filter($fibers, static fn (\Fiber $f): bool => !$f->isTerminated()) !== []) {
+        while (array_filter($fibers, static fn(\Fiber $f): bool => !$f->isTerminated()) !== []) {
             foreach ($fibers as $fiber) {
                 if (!$fiber->isTerminated()) {
                     $fiber->resume();
@@ -266,7 +266,7 @@ final class CursorTest extends TestCase
             unset($cursor);
         }
 
-        self::assertSame(5, $this->connection->select('select count(*) from ('.self::FIVE_ROWS.')')->value());
+        self::assertSame(5, $this->connection->select('select count(*) from (' . self::FIVE_ROWS . ')')->value());
     }
 
     /**
@@ -285,12 +285,42 @@ final class CursorTest extends TestCase
         $columns = $cursor->columns();
 
         self::assertEquals([
-            new Column(name: 'id', type: Type::Number, nullable: false, precision: 10, scale: 0, maxSize: null,
-                objectType: null, vectorDimensions: null, vectorFormat: null, sparse: false),
-            new Column(name: 'price', type: Type::Number, nullable: false, precision: 10, scale: 2, maxSize: null,
-                objectType: null, vectorDimensions: null, vectorFormat: null, sparse: false),
-            new Column(name: 'embedding', type: Type::Vector, nullable: true, precision: null, scale: null, maxSize: null,
-                objectType: null, vectorDimensions: 3, vectorFormat: VectorFormat::Float32, sparse: false),
+            new Column(
+                name: 'id',
+                type: Type::Number,
+                nullable: false,
+                precision: 10,
+                scale: 0,
+                maxSize: null,
+                objectType: null,
+                vectorDimensions: null,
+                vectorFormat: null,
+                sparse: false,
+            ),
+            new Column(
+                name: 'price',
+                type: Type::Number,
+                nullable: false,
+                precision: 10,
+                scale: 2,
+                maxSize: null,
+                objectType: null,
+                vectorDimensions: null,
+                vectorFormat: null,
+                sparse: false,
+            ),
+            new Column(
+                name: 'embedding',
+                type: Type::Vector,
+                nullable: true,
+                precision: null,
+                scale: null,
+                maxSize: null,
+                objectType: null,
+                vectorDimensions: 3,
+                vectorFormat: VectorFormat::Float32,
+                sparse: false,
+            ),
         ], $columns);
         self::assertSame(Type::Number, $cursor->columns()[0]->type);
         $cursor->close();
@@ -391,7 +421,7 @@ final class CursorTest extends TestCase
     #[Test]
     public function ddl_runs_through_run_and_a_compilation_error_is_a_warning(): void
     {
-        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
 
         $created = $this->connection->run("create or replace procedure $procedure is begin no_such_thing; end;");
         try {
@@ -436,10 +466,10 @@ final class CursorTest extends TestCase
     private function assertClosed(Cursor $cursor): void
     {
         foreach ([
-            'foreach' => static fn (): array => iterator_to_array($cursor),
-            'all()' => static fn (): array => $cursor->all(),
-            'first()' => static fn (): ?array => $cursor->first(),
-            'value()' => static fn (): mixed => $cursor->value(),
+            'foreach' => static fn(): array => iterator_to_array($cursor),
+            'all()' => static fn(): array => $cursor->all(),
+            'first()' => static fn(): ?array => $cursor->first(),
+            'value()' => static fn(): mixed => $cursor->value(),
         ] as $read => $call) {
             try {
                 $call();

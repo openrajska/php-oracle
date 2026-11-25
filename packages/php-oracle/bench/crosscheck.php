@@ -42,8 +42,14 @@ foreach (bench_comparisons() as $comparison) {
     }
     $failed++;
     $at = strspn($core ^ $oci8, "\0");
-    printf("DIFFER %s (%s != %s)\n  core: …%s…\n  oci8: …%s…\n", $comparison['label'], $comparison['core'], $comparison['oci8'],
-        substr($core, max(0, $at - 80), 200), substr($oci8, max(0, $at - 80), 200));
+    printf(
+        "DIFFER %s (%s != %s)\n  core: …%s…\n  oci8: …%s…\n",
+        $comparison['label'],
+        $comparison['core'],
+        $comparison['oci8'],
+        substr($core, max(0, $at - 80), 200),
+        substr($oci8, max(0, $at - 80), 200),
+    );
 }
 echo $failed === 0 ? "RESULT ok\n" : "RESULT $failed comparison(s) differ\n";
 exit($failed === 0 ? 0 : 1);

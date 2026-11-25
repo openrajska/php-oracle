@@ -48,10 +48,10 @@ final readonly class Call
     private function __construct(
         public string $name,
         private string $arguments,
-        #[\SensitiveParameter] private array $binds,
+        #[\SensitiveParameter]
+        private array $binds,
         private array $parameters,
-    ) {
-    }
+    ) {}
 
     /**
      * @param array<mixed> $binds keyed by parameter name
@@ -71,7 +71,7 @@ final readonly class Call
         static $known = [];
 
         $keys = array_keys($binds);
-        $id = $name."\0".implode("\0", $keys);
+        $id = $name . "\0" . implode("\0", $keys);
         $shape = $known[$id] ?? null;
         if ($shape !== null && $shape[0] === $keys) {
             [$parameters, $arguments, $synthetic] = $shape;
@@ -79,7 +79,7 @@ final readonly class Call
             return new self($name, $arguments, array_combine($synthetic, $binds), array_combine($synthetic, $parameters));
         }
 
-        $parts = self::parts($name, 'Call name', 'each dot-separated part must be '.self::IDENTIFIER, $name);
+        $parts = self::parts($name, 'Call name', 'each dot-separated part must be ' . self::IDENTIFIER, $name);
         if ($parts > 3) {
             throw new UsageException("Call name '$name' has $parts parts; a name has at most 3: schema.package.name.", 0, null, $name);
         }
@@ -92,7 +92,7 @@ final readonly class Call
             if (\is_int($key)) {
                 throw new UsageException("Call parameters are passed by name, but key $key is an integer (is the array a list?); key every value by its parameter name.", 0, null, $name);
             }
-            $rule = 'a parameter name must be '.self::IDENTIFIER;
+            $rule = 'a parameter name must be ' . self::IDENTIFIER;
             if (self::parts($key, 'Parameter name', $rule, $name) !== 1) {
                 throw new UsageException("Parameter name '$key' is not valid: $rule.", 0, null, $name);
             }
@@ -102,13 +102,13 @@ final readonly class Call
             }
             $seen[$canonical] = $key;
 
-            $bind = 'b'.(\count($synthetic) + 1);
+            $bind = 'b' . (\count($synthetic) + 1);
             $arguments[] = "$key => :$bind";
             $synthetic[$bind] = $value;
             $parameters[$bind] = $key;
         }
 
-        $arguments = $arguments === [] ? '' : '('.implode(', ', $arguments).')';
+        $arguments = $arguments === [] ? '' : '(' . implode(', ', $arguments) . ')';
         if (\count($known) >= self::KNOWN) {
             unset($known[array_key_first($known)]);
         }
@@ -177,7 +177,7 @@ final readonly class Call
         if ($e instanceof UsageException || $e instanceof UnsupportedException) {
             $message = preg_replace_callback(
                 "/(?:OUT bind|Bind|bind) 'b(\\d+)'/",
-                fn (array $m): string => match (true) {
+                fn(array $m): string => match (true) {
                     $m[1] === '0' => "The return value of {$this->name}",
                     isset($this->parameters["b$m[1]"]) => str_replace("'b$m[1]'", "'{$this->parameters["b$m[1]"]}'", $m[0]),
                     default => $m[0],

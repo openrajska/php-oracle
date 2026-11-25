@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Api;
 
-use Rajska\Oracle\Bind\Cursor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Rajska\Oracle\Bind\Cursor;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\TestDatabase;
@@ -177,7 +177,7 @@ final class DocumentationTest extends TestCase
     private static function script(string $code): string
     {
         preg_match_all('/^\s*use\s+[\w\\\\]*?(\w+)(?:\s+as\s+(\w+))?;/m', $code, $uses, PREG_SET_ORDER);
-        $imported = array_map(static fn (array $use): string => ($use[2] ?? '') !== '' ? $use[2] : $use[1], $uses);
+        $imported = array_map(static fn(array $use): string => ($use[2] ?? '') !== '' ? $use[2] : $use[1], $uses);
         $imports = '';
         foreach (self::publicClasses() as $short => $class) {
             if (!\in_array($short, $imported, true)) {

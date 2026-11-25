@@ -29,7 +29,7 @@ final class TypeTest extends TestCase
         ];
 
         self::assertSame($expected, array_column(array_map(
-            static fn (Type $type): array => [$type->name, $type->value],
+            static fn(Type $type): array => [$type->name, $type->value],
             Type::cases(),
         ), 1, 0));
     }
@@ -39,7 +39,7 @@ final class TypeTest extends TestCase
     {
         self::assertSame(
             ['Float32' => 'float32', 'Float64' => 'float64', 'Int8' => 'int8', 'Binary' => 'binary'],
-            array_column(array_map(static fn (VectorFormat $f): array => [$f->name, $f->value], VectorFormat::cases()), 1, 0),
+            array_column(array_map(static fn(VectorFormat $f): array => [$f->name, $f->value], VectorFormat::cases()), 1, 0),
         );
     }
 }

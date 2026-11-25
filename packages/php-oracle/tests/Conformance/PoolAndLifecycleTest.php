@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
-use Rajska\Oracle\Driver\DriverExecution;
-use Rajska\Oracle\Driver\DriverArrayDml;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Driver\DriverArrayDml;
 use Rajska\Oracle\Driver\DriverConnection;
+use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
 use Rajska\Oracle\Exceptions\PoolExhaustedException;
@@ -112,7 +112,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         $observer = IndependentSession::open();
         try {
             self::assertTrue(
-                self::eventually(static fn (): bool => $observer->select(
+                self::eventually(static fn(): bool => $observer->select(
                     'select count(*) as n from v$session where audsid = :audsid',
                     ['audsid' => $session],
                 ) === [['N' => '0']]),
@@ -332,12 +332,12 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
      */
     public static function connectionCalls(): iterable
     {
-        yield 'execute()' => [static fn (DriverConnection $c): DriverExecution => $c->execute('select 1 from dual', [], self::options())];
-        yield 'executeMany()' => [static fn (DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], self::options())];
-        yield 'commit()' => [static fn (DriverConnection $c) => $c->commit()];
-        yield 'rollback()' => [static fn (DriverConnection $c) => $c->rollback()];
-        yield 'trace()' => [static fn (DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
-        yield 'serverVersion()' => [static fn (DriverConnection $c): string => $c->serverVersion()];
+        yield 'execute()' => [static fn(DriverConnection $c): DriverExecution => $c->execute('select 1 from dual', [], self::options())];
+        yield 'executeMany()' => [static fn(DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], self::options())];
+        yield 'commit()' => [static fn(DriverConnection $c) => $c->commit()];
+        yield 'rollback()' => [static fn(DriverConnection $c) => $c->rollback()];
+        yield 'trace()' => [static fn(DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
+        yield 'serverVersion()' => [static fn(DriverConnection $c): string => $c->serverVersion()];
     }
 
     /**
@@ -443,12 +443,12 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
             self::assertStringStartsNotWith('Connection is broken: ', $lost->getMessage());
         }
         foreach ([
-            'execute()' => static fn (): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
-            'commit()' => static fn () => $connection->commit(),
-            'rollback()' => static fn () => $connection->rollback(),
-            'serverVersion()' => static fn (): string => $connection->serverVersion(),
-            'fetchBatch()' => static fn (): array => $cursor->fetchBatch(),
-            'columns()' => static fn (): array => $cursor->columns(),
+            'execute()' => static fn(): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
+            'commit()' => static fn() => $connection->commit(),
+            'rollback()' => static fn() => $connection->rollback(),
+            'serverVersion()' => static fn(): string => $connection->serverVersion(),
+            'fetchBatch()' => static fn(): array => $cursor->fetchBatch(),
+            'columns()' => static fn(): array => $cursor->columns(),
         ] as $what => $call) {
             try {
                 $call();

@@ -44,8 +44,7 @@ final class Execution
         private readonly ConnectionState $connection,
         private readonly array $bindNames = [],
         private readonly ?string $call = null,
-    ) {
-    }
+    ) {}
 
     /**
      * The INSERT / UPDATE / DELETE / MERGE count; 0 for anything else.
@@ -72,7 +71,7 @@ final class Execution
         if ($in !== null) {
             throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql, $this->call);
         }
-        $names = $values === [] ? 'the statement has none' : "they are '".implode("', '", array_keys($values))."'";
+        $names = $values === [] ? 'the statement has none' : "they are '" . implode("', '", array_keys($values)) . "'";
 
         throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql, $this->call);
     }
@@ -87,7 +86,7 @@ final class Execution
     public function results(): array
     {
         return $this->results ??= array_map(
-            fn (DriverCursor $cursor): Cursor => new Cursor($cursor, $this->connection),
+            fn(DriverCursor $cursor): Cursor => new Cursor($cursor, $this->connection),
             $this->driver->implicitResults(),
         );
     }

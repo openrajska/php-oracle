@@ -26,8 +26,7 @@ final readonly class OutValue
         private array $values,
         private ?string $sql = null,
         private ?string $call = null,
-    ) {
-    }
+    ) {}
 
     public function int(): ?int
     {
@@ -168,7 +167,7 @@ final readonly class OutValue
         };
 
         return new UsageException(
-            "OUT bind '{$this->name}' holds ".get_debug_type($value).", not $expected.$hint",
+            "OUT bind '{$this->name}' holds " . get_debug_type($value) . ", not $expected.$hint",
             0,
             $this->sql,
             $this->call,

@@ -306,7 +306,7 @@ final class SessionFeaturesTest extends ConformanceTestCase
      */
     private function statistic(int $sid, string $name, callable $action): int
     {
-        $read = fn (): int => (int) self::$observer->select(
+        $read = fn(): int => (int) self::$observer->select(
             'select s.value from v$sesstat s join v$statname n on n.statistic# = s.statistic# where n.name = :name and s.sid = :sid',
             ['name' => $name, 'sid' => $sid],
         )[0]['VALUE'];

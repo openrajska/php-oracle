@@ -379,7 +379,7 @@ final class ConnectParametersTest extends ConformanceTestCase
         for ($process = 0; $process < 2; $process++) {
             self::runChild(TestDatabase::fromEnvironment()->connectString . ':pooled');
             $after = self::drcpClasses($user);
-            $classes[] = array_keys(array_filter($after, static fn (int $requests, string $class): bool => $requests > ($before[$class] ?? 0), ARRAY_FILTER_USE_BOTH));
+            $classes[] = array_keys(array_filter($after, static fn(int $requests, string $class): bool => $requests > ($before[$class] ?? 0), ARRAY_FILTER_USE_BOTH));
             $before = $after;
         }
 

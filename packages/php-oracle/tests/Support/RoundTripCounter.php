@@ -27,9 +27,7 @@ final readonly class RoundTripCounter
            and s.sid = :sid
         SQL;
 
-    private function __construct(private IndependentSession $observer)
-    {
-    }
+    private function __construct(private IndependentSession $observer) {}
 
     public static function open(): self
     {

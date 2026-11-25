@@ -28,10 +28,12 @@ final readonly class ConnectionConfig
     public function __construct(
         public string $dsn,
         public string $user,
-        #[\SensitiveParameter] public string $password,
+        #[\SensitiveParameter]
+        public string $password,
         public ?string $proxyUser = null,
         public ?string $walletLocation = null,
-        #[\SensitiveParameter] public ?string $walletPassword = null,
+        #[\SensitiveParameter]
+        public ?string $walletPassword = null,
         public ?string $configDir = null,
         public int|float $connectTimeout = 20,
         public ?string $drcpConnectionClass = null,

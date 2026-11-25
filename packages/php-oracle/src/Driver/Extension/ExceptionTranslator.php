@@ -62,7 +62,7 @@ final class ExceptionTranslator
     private static function rows(NativeException $native): array
     {
         return array_map(
-            static fn (array $row): RowFailure => new RowFailure($row['index'], $row['code'], $row['message']),
+            static fn(array $row): RowFailure => new RowFailure($row['index'], $row['code'], $row['message']),
             $native->rows,
         );
     }

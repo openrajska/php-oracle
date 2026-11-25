@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
-use Rajska\Oracle\Driver\DriverExecution;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Rajska\Oracle\Bind\Number;
+use Rajska\Oracle\Driver\DriverExecution;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
@@ -168,8 +168,8 @@ final class TransactionsTest extends ConformanceTestCase
         $counter = RoundTripCounter::open();
 
         try {
-            self::assertSame(1, $counter->during($sid, static fn (): DriverExecution => $connection->execute($insert, ['id' => 2], self::options())));
-            self::assertSame(1, $counter->during($sid, static fn (): DriverExecution => $connection->execute($insert, ['id' => 3], self::options(autocommit: false))));
+            self::assertSame(1, $counter->during($sid, static fn(): DriverExecution => $connection->execute($insert, ['id' => 2], self::options())));
+            self::assertSame(1, $counter->during($sid, static fn(): DriverExecution => $connection->execute($insert, ['id' => 3], self::options(autocommit: false))));
             self::assertSame(1, $counter->during($sid, $connection->commit(...)));
             $connection->execute($insert, ['id' => 4], self::options(autocommit: false));
             self::assertSame(1, $counter->during($sid, $connection->rollback(...)));

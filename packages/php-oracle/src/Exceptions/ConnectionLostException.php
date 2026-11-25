@@ -8,6 +8,4 @@ namespace Rajska\Oracle\Exceptions;
  * The Session is gone: a Broken Connection. Thrown by the call that saw it
  * and by every later one.
  */
-final class ConnectionLostException extends ConnectionException
-{
-}
+final class ConnectionLostException extends ConnectionException {}

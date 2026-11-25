@@ -42,7 +42,7 @@ final class ScopeTest extends ConformanceTestCase
         $connection = $this->connect();
         $written = self::options(autocommit: false);
         foreach ([1, 4000, 32767] as $bytes) {
-            $text = str_repeat('ç', intdiv($bytes, 2)).str_repeat('x', $bytes % 2);
+            $text = str_repeat('ç', intdiv($bytes, 2)) . str_repeat('x', $bytes % 2);
             $binary = substr(str_repeat("\x00\xff\x7f", $bytes), 0, $bytes);
             $connection->execute('insert into fx_long_rows (id, text) values (:id, :text)', ['id' => 100 + $bytes, 'text' => Varchar::in($text)], $written);
             $connection->execute('insert into fx_long_rows (id, text) values (:id, :text)', ['id' => 200 + $bytes, 'text' => $text], $written);
@@ -198,7 +198,7 @@ final class ScopeTest extends ConformanceTestCase
     {
         try {
             $rows = $cursor->fetchBatch();
-            self::fail('A value was fetched: '.var_export($rows, true));
+            self::fail('A value was fetched: ' . var_export($rows, true));
         } catch (UnsupportedException $e) {
             self::assertStringContainsString('Column V', $e->getMessage());
             self::assertStringContainsString($type, $e->getMessage());

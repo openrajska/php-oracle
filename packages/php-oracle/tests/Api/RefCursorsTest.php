@@ -121,7 +121,7 @@ final class RefCursorsTest extends TestCase
         self::assertSame([1, 2, 3, 4, 5], array_column($rows, 'ID'));
         self::assertSame(
             [[1, 6, 11, 16], [2, 7, 12, 17], [3, 8, 13, 18], [4, 9, 14, 19], [5, 10, 15, 20]],
-            array_map(static fn (array $row): array => array_column(self::nested($row['ITEMS'])->all(), 'ID'), $rows),
+            array_map(static fn(array $row): array => array_column(self::nested($row['ITEMS'])->all(), 'ID'), $rows),
         );
     }
 
@@ -171,7 +171,7 @@ final class RefCursorsTest extends TestCase
         );
         $categories = $this->connection->function('fx_cursor.categories_with_items', options: $options)->cursor();
 
-        self::assertSame(['id', 'name', 'items'], array_map(static fn (Column $c): string => $c->name, $categories->columns()));
+        self::assertSame(['id', 'name', 'items'], array_map(static fn(Column $c): string => $c->name, $categories->columns()));
         self::assertSame(Type::Cursor, $categories->columns()[2]->type);
         [$id, $name, $items] = $categories->getIterator()->current();
         self::assertSame([1, 'Plain'], [$id, $name]);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
-use Rajska\Oracle\Driver\DriverCursor;
 use PHPUnit\Framework\Attributes\Test;
+use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\KeyCase;
@@ -25,8 +25,8 @@ final class SeamAndRowsTest extends ConformanceTestCase
     #[Test]
     public function bind_values_never_reach_the_sql_text(): void
     {
-        $tag = 'sql-text-'.bin2hex(random_bytes(6));
-        $value = 'bound-value-'.bin2hex(random_bytes(6));
+        $tag = 'sql-text-' . bin2hex(random_bytes(6));
+        $value = 'bound-value-' . bin2hex(random_bytes(6));
         $statements = [
             "select :v /* $tag */ from dual",
             "update fx_items set name = name where name = :v /* $tag */",
@@ -63,7 +63,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
     public function every_statement_kind_returns_a_complete_execution(): void
     {
         $connection = $this->connect();
-        $table = 'tmp_kinds_'.bin2hex(random_bytes(4));
+        $table = 'tmp_kinds_' . bin2hex(random_bytes(4));
         $kinds = [
             'DDL' => ["create table $table (id number)", 0, false],
             'DML' => ["insert into $table select level from dual connect by level <= 3", 3, false],
@@ -279,7 +279,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
 
         $connection->close();
 
-        foreach (['fetchBatch()' => static fn (): array => $cursor->fetchBatch(), 'columns()' => static fn (): array => $cursor->columns()] as $call => $read) {
+        foreach (['fetchBatch()' => static fn(): array => $cursor->fetchBatch(), 'columns()' => static fn(): array => $cursor->columns()] as $call => $read) {
             try {
                 $read();
                 self::fail("$call after close() succeeded.");

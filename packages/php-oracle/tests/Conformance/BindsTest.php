@@ -39,7 +39,7 @@ final class BindsTest extends ConformanceTestCase
         yield 'numeric string' => ['12.30', 'Typ=1 Len=5: 49,50,46,51,48', '12.30'];
         yield 'int-backed enum' => [Priority::High, 'Typ=2 Len=2: 193,3', 2];
         yield 'string-backed enum' => [Color::Green, 'Typ=1 Len=5: 103,114,101,101,110', 'green'];
-        yield 'Stringable' => [new class () implements \Stringable {
+        yield 'Stringable' => [new class implements \Stringable {
             public function __toString(): string
             {
                 return 'from __toString';
@@ -85,7 +85,7 @@ final class BindsTest extends ConformanceTestCase
     {
         $connection = $this->connect();
         // 4-byte characters, so a cut inside one would show.
-        $text = static fn (int $bytes): string => str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
+        $text = static fn(int $bytes): string => str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
 
         foreach ([4000 => 'VARCHAR2', 4001 => 'VARCHAR2', 32767 => 'VARCHAR2', 32768 => 'CLOB', 1 << 20 => 'CLOB'] as $bytes => $type) {
             $value = $text($bytes);
@@ -245,14 +245,14 @@ final class BindsTest extends ConformanceTestCase
         yield 'DateTime' => [['v' => new \DateTime()], $one, $date];
         yield 'a Stringable date, as Carbon' => [['v' => new StringableDate()], $one, $date];
         yield 'array' => [['v' => [1, 2]], $one, $json];
-        yield 'JsonSerializable' => [['v' => new class () implements \JsonSerializable {
+        yield 'JsonSerializable' => [['v' => new class implements \JsonSerializable {
             public function jsonSerialize(): mixed
             {
                 return [];
             }
         }], $one, $json];
         yield 'other object' => [['v' => new \stdClass()], $one, 'an object of class stdClass does not bind by itself; use Json::in() or a typed bind'];
-        yield 'enum without backing value' => [['v' => Suit::Hearts], $one, 'an object of class '.Suit::class.' does not bind by itself'];
+        yield 'enum without backing value' => [['v' => Suit::Hearts], $one, 'an object of class ' . Suit::class . ' does not bind by itself'];
         yield 'resource' => [['v' => fopen('php://memory', 'r')], $one, 'use Clob::in() or Blob::in()'];
         yield 'bytes that are not UTF-8' => [['v' => "\xff\xfe"], $one, 'bind binary data with Raw::in() or Blob::in()'];
         yield 'NaN' => [['v' => \NAN], $one, 'bind it with BinaryDouble::in()'];
@@ -314,9 +314,7 @@ final class BindsTest extends ConformanceTestCase
 
         try {
             $connection->execute('select :v from dual', ['v' => new readonly class ($thrown) implements \Stringable {
-                public function __construct(private \Throwable $thrown)
-                {
-                }
+                public function __construct(private \Throwable $thrown) {}
 
                 public function __toString(): string
                 {

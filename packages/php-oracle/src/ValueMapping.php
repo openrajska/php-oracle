@@ -14,6 +14,5 @@ final readonly class ValueMapping
         public NumberMode $numbers = NumberMode::Exact,
         public TemporalMode $temporals = TemporalMode::Object,
         public LobMode $lobs = LobMode::Locator,
-    ) {
-    }
+    ) {}
 }

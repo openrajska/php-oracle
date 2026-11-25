@@ -82,7 +82,7 @@ final class ErrorsTest extends ConformanceTestCase
     public function a_compilation_error_gives_a_warning_and_a_valid_unit_gives_null(): void
     {
         $connection = $this->connect();
-        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
         $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
         $valid = "create or replace procedure $procedure is begin null; end;";
 
@@ -131,7 +131,7 @@ final class ErrorsTest extends ConformanceTestCase
     public function the_same_compilation_error_twice_in_a_row_gives_a_warning_each_time(): void
     {
         $connection = $this->connect();
-        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
         $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
 
         try {
@@ -154,7 +154,7 @@ final class ErrorsTest extends ConformanceTestCase
     public function a_warning_never_leaks_into_a_later_execution_or_the_next_connection_on_the_pooled_session(): void
     {
         $fields = self::ownPool() + ['maxConnections' => 1];
-        $procedure = 'tmp_warning_'.bin2hex(random_bytes(4));
+        $procedure = 'tmp_warning_' . bin2hex(random_bytes(4));
         $invalid = "create or replace procedure $procedure is begin no_such_thing; end;";
         $first = $this->connect(...$fields);
         $session = self::session($first);

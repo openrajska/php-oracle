@@ -45,7 +45,7 @@ final readonly class SparseVector
                 throw new UsageException("A SparseVector's values are keyed by position, from 0 to $last; '$position' is not one.");
             }
             if (!\is_int($value) && !\is_float($value)) {
-                throw new UsageException("A SparseVector's values are ints and floats; position $position holds ".get_debug_type($value).'.');
+                throw new UsageException("A SparseVector's values are ints and floats; position $position holds " . get_debug_type($value) . '.');
             }
             $checked[$position] = $value;
         }

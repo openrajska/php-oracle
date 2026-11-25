@@ -160,7 +160,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
             ['S8', 'vector', 10, 'int8', true],
             ['FLEX', 'vector', null, null, false],
         ], array_map(
-            static fn (array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']],
+            static fn(array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']],
             $cursor->columns(),
         ));
     }
@@ -248,7 +248,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         foreach ([NAN, [INF], fopen('php://memory', 'r')] as $value) {
             try {
                 Json::in($value);
-                self::fail('Json::in() took '.get_debug_type($value));
+                self::fail('Json::in() took ' . get_debug_type($value));
             } catch (UsageException $e) {
                 self::assertStringStartsWith('Json::in()', $e->getMessage());
             }
@@ -360,7 +360,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         foreach ([[0, []], [3, [3 => 1.0]], [3, [-1 => 1.0]], [3, ['a' => 1.0]], [3, [0 => '1']]] as [$dimensions, $values]) {
             try {
                 new SparseVector($dimensions, $values);
-                self::fail('SparseVector took '.json_encode([$dimensions, $values]));
+                self::fail('SparseVector took ' . json_encode([$dimensions, $values]));
             } catch (UsageException $e) {
                 self::assertStringStartsWith('A SparseVector', $e->getMessage());
             }
@@ -416,7 +416,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
             'vo' => [[1, 2]],
             'vnull' => [null],
             'vionull' => [null],
-        ], array_map(static fn (array $list): array => array_map(self::sorted(...), $list), $values));
+        ], array_map(static fn(array $list): array => array_map(self::sorted(...), $list), $values));
         self::assertInstanceOf(SparseVector::class, $sparse);
         self::assertSame([10, [2 => 4.5]], [$sparse->dimensions, $sparse->values]);
     }

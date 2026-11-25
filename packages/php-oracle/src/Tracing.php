@@ -14,6 +14,5 @@ final readonly class Tracing
         public ?string $action = null,
         public ?string $clientIdentifier = null,
         public ?string $clientInfo = null,
-    ) {
-    }
+    ) {}
 }

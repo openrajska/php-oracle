@@ -20,8 +20,8 @@ abstract readonly class Bind
     final protected function __construct(
         public Type $type,
         public Direction $direction,
-        #[\SensitiveParameter] public mixed $value,
+        #[\SensitiveParameter]
+        public mixed $value,
         public ?string $typeName = null,
-    ) {
-    }
+    ) {}
 }

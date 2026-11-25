@@ -32,7 +32,7 @@ final class ValuesTest extends ConformanceTestCase
     #[Test]
     public function number_maps_to_int_or_the_canonical_exact_string(): void
     {
-        $tiny = '0.'.str_repeat('0', 129).'1';
+        $tiny = '0.' . str_repeat('0', 129) . '1';
         $expected = [
             'ONE' => 1,
             'MINUS_ONE' => -1,
@@ -474,7 +474,7 @@ final class ValuesTest extends ConformanceTestCase
                 SQL;
             $binds = ['n' => Number::in('12.30')];
             $float = self::options(values: new ValueMapping(numbers: NumberMode::Float));
-            $read = static fn (?DriverOptions $options = null): array => array_map(
+            $read = static fn(?DriverOptions $options = null): array => array_map(
                 Temporals::shown(...),
                 self::rows($connection, $sql, $binds, $options)[0],
             );
