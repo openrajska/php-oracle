@@ -253,7 +253,6 @@ fn described(value: &Value) -> String {
 }
 
 impl Rows {
-    /// Reads every row, then checks and unifies the columns.
     fn read(rows: &ZendHashTable, describe: &Describe<'_>) -> Result<Self, Error> {
         let mut read = Vec::with_capacity(rows.len());
         let classes = Classes::default();

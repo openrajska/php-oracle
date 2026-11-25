@@ -2,7 +2,6 @@
 -- the Call, a controllable delay (per Call or per row), and package state that
 -- lives in the Session.
 create or replace package fx_pool as
-  -- SID of the Session running the Call.
   function session_id return number;
 
   -- Holds the Session for p_seconds (fractions allowed).

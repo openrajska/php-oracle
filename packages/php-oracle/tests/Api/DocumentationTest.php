@@ -24,9 +24,6 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
  */
 final class DocumentationTest extends TestCase
 {
-    /**
-     * The objects the examples use, dropped first and after the class.
-     */
     private const array SCHEMA = [
         'create table customers (
             id number generated always as identity primary key,
@@ -171,9 +168,6 @@ final class DocumentationTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    /**
-     * The example as a PHP file: strict types, then the imports it lacks.
-     */
     private static function script(string $code): string
     {
         preg_match_all('/^\s*use\s+[\w\\\\]*?(\w+)(?:\s+as\s+(\w+))?;/m', $code, $uses, PREG_SET_ORDER);

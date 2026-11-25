@@ -96,7 +96,6 @@ impl<'a> Fields<'a> {
     }
 
     fn value(&self, key: &str) -> &'a Zval {
-        // Every known key is present: checked in new().
         let index = self.keys.iter().position(|known| *known == key);
         self.values[index.expect("key checked in Fields::new")]
     }

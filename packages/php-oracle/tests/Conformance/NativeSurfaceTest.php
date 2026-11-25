@@ -32,9 +32,8 @@ use Throwable;
 use TypeError;
 
 /**
- * Conformance catalog, Native surface (#31). The cases about the native
- * classes themselves (1, 2, 3) use them directly; translation (9) goes
- * through the Driver seam.
+ * The cases about the native classes themselves use them directly;
+ * translation goes through the Driver seam.
  */
 final class NativeSurfaceTest extends ConformanceTestCase
 {
@@ -52,9 +51,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         parent::tearDown();
     }
 
-    /**
-     * Native surface 1.
-     */
     #[Test]
     public function every_native_class_is_final_and_cannot_be_created_cloned_or_serialized(): void
     {
@@ -95,8 +91,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
     }
 
     /**
-     * Native surface 2, at every layer.
-     *
      * @param class-string $class
      */
     #[Test]
@@ -112,10 +106,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         self::assertCount(1, array_values($parameters)[0]->getAttributes(SensitiveParameter::class));
     }
 
-    /**
-     * Native surface 2, in a trace: an error raised inside a native call
-     * shows the values as SensitiveParameterValue.
-     */
     #[Test]
     public function native_traces_hide_pool_binds_and_rows(): void
     {
@@ -145,9 +135,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Native surface 3.
-     */
     #[Test]
     public function an_unknown_key_in_any_array_fails_with_kind_usage_before_any_round_trip(): void
     {
@@ -192,11 +179,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Native surface 9, for the kinds this slice raises: the Driver seam
-     * throws Core's class with the native code, message and offset, and the
-     * native exception is unreachable.
-     */
     #[Test]
     public function each_kind_translates_to_its_core_class_keeping_code_message_and_offset(): void
     {
@@ -265,10 +247,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Native surface 5: every acquire applies its own `$session`, whatever
-     * the Session's previous Connection had.
-     */
     #[Test]
     public function the_session_array_is_reapplied_on_every_acquire(): void
     {
@@ -311,9 +289,6 @@ final class NativeSurfaceTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * A Call timeout is at least 1 ms, or null for no limit.
-     */
     #[Test]
     #[DataProvider('nonPositiveDurations')]
     public function a_call_timeout_under_1_ms_fails_with_kind_usage(string $key, int $ms): void
@@ -328,10 +303,8 @@ final class NativeSurfaceTest extends ConformanceTestCase
     }
 
     /**
-     * Native surface 8 and 10, for Lobs: `type()` gives a LobType backing
-     * value; after `close()` of their Connection every call fails with
-     * `kind: usage`. Over 1000 cycles on one Session, the temporary LOBs
-     * dropped by the Release are freed, and the next owner reads its own.
+     * Over 1000 cycles on one Session, the temporary LOBs dropped by the
+     * Release are freed.
      */
     #[Test]
     public function after_close_its_lobs_fail_with_kind_usage_and_the_sessions_next_owner_is_unaffected(): void
@@ -372,10 +345,10 @@ final class NativeSurfaceTest extends ConformanceTestCase
     }
 
     /**
-     * Native surface 8, for query Cursors. A Pool of one Session, so every
-     * cycle runs on the same Session: a Cursor left open on the server by a
-     * Release would pile up there until ORA-01000 (open_cursors is 300), and
-     * a close sent after the Release would land on the next owner.
+     * A Pool of one Session, so every cycle runs on the same Session: a
+     * Cursor left open on the server by a Release would pile up there until
+     * ORA-01000 (open_cursors is 300), and a close sent after the Release
+     * would land on the next owner.
      */
     #[Test]
     public function after_close_its_cursors_fail_with_kind_usage_and_the_sessions_next_owner_is_unaffected(): void
@@ -412,10 +385,9 @@ final class NativeSurfaceTest extends ConformanceTestCase
     }
 
     /**
-     * Native surface 11: Core's copy of the Extension's stub is for static
-     * analysis only and never reaches users' vendor/. Core's dist archive
-     * is `git archive` of its directory at HEAD, as GitHub serves it from
-     * a split repository.
+     * Core's copy of the Extension's stub is for static analysis only and
+     * never reaches users' vendor/. Core's dist archive is `git archive` of
+     * its directory at HEAD, as GitHub serves it from a split repository.
      */
     #[Test]
     public function cores_dist_archive_has_no_stubs(): void

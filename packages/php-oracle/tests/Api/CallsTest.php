@@ -48,8 +48,7 @@ final class CallsTest extends TestCase
     }
 
     /**
-     * Binds 13 (non-cursor parts): IN, OUT and IN OUT in one Call, read back
-     * by parameter name; the omitted p_label takes its PL/SQL default.
+     * The omitted p_label takes its PL/SQL default.
      */
     #[Test]
     public function a_procedure_reads_its_out_and_in_out_parameters_by_name(): void
@@ -96,10 +95,6 @@ final class CallsTest extends TestCase
         }
     }
 
-    /**
-     * Seam and rows 1, the Call: a procedure gives a complete Execution,
-     * with no count and no rows.
-     */
     #[Test]
     public function a_procedure_gives_a_complete_execution(): void
     {
@@ -118,12 +113,6 @@ final class CallsTest extends TestCase
         self::assertSame('aaa', $execution->out('io_text')->string());
     }
 
-    /**
-     * Binds 13 for these types: `json()` decodes the returned JSON like
-     * `json_decode($text, true)` under the Call's ValueMapping; `vector()`
-     * gives a list, or a `SparseVector` for a sparse VECTOR; NULL gives
-     * null (fixture package fx_json_vector).
-     */
     #[Test]
     public function the_json_and_vector_terminals_return_the_mapped_value(): void
     {
@@ -157,10 +146,6 @@ final class CallsTest extends TestCase
         yield 'raw' => ['raw', 'fx_call.f_raw', "\x00\xff\x10"];
     }
 
-    /**
-     * Seam and rows 14, Binds 13: each scalar terminal returns the value
-     * mapped as an OUT value of its type, and a NULL return gives null.
-     */
     #[Test]
     #[DataProvider('scalarTerminals')]
     public function a_scalar_terminal_returns_the_mapped_value_and_null_for_null(string $terminal, string $function, mixed $expected): void
@@ -169,11 +154,6 @@ final class CallsTest extends TestCase
         self::assertNull($this->connection->function($function, ['p_null' => true])->{$terminal}());
     }
 
-    /**
-     * Objects 7: `struct()`, `collection()` and `indexed()` return the
-     * Object, Collection or Associative array as a PHP array, following the
-     * value mapping; a NULL return gives null.
-     */
     #[Test]
     public function the_object_and_collection_terminals_return_arrays(): void
     {
@@ -197,10 +177,6 @@ final class CallsTest extends TestCase
         self::assertSame([], $this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', null)])->indexed('fx_object.t_number_map'));
     }
 
-    /**
-     * Objects 8: an Object terminal of the wrong kind fails naming the
-     * class to use, with the Call's name.
-     */
     #[Test]
     public function an_object_terminal_of_the_wrong_kind_fails_naming_the_fix(): void
     {
@@ -214,11 +190,6 @@ final class CallsTest extends TestCase
         }
     }
 
-    /**
-     * Seam and rows 14: the temporal terminals return the value mapped as
-     * an OUT value of their type (ISO text under `TemporalMode::String`),
-     * and a NULL return gives null.
-     */
     #[Test]
     public function the_temporal_terminals_return_the_mapped_value(): void
     {
@@ -248,9 +219,6 @@ final class CallsTest extends TestCase
         });
     }
 
-    /**
-     * Seam and rows 14, Binds 13: NUMBER follows the value mapping.
-     */
     #[Test]
     public function the_number_terminal_follows_the_value_mapping(): void
     {
@@ -264,9 +232,6 @@ final class CallsTest extends TestCase
         self::assertNull($this->connection->function('fx_call.f_number', ['p_value' => null])->number());
     }
 
-    /**
-     * Seam and rows 14: ROWID comes back as its text.
-     */
     #[Test]
     public function the_rowid_terminal_returns_the_rowid_text(): void
     {
@@ -276,10 +241,6 @@ final class CallsTest extends TestCase
         self::assertNull($this->connection->function('fx_call.f_rowid', ['p_null' => true])->rowid());
     }
 
-    /**
-     * Binds 5, the Call part: an OUT VARCHAR2 takes the largest buffer, and
-     * an IN OUT grows from NULL and from 'a' to 32767 bytes.
-     */
     #[Test]
     public function a_call_reads_varchar2_values_of_the_largest_size(): void
     {
@@ -295,10 +256,6 @@ final class CallsTest extends TestCase
         }
     }
 
-    /**
-     * Errors 4: a failing Call has call() = the name and sql() = the
-     * generated block, in named notation with synthetic binds.
-     */
     #[Test]
     public function a_failing_call_carries_its_name_and_generated_block(): void
     {
@@ -329,9 +286,7 @@ final class CallsTest extends TestCase
     }
 
     /**
-     * Pool and lifecycle 3: a Call after `close()` fails like `run()` does,
-     * and carries its name; a FunctionCall made before `close()` fails when
-     * its terminal runs.
+     * A FunctionCall made before `close()` fails when its terminal runs.
      */
     #[Test]
     public function a_call_after_close_fails(): void
@@ -376,11 +331,6 @@ final class CallsTest extends TestCase
         }
     }
 
-    /**
-     * Errors 5, for procedure() and function(): a distinctive bound value
-     * never appears in the message, the trace string or the exception as a
-     * string.
-     */
     #[Test]
     public function a_bound_value_never_appears_in_a_call_error(): void
     {
@@ -403,10 +353,6 @@ final class CallsTest extends TestCase
         }
     }
 
-    /**
-     * Binds 14: a quoted mixed-case name and parameter work, and a name may
-     * have up to three parts.
-     */
     #[Test]
     public function a_quoted_mixed_case_name_and_a_schema_qualified_name_work(): void
     {
@@ -448,9 +394,6 @@ final class CallsTest extends TestCase
     }
 
     /**
-     * Binds 14, Errors 11: an invalid name fails with UsageException before
-     * any Round trip, for procedure() and function() alike.
-     *
      * @param array<mixed> $binds
      */
     #[Test]

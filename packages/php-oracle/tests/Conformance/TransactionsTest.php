@@ -13,10 +13,9 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
 
 /**
- * Transactions and Array DML (catalog #26) at the Driver contract: the
- * `autocommit` option commits with the execute (C21), and `commit()` /
- * `rollback()` end what runs without it. Core's flag (begin(), transaction())
- * is tested at the public API (Api\TransactionsTest).
+ * Transactions at the Driver contract: the `autocommit` option commits with
+ * the execute (C21). Core's flag (begin(), transaction()) is tested at the
+ * public API (Api\TransactionsTest).
  */
 final class TransactionsTest extends ConformanceTestCase
 {
@@ -53,9 +52,6 @@ final class TransactionsTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 1: every kind of write under Autocommit is visible to
-     * another Session as soon as its execute returns.
-     *
      * @param array<string, mixed> $binds
      */
     #[Test]
@@ -67,10 +63,6 @@ final class TransactionsTest extends ConformanceTestCase
         self::assertSame([1], self::$observer->committed());
     }
 
-    /**
-     * Transactions 1: a failed statement under Autocommit leaves nothing
-     * applied and nothing locked, not even what it did before it failed.
-     */
     #[Test]
     public function a_failed_statement_under_autocommit_leaves_nothing_applied_or_locked(): void
     {
@@ -92,10 +84,6 @@ final class TransactionsTest extends ConformanceTestCase
         self::assertFalse(self::$observer->locked(1));
     }
 
-    /**
-     * Without Autocommit, writes stay in the Session's transaction:
-     * invisible until commit(), gone after rollback().
-     */
     #[Test]
     public function without_autocommit_a_write_is_invisible_until_commit_and_gone_after_rollback(): void
     {
@@ -113,8 +101,8 @@ final class TransactionsTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 1 and §9: a query under Autocommit commits too, so
-     * `SELECT … FOR UPDATE` loses its locks at once.
+     * A query under Autocommit commits too, so `SELECT … FOR UPDATE` loses
+     * its locks at once.
      */
     #[Test]
     public function a_query_under_autocommit_keeps_no_lock(): void
@@ -128,8 +116,8 @@ final class TransactionsTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 7: the commit closes the FOR UPDATE cursor on the
-     * server, so fetching past the first batch gives ORA-01002.
+     * The commit closes the FOR UPDATE cursor on the server, so fetching past
+     * the first batch gives ORA-01002.
      */
     #[Test]
     public function a_for_update_query_under_autocommit_fails_its_next_fetch_with_ora_01002(): void
@@ -153,10 +141,7 @@ final class TransactionsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Transactions 8: C21 adds no Round trip. A DML costs one, with or
-     * without Autocommit; commit() and rollback() cost one each.
-     */
+    /** C21 adds no Round trip. */
     #[Test]
     public function autocommit_adds_no_round_trip_and_commit_and_rollback_take_one_each(): void
     {
@@ -180,9 +165,8 @@ final class TransactionsTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 8: a query of up to fetchSize rows still takes one Round
-     * trip under Autocommit, also exactly fetchSize rows from the Statement
-     * cache.
+     * A query of up to fetchSize rows still takes one Round trip under
+     * Autocommit, also exactly fetchSize rows from the Statement cache.
      */
     #[Test]
     public function a_query_of_up_to_fetch_size_rows_under_autocommit_takes_one_round_trip(): void

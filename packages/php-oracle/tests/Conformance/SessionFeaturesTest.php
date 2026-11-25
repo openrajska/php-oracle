@@ -15,8 +15,7 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tracing;
 
 /**
- * Conformance catalog, Session features (#28), and the Fetch size cases of
- * Seam and rows 5 and Native surface 6.
+ * Session features, and the Fetch size cases.
  */
 final class SessionFeaturesTest extends ConformanceTestCase
 {
@@ -44,10 +43,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         parent::tearDownAfterClass();
     }
 
-    /**
-     * Session features 1, config part: every tracing attribute of the config
-     * reaches V$SESSION with the first Round trip.
-     */
     #[Test]
     public function config_tracing_shows_in_v_session_after_the_first_round_trip(): void
     {
@@ -67,10 +62,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         ], $this->tracing($sid));
     }
 
-    /**
-     * Session features 4: with the default Fetch size, a query of up to 100
-     * rows costs one Round trip, its execute included.
-     */
     #[Test]
     public function the_default_fetch_size_reads_up_to_100_rows_in_one_round_trip(): void
     {
@@ -86,11 +77,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Session features 4 and Seam and rows 5: `fetchSize: 10` on 25 rows
-     * takes 3 Round trips with batches of at most 10, each `fetchBatch()` at
-     * most one, and `[]` at the end and on every later call, with none.
-     */
     #[Test]
     public function a_fetch_size_of_10_reads_25_rows_in_3_round_trips(): void
     {
@@ -116,10 +102,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         self::assertLessThanOrEqual(1, max($trips));
     }
 
-    /**
-     * Native surface 6, query part: the `fetchSize` of an execute governs
-     * its Cursor, whatever the next execute on the Session asks for.
-     */
     #[Test]
     public function the_fetch_size_of_an_execute_governs_its_cursor(): void
     {
@@ -135,8 +117,8 @@ final class SessionFeaturesTest extends ConformanceTestCase
     }
 
     /**
-     * Session features 1, `trace()` part: it makes no Round trip, and the
-     * next one carries the whole new set, clearing what it leaves unset.
+     * The next Round trip carries the whole new set, clearing what it leaves
+     * unset.
      */
     #[Test]
     public function trace_makes_no_round_trip_and_replaces_the_whole_set(): void
@@ -172,11 +154,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         yield 'still pending' => [false];
     }
 
-    /**
-     * Session features 2: tracing set by Connection A, sent or still pending
-     * at its Release, is empty for Connection B on the same Session, from
-     * B's first Round trip.
-     */
     #[Test]
     #[DataProvider('sentOrPending')]
     public function tracing_set_by_one_connection_is_empty_for_the_next_on_the_same_session(bool $sent): void
@@ -205,11 +182,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Session features 3, per Round trip: a read longer than the Call
-     * timeout completes when each of its Round trips (the execute, then
-     * every `fetchBatch()`) stays under it.
-     */
     #[Test]
     public function a_long_read_whose_round_trips_are_each_under_the_call_timeout_completes(): void
     {
@@ -227,10 +199,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         self::assertGreaterThan(1.5, microtime(true) - $started, 'The read as a whole outlasted the Call timeout.');
     }
 
-    /**
-     * Session features 3, per Round trip: the Call timeout of an execute
-     * also bounds each `fetchBatch()` of its Cursor.
-     */
     #[Test]
     public function a_fetch_batch_over_the_call_timeout_throws_timeout_exception(): void
     {
@@ -249,9 +217,8 @@ final class SessionFeaturesTest extends ConformanceTestCase
     }
 
     /**
-     * Scope 6, on a killed Session: `trace()` still makes no Round trip, so
-     * it cannot see the kill; the next call fails as Broken at once, not as a
-     * timeout, and so does every later one, `trace()` included.
+     * On a killed Session, `trace()` still makes no Round trip, so it cannot
+     * see the kill.
      */
     #[Test]
     public function on_a_killed_session_tracing_and_the_call_timeout_give_way_to_connection_lost(): void
@@ -282,10 +249,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
         yield 'statementCacheSize: 0' => [0, 3];
     }
 
-    /**
-     * Session features 7: with the Statement cache, a statement run three
-     * times is parsed once; without it, every time.
-     */
     #[Test]
     #[DataProvider('statementCacheSizes')]
     public function a_repeated_statement_parses_once_unless_the_statement_cache_is_off(int $size, int $parses): void
@@ -317,8 +280,6 @@ final class SessionFeaturesTest extends ConformanceTestCase
     }
 
     /**
-     * The tracing attributes V$SESSION shows for a Session, null when empty.
-     *
      * @return array<string, string|null>
      */
     private function tracing(int $sid): array

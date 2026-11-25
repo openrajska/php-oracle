@@ -16,11 +16,6 @@ use Rajska\Oracle\Driver\DriverCursor;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
-/**
- * Conformance catalog, Scope (#17): the column-only types and the edge of
- * the scope. A later or never type fails loudly with UnsupportedException,
- * and never gives a value (Errors 11).
- */
 final class ScopeTest extends ConformanceTestCase
 {
     private static ?RoundTripCounter $counter = null;
@@ -32,10 +27,6 @@ final class ScopeTest extends ConformanceTestCase
         parent::tearDownAfterClass();
     }
 
-    /**
-     * Scope 5: LONG and LONG RAW writes of 1, 4000 and 32767 bytes through
-     * `Varchar` / `Raw`, plain strings too, read back exactly.
-     */
     #[Test]
     public function long_and_long_raw_writes_up_to_32767_bytes_round_trip(): void
     {
@@ -64,8 +55,7 @@ final class ScopeTest extends ConformanceTestCase
 
     /**
      * Writing more than 32767 bytes into a LONG or LONG RAW column takes a
-     * LONG bind, which is later: a `Varchar`, `NVarchar` or `Raw` that long
-     * fails before any Round trip, naming the LOB class to use for a LOB.
+     * LONG bind, which is later.
      *
      * @return iterable<string, array{Bind, string}>
      */
@@ -99,10 +89,6 @@ final class ScopeTest extends ConformanceTestCase
     }
 
     /**
-     * Scope 8, Seam and rows 21: a column of a later or never type is
-     * described normally; only fetching a value of it fails, with
-     * UnsupportedException, and the Connection reads on.
-     *
      * @return iterable<string, array{string, string, ?string}>
      */
     public static function unfetchable(): iterable
@@ -133,10 +119,6 @@ final class ScopeTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
-    /**
-     * Scope 8: an XMLTYPE column of a REF CURSOR and of a nested `CURSOR()`
-     * is described; fetching it fails.
-     */
     #[Test]
     public function an_xmltype_column_fails_on_fetch_in_every_cursor_kind(): void
     {
@@ -162,10 +144,7 @@ final class ScopeTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
-    /**
-     * Scope 8: SYS.ANYDATA is never supported, also inside an Object or a
-     * Collection; NULL is still `null`.
-     */
+    /** SYS.ANYDATA is never supported. */
     #[Test]
     public function anydata_fails_loudly_and_null_stays_null(): void
     {

@@ -100,10 +100,8 @@ insert into fx_animals (id, animal) values (2, fx_dog('rex', 'labrador'));
 create or replace type "FX_Mixed_Point" as object ("x" number, y number);
 /
 
--- A synonym of fx_point.
 create or replace synonym fx_point_alias for fx_point;
 
--- A Collection of Collections.
 create or replace type fx_number_matrix as table of fx_number_list;
 /
 
@@ -111,10 +109,8 @@ create or replace package fx_kinds as
   -- A PL/SQL record: an Object type in a package.
   type t_record is record (id pls_integer, name varchar2(20), flag boolean);
 
-  -- A nested table declared in a package.
   type t_numbers is table of number;
 
-  -- An Associative array of Objects.
   type t_point_map is table of fx_point index by pls_integer;
 
   -- An Associative array indexed by strings: not supported yet.

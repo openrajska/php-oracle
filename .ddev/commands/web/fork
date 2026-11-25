@@ -15,11 +15,9 @@ if [ ! -f "$dir/Cargo.toml" ]; then
 fi
 cd "$dir"
 
-# target/ separado do resto do monorepo, dentro do volume cargo-target.
 export CARGO_TARGET_DIR=/var/cache/cargo-target/rust-oracledb
 
 # Variáveis da suíte do crate (tests/README.md e RAJSKA.md no fork).
-# create_test_schema recria os usuários rsotest e rsotestproxy no FREEPDB1.
 export RSO_TEST_CONNECT_STRING=oracle:1521/FREEPDB1
 export RSO_TEST_ADMIN_USER=sys
 export RSO_TEST_ADMIN_PASSWORD=oracle

@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-# Calendar arithmetic for temporal values; the version the crate uses.
+# The same version the oracledb crate uses.
 chrono = "0.4.45"
 ext-php-rs = "0.16"
 # Our fork of the crate, pinned to an exact commit (ADR 0002, C17; see

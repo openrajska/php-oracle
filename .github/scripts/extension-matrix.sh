@@ -4,13 +4,11 @@
 # packages/php-oracle-ext, NTS and ZTS) and against the declared minimum
 # (spec #32 §15), which keeps that minimum honest.
 #
-# The minimum is Core's `ext-oracledb` constraint (`^0.1` → 0.1.0). Its
-# Extension is built from the release tag `php-oracle-ext-v<minimum>`:
-# - the tag exists: one more leg (NTS) builds the Extension from it;
-# - no tag, and the minimum is this checkout's Extension version: the
-#   minimum is not released yet and the latest legs already test it;
-# - no tag, and another version: fail. The Extension is always released
-#   before the Core release that raises the minimum.
+# The minimum is Core's `ext-oracledb` constraint (`^0.1` → 0.1.0), built
+# from the release tag `php-oracle-ext-v<minimum>`. With no tag, the minimum
+# must be this checkout's Extension (not released yet, so the latest legs test
+# it): the Extension is always released before the Core release that raises
+# the minimum.
 #
 # MINIMUM_REF (the workflow_dispatch input `minimum-ref`) forces the minimum
 # leg to build the Extension from that ref instead, to try the mechanism.

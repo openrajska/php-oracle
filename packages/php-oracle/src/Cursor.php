@@ -172,7 +172,7 @@ final class Cursor implements IteratorAggregate
     /**
      * The next batch, each nested `CURSOR()` cell wrapped as a Cursor nested
      * in this one, and each LOB cell as a Lob (under `LobMode::Inline` it is
-     * a string already). The cells are located through `columns()`.
+     * a string already).
      *
      * @return list<array<int|string, mixed>>
      */

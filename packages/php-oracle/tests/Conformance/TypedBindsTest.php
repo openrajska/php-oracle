@@ -43,9 +43,9 @@ use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\ValueMapping;
 
 /**
- * Conformance catalog, Binds (#22) and Scope (#17): typed scalar binds IN,
- * OUT and IN OUT. Every entry of `outValues()` is the list of values the
- * bind produced: one for a PL/SQL OUT, one per returned row for RETURNING.
+ * Typed scalar binds IN, OUT and IN OUT. Every entry of `outValues()` is the
+ * list of values the bind produced: one for a PL/SQL OUT, one per returned
+ * row for RETURNING.
  */
 final class TypedBindsTest extends ConformanceTestCase
 {
@@ -75,9 +75,6 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Each class with its PL/SQL type: a NULL IN bind, an OUT bind and a NULL
-     * IN OUT bind.
-     *
      * @return iterable<string, array{string, Bind, Bind, Bind}>
      */
     public static function nulls(): iterable
@@ -102,9 +99,7 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Each temporal class with its PL/SQL type, as `classes()`: the IN bind
-     * and the OUT value it becomes, the OUT bind, the IN OUT bind, how the
-     * block changes it, and the result. Values as `Temporals::shown()`
+     * Each temporal class, as `classes()`. Values as `Temporals::shown()`
      * writes them, in PHP's zone America/Sao_Paulo.
      *
      * @return iterable<string, array{string, Bind, string, Bind, Bind, string, string}>
@@ -130,10 +125,6 @@ final class TypedBindsTest extends ConformanceTestCase
         yield 'IntervalYm negative' => ['interval year to month', IntervalYm::in($months), '-1Y2M0DT0H0M0S.000000', IntervalYm::out(), IntervalYm::inOut($months), 'io', '-1Y2M0DT0H0M0S.000000'];
     }
 
-    /**
-     * Binds 4, Scope 2: the temporal classes IN, OUT and IN OUT through a
-     * PL/SQL parameter of their type.
-     */
     #[Test]
     #[DataProvider('temporalClasses')]
     public function each_temporal_class_binds_in_out_and_in_out_through_its_plsql_type(
@@ -169,9 +160,9 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 10: with the Session zone (São Paulo) other than the object's
-     * (Tokyo), `Date` and `Timestamp` store the Wall clock and `Date` drops
-     * the fraction, while TSTZ and TSLTZ store the Instant.
+     * With the Session zone (São Paulo) other than the object's (Tokyo),
+     * `Date` and `Timestamp` store the Wall clock and `Date` drops the
+     * fraction, while TSTZ and TSLTZ store the Instant.
      */
     #[Test]
     public function wall_clock_types_store_the_wall_clock_and_zoned_types_the_instant(): void
@@ -212,9 +203,6 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 11: `IntervalDs` rejects years and months, `IntervalYm` days and
-     * smaller units, when the bind is built: before any Round trip.
-     *
      * @return iterable<string, array{Closure(): Bind, non-empty-string}>
      */
     public static function incompatibleIntervals(): iterable
@@ -244,10 +232,6 @@ final class TypedBindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Binds 4, Scope 2: IN, OUT and IN OUT through a PL/SQL parameter of the
-     * class's type.
-     */
     #[Test]
     #[DataProvider('classes')]
     public function each_class_binds_in_out_and_in_out_through_its_plsql_type(
@@ -281,9 +265,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSameValue($changed, $values['io'][0]);
     }
 
-    /**
-     * Binds 4, Scope 2: a typed NULL, IN and IN OUT, gives NULL back.
-     */
     #[Test]
     #[DataProvider('nulls')]
     public function each_class_binds_null(string $plsql, Bind $in, Bind $out, Bind $inOut): void
@@ -306,9 +287,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame(['o' => [null], 'io' => [null]], $execution->outValues());
     }
 
-    /**
-     * Binds 4, Scope 2: ROWID.
-     */
     #[Test]
     public function a_rowid_binds_in_out_and_in_out(): void
     {
@@ -348,9 +326,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame($expected, $actual);
     }
 
-    /**
-     * Scope 4: one row.
-     */
     #[Test]
     public function insert_returning_into_gives_the_one_row(): void
     {
@@ -367,7 +342,7 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Scope 4: several rows, and none.
+     * Several rows, and none.
      */
     #[Test]
     public function update_returning_into_gives_every_row(): void
@@ -411,8 +386,7 @@ final class TypedBindsTest extends ConformanceTestCase
     /**
      * Risk resolved: VARCHAR2 binds of 4000 to 32767 bytes in SQL on a
      * STANDARD max_string_size database. The server takes them (the crate
-     * sends them as long binds), a column of 4000 bytes rejects them with
-     * ORA-12899, and a RETURNING buffer of 32767 bytes reads past 4000.
+     * sends them as long binds).
      */
     #[Test]
     public function varchar2_binds_over_4000_bytes_work_in_sql_on_a_standard_database(): void
@@ -449,7 +423,7 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 5: the largest OUT, in bytes and in 2-byte characters.
+     * The largest OUT, in bytes and in 2-byte characters.
      */
     #[Test]
     public function a_varchar_out_holds_32767_bytes(): void
@@ -472,7 +446,7 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 5: an IN OUT grows to the largest buffer from NULL and from 'a'.
+     * An IN OUT grows to the largest buffer from NULL and from 'a'.
      */
     #[Test]
     public function a_varchar_in_out_grows_to_32767_bytes(): void
@@ -495,7 +469,7 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 6: CHAR compares blank-padded, VARCHAR2 does not.
+     * CHAR compares blank-padded, VARCHAR2 does not.
      */
     #[Test]
     public function a_char_matches_a_blank_padded_char(): void
@@ -509,10 +483,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame('Typ=96 Len=2: 65,66', self::value($connection, 'select dump(:code) from dual', ['code' => Char::in('AB')]));
     }
 
-    /**
-     * A Char OUT read back from a CHAR(5) keeps exactly its own padding, as
-     * a CHAR column does.
-     */
     #[Test]
     public function a_char_out_keeps_the_padding_it_has(): void
     {
@@ -527,10 +497,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame(['c' => ['AB   '], 'n' => ['ç   ']], $execution->outValues());
     }
 
-    /**
-     * Binds 7: 2-, 3- and 4-byte UTF-8 round-trip through the national
-     * character set.
-     */
     #[Test]
     public function nvarchar_and_nchar_round_trip_multibyte_text(): void
     {
@@ -554,9 +520,6 @@ final class TypedBindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Binds 9: a decimal string is exact whatever the Session's NLS.
-     */
     #[Test]
     public function a_number_string_is_exact_under_any_nls(): void
     {
@@ -570,10 +533,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame('12345678901234567890.123456789', self::value($connection, 'select :v from dual', ['v' => Number::in('12345678901234567890.123456789')]));
     }
 
-    /**
-     * Binds 15: keys are the names as the user wrote them, whatever the SQL
-     * wrote.
-     */
     #[Test]
     public function out_value_keys_keep_the_users_case(): void
     {
@@ -588,10 +547,6 @@ final class TypedBindsTest extends ConformanceTestCase
         self::assertSame(['total' => [1], 'NAME' => [2], 'mIxEd' => [3]], $execution->outValues());
     }
 
-    /**
-     * Values 16: OUT and IN OUT values follow the column mapping under every
-     * ValueMapping. Only `numbers` and `temporals` change these types.
-     */
     #[Test]
     public function out_values_follow_the_column_mapping_under_every_value_mapping(): void
     {
@@ -688,8 +643,6 @@ final class TypedBindsTest extends ConformanceTestCase
     }
 
     /**
-     * A typed bind's value is checked before any Round trip, naming the fix.
-     *
      * @return iterable<string, array{Bind, string}>
      */
     public static function typedMistakes(): iterable

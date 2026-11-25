@@ -23,15 +23,8 @@ use Rajska\Oracle\TemporalMode;
 use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\ValueMapping;
 
-/**
- * Conformance catalog, Values (#23).
- */
 final class ValuesTest extends ConformanceTestCase
 {
-    /**
-     * Values 1: `int` when integral and within 64 bits (decided per value),
-     * else the canonical exact string, whatever the NLS settings.
-     */
     #[Test]
     public function number_maps_to_int_or_the_canonical_exact_string(): void
     {
@@ -73,10 +66,6 @@ final class ValuesTest extends ConformanceTestCase
         self::assertSame([$expected], self::rows($connection, $sql));
     }
 
-    /**
-     * Values 2, query part: `numbers: Float` turns a non-integral NUMBER
-     * into a float; an integral one stays an int.
-     */
     #[Test]
     public function numbers_float_maps_a_non_integral_number_to_a_float(): void
     {
@@ -89,9 +78,7 @@ final class ValuesTest extends ConformanceTestCase
     }
 
     /**
-     * Values 4, Scope 1: DATE and TIMESTAMP(0 / 6 / 9) give the stored Wall
-     * clock in PHP's default zone, truncated to µs. Oracle's 4712 BC and
-     * 1 BC are ISO years -4711 and 0.
+     * Truncated to µs. Oracle's 4712 BC and 1 BC are ISO years -4711 and 0.
      */
     #[Test]
     public function date_and_timestamp_give_the_wall_clock_in_phps_zone(): void
@@ -123,10 +110,6 @@ final class ValuesTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * Values 4: the Wall clock round-trips through `Date::in()` and
-     * `Timestamp::in()`, BC years and 9999-12-31 included.
-     */
     #[Test]
     public function the_wall_clock_round_trips_bc_years_included(): void
     {
@@ -146,8 +129,7 @@ final class ValuesTest extends ConformanceTestCase
     }
 
     /**
-     * Values 5, Scope 1: a TSTZ keeps its own offset; a region-named one
-     * gives the correct Instant in UTC.
+     * A region-named TSTZ gives the correct Instant in UTC.
      */
     #[Test]
     public function tstz_keeps_its_own_offset(): void
@@ -170,10 +152,6 @@ final class ValuesTest extends ConformanceTestCase
         ], array_map(Temporals::shown(...), $row));
     }
 
-    /**
-     * Values 5: `TimestampTz::in()` stores the object's offset at that
-     * Instant, whatever the Session time zone.
-     */
     #[Test]
     public function timestamp_tz_in_stores_the_objects_offset(): void
     {
@@ -194,10 +172,7 @@ final class ValuesTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * An offset with seconds (local mean time) cannot be a TSTZ offset: it
-     * fails before any Round trip.
-     */
+    /** An offset with seconds (local mean time) cannot be a TSTZ offset. */
     #[Test]
     public function a_tstz_offset_with_seconds_fails_before_any_round_trip(): void
     {
@@ -220,10 +195,6 @@ final class ValuesTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Values 6, Scope 1: a TSLTZ gives the correct Instant in PHP's default
-     * zone.
-     */
     #[Test]
     public function tsltz_gives_the_instant_in_phps_zone(): void
     {
@@ -241,7 +212,7 @@ final class ValuesTest extends ConformanceTestCase
     }
 
     /**
-     * Values 7: the Session time zone is PHP's default zone by name, so
+     * The Session time zone is PHP's default zone by name, so
      * CURRENT_TIMESTAMP and FROM_TZ follow its daylight saving time.
      */
     #[Test]
@@ -270,10 +241,6 @@ final class ValuesTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * Values 9, Scope 1: INTERVALs, negatives included, give `DateInterval`
-     * with the right fields (µs) and `invert`.
-     */
     #[Test]
     public function intervals_give_date_intervals(): void
     {
@@ -297,10 +264,7 @@ final class ValuesTest extends ConformanceTestCase
         ], array_map(Temporals::shown(...), $row));
     }
 
-    /**
-     * Values 8, Values 17: `temporals: String` gives the exact ISO text,
-     * whatever the NLS settings. INTERVALs stay objects.
-     */
+    /** INTERVALs stay objects. */
     #[Test]
     public function temporals_string_gives_nls_independent_iso_text(): void
     {
@@ -343,9 +307,8 @@ final class ValuesTest extends ConformanceTestCase
     }
 
     /**
-     * Values 3, Scope 1: BINARY_FLOAT and BINARY_DOUBLE give a `float`;
-     * `0.1` stays `0.1` (BINARY_FLOAT widened through its shortest
-     * round-trip text), NaN and the infinities included.
+     * `0.1` stays `0.1` (BINARY_FLOAT widened through its shortest round-trip
+     * text).
      */
     #[Test]
     public function binary_float_and_double_give_floats_nan_and_infinities_included(): void
@@ -375,10 +338,6 @@ final class ValuesTest extends ConformanceTestCase
         self::assertNan($row['BD_NAN']);
     }
 
-    /**
-     * Values 3: NaN and the infinities round-trip through `BinaryFloat::in()`
-     * and `BinaryDouble::in()`, and the server stores them as such.
-     */
     #[Test]
     public function nan_and_infinities_round_trip(): void
     {
@@ -396,11 +355,6 @@ final class ValuesTest extends ConformanceTestCase
         self::assertSame(0.1, self::value($connection, 'select :v from dual', ['v' => BinaryDouble::in(0.1)]));
     }
 
-    /**
-     * Values 10, Scope 1: CHAR and NCHAR keep their blank padding; RAW and
-     * LONG RAW give bytes; ROWID and UROWID their text; BOOLEAN a `bool`;
-     * LONG a `string`; and NULL of every one of them `null`.
-     */
     #[Test]
     public function char_raw_rowid_boolean_and_long_map_as_stated(): void
     {
@@ -434,7 +388,6 @@ final class ValuesTest extends ConformanceTestCase
             'NO_URID' => null,
         ], $row);
 
-        // The ROWID binds back and finds its row.
         self::assertSame(1, self::value($connection, 'select id from fx_items where rowid = :r', ['r' => Rowid::in($row['RID'])]));
 
         // An index-organized table's ROWID is a UROWID: its text, which
@@ -454,10 +407,6 @@ final class ValuesTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Values 17: every scalar type gives the same value whatever the NLS
-     * settings of the Session.
-     */
     #[Test]
     public function values_are_identical_under_unusual_nls_settings(): void
     {

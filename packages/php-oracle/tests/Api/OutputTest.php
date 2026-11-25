@@ -19,8 +19,7 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
 
 /**
- * DBMS_OUTPUT through `enableOutput()` / `output()` / `disableOutput()`
- * (catalog Session features 5 and 6, Scope 6).
+ * DBMS_OUTPUT through `enableOutput()` / `output()` / `disableOutput()`.
  */
 final class OutputTest extends TestCase
 {
@@ -35,10 +34,9 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Session features 5: 2500 lines come back in order, in batches of 1000
-     * (one Round trip each), then `[]`. The first `output()` on a Session
-     * also describes the Collection type once; that is left out of the
-     * count.
+     * Lines come in batches of 1000, one Round trip each. The first
+     * `output()` on a Session also describes the Collection type once; that
+     * is left out of the count.
      */
     #[Test]
     public function output_gives_2500_lines_in_order_then_nothing(): void
@@ -63,8 +61,7 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Session features 5: a 32767-byte line, an empty line (NULL to
-     * PL/SQL), blanks and UTF-8 come back unchanged.
+     * An empty line is NULL to PL/SQL.
      */
     #[Test]
     public function lines_come_back_unchanged(): void
@@ -86,10 +83,6 @@ final class OutputTest extends TestCase
         self::assertSame([str_repeat('x', 32767), '', '  padded  ', 'ação €', 'in parts'], $connection->output());
     }
 
-    /**
-     * Session features 5: without `enableOutput()`, PL/SQL writes nowhere,
-     * so `output()` gives `[]`.
-     */
     #[Test]
     public function without_enable_output_output_is_empty(): void
     {
@@ -100,8 +93,7 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Session features 5: `output()` makes no check of its own, so output
-     * enabled through raw SQL is read.
+     * `output()` makes no check of its own.
      */
     #[Test]
     public function output_enabled_through_raw_sql_is_read(): void
@@ -112,10 +104,6 @@ final class OutputTest extends TestCase
         self::assertSame(['raw'], $connection->output());
     }
 
-    /**
-     * `enableOutput()` always starts from an empty buffer: unread lines
-     * written before it are gone.
-     */
     #[Test]
     public function enable_output_starts_from_an_empty_buffer(): void
     {
@@ -128,10 +116,6 @@ final class OutputTest extends TestCase
         self::assertSame(['after'], $connection->output());
     }
 
-    /**
-     * Session features 5: after `disableOutput()`, unread lines are gone
-     * and new ones go nowhere, so `output()` gives `[]`.
-     */
     #[Test]
     public function after_disable_output_output_is_empty(): void
     {
@@ -156,11 +140,6 @@ final class OutputTest extends TestCase
         yield 'dropped, next user does not enable' => [false, false];
     }
 
-    /**
-     * Session features 6: output A enabled through the API and left unread
-     * is gone at its Release, whether A calls `close()` or is just dropped:
-     * B, on the same Session, gets `[]` with or without `enableOutput()`.
-     */
     #[Test]
     #[DataProvider('releasesAndNextUsers')]
     public function unread_output_enabled_through_the_api_is_purged_on_release(bool $close, bool $enable): void
@@ -185,9 +164,8 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Session features 6: a Connection dropped while one of its Cursors
-     * still reads turns output off at once; the Cursor reads on, and the
-     * next user of the Session, after the Cursor is gone, gets `[]`.
+     * Output turns off at once; the Cursor reads on, and the next user of
+     * the Session, after the Cursor is gone, gets `[]`.
      */
     #[Test]
     public function output_is_purged_when_a_connection_is_dropped_before_its_cursor(): void
@@ -230,9 +208,7 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * Scope 6, on a killed Session: `output()` fails as Broken, and the
-     * DISABLE before the Release fails silently, on `close()` and when the
-     * Connection is dropped.
+     * The DISABLE before the Release fails silently.
      */
     #[Test]
     #[DataProvider('closedOrDropped')]
@@ -317,8 +293,6 @@ final class OutputTest extends TestCase
     }
 
     /**
-     * After `close()`, every output call fails.
-     *
      * @param Closure(Connection): mixed $call
      */
     #[Test]
@@ -380,9 +354,6 @@ final class OutputTest extends TestCase
         return $session;
     }
 
-    /**
-     * A fresh() Connection, closed in tearDown().
-     */
     private function connect(): Connection
     {
         $connection = self::fresh();

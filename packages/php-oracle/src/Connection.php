@@ -31,9 +31,6 @@ final class Connection
 {
     private readonly ConnectionState $state;
 
-    /**
-     * Inside an Explicit transaction: statements run without Autocommit.
-     */
     private bool $inTransaction = false;
 
     /**
@@ -386,12 +383,6 @@ final class Connection
         $this->disableOutputBeforeRelease();
     }
 
-    /**
-     * Runs `DBMS_OUTPUT.DISABLE` if output was enabled through
-     * `enableOutput()`, so its unread lines never reach the Session's next
-     * user. Its failure (a Broken Connection, say) is ignored: the Release
-     * goes on.
-     */
     private function disableOutputBeforeRelease(): void
     {
         if (!$this->outputEnabled || $this->state->released) {

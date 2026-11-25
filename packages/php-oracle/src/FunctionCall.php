@@ -96,10 +96,6 @@ final readonly class FunctionCall
             : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a NUMBER.', 0, null, $this->call->name);
     }
 
-    /**
-     * A timestamp return value: an object, or ISO text under
-     * `TemporalMode::String`.
-     */
     private function temporal(Bind $bind): DateTimeImmutable|string|null
     {
         $value = ($this->run)($bind)->value();

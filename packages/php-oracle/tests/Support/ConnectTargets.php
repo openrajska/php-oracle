@@ -16,8 +16,7 @@ use RuntimeException;
  *   listeners of fixtures/tls (one-way TLS and mTLS, private CA);
  * - ORACLE_ADMIN_CONNECT_STRING, ORACLE_ADMIN_USER, ORACLE_ADMIN_PASSWORD:
  *   a user of the CDB root that reads V$CPOOL_CC_STATS (DRCP statistics are
- *   kept there);
- * - the client wallets are fixtures/tls/client in this repository.
+ *   kept there).
  */
 final class ConnectTargets
 {

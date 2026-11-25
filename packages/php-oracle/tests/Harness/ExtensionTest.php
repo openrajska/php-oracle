@@ -7,9 +7,6 @@ namespace Rajska\Oracle\Tests\Harness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Smoke test: the suite runs with the `oracledb` Extension loaded.
- */
 final class ExtensionTest extends TestCase
 {
     #[Test]

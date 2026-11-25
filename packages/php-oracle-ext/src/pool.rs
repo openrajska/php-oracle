@@ -58,7 +58,6 @@ pub struct PoolKey<S = String> {
 }
 
 impl PoolKey<&str> {
-    /// The key with strings of its own.
     fn owned(&self) -> PoolKey {
         let owned = |value: Option<&str>| value.map(str::to_string);
         PoolKey {
@@ -79,7 +78,6 @@ impl PoolKey<&str> {
         }
     }
 
-    /// Whether `key` is this key.
     fn is(&self, key: &PoolKey) -> bool {
         let same = |a: Option<&str>, b: &Option<String>| a == b.as_deref();
         self.dsn == key.dsn
@@ -100,7 +98,6 @@ impl PoolKey<&str> {
 }
 
 impl PoolKey {
-    /// The key borrowing these strings.
     #[cfg(test)]
     fn view(&self) -> PoolKey<&str> {
         PoolKey {
@@ -261,7 +258,6 @@ pub struct SessionNotes {
 }
 
 impl Lease {
-    /// What the Extension learned about this Session so far.
     pub fn notes(&self) -> &SessionNotes {
         &self.notes
     }
@@ -669,7 +665,6 @@ mod tests {
         }
     }
 
-    /// The threads of this process.
     #[cfg(target_os = "linux")]
     fn threads() -> usize {
         std::fs::read_dir("/proc/self/task").unwrap().count()

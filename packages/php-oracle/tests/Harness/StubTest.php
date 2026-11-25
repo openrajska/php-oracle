@@ -8,8 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Core's copy of the Extension's stub, used by PHPStan only, stays the same
- * as the Extension's.
+ * Core's copy of the stub is for PHPStan only.
  */
 final class StubTest extends TestCase
 {

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle;
 
 /**
- * How a VECTOR stores its dimensions. Backed by the case name in
- * lowerCamelCase.
+ * How a VECTOR stores its dimensions.
  */
 enum VectorFormat: string
 {

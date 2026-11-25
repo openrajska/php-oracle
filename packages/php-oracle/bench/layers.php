@@ -158,7 +158,6 @@ $work = [
 ];
 $cleanup = ['Insert 1k rows' => static fn() => $native->execute(SQL_CLEANUP, [], $nativeOptions())];
 
-// Round trips, counted on the shared Session.
 $observer = oci_new_connect($x->user, $x->password, $x->dsn, 'AL32UTF8');
 $sid = (int) $core->select("select sys_context('userenv', 'sid') as sid from dual")->value();
 $roundTrips = static function (int $sid) use ($observer): int {

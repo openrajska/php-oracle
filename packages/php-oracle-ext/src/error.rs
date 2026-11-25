@@ -326,7 +326,6 @@ const BROKEN_CODES: [usize; 28] = [
 /// ORA-12170 (connect timeout): a connect error, never Broken.
 const CONNECT_TIMEOUT: usize = 12170;
 
-/// What a server error is, by its ORA code.
 fn kind_of_code(code: usize) -> Kind {
     if BROKEN_CODES.contains(&code) {
         Kind::ConnectionLost

@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Child process for the detection tests (spec #32 §15): a fresh PHP process,
- * as a new FPM worker or CLI run would be, with or without the Extension.
+ * Child process for the detection tests: a fresh PHP process, as a new FPM
+ * worker or CLI run would be, with or without the Extension.
  *
  *     php [-d extension=…] detect.php <autoload.php> [<reported version>]
  *

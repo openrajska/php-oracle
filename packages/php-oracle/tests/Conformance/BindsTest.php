@@ -24,7 +24,7 @@ use Stringable;
 use Throwable;
 
 /**
- * Conformance catalog, Binds (#22): plain PHP values, named only.
+ * Plain PHP values, named only.
  */
 final class BindsTest extends ConformanceTestCase
 {
@@ -54,9 +54,6 @@ final class BindsTest extends ConformanceTestCase
         }, 'Typ=1 Len=15: 102,114,111,109,32,95,95,116,111,83,116,114,105,110,103', 'from __toString'];
     }
 
-    /**
-     * Binds 1: each plain value binds as the type §7 infers and reads back.
-     */
     #[Test]
     #[DataProvider('inferred')]
     public function a_plain_value_binds_as_its_inferred_type(mixed $value, string $dump, mixed $readBack): void
@@ -67,9 +64,6 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame($readBack, self::value($connection, 'select :v from dual', ['v' => $value]));
     }
 
-    /**
-     * Binds 1: a bool binds as BOOLEAN (type 252).
-     */
     #[Test]
     public function a_bool_binds_as_boolean(): void
     {
@@ -81,12 +75,7 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame('no', self::value($connection, "select case when :v then 'yes' else 'no' end from dual", ['v' => false]));
     }
 
-    /**
-     * Binds 3: strings of 4000, 4001, 32767, 32768 bytes and 1 MiB go into
-     * a CLOB column and read back exactly. Up to 32767 bytes they bind as
-     * VARCHAR2, over it as CLOB (PL/SQL picks the overload of the bind's
-     * type).
-     */
+    /** PL/SQL picks the overload of the bind's type. */
     #[Test]
     public function a_string_over_32767_bytes_binds_as_a_clob(): void
     {
@@ -123,9 +112,6 @@ final class BindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Binds 1: null binds as a NULL VARCHAR2.
-     */
     #[Test]
     public function null_binds_as_null(): void
     {
@@ -136,11 +122,6 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame(0, self::value($connection, 'select count(*) from fx_items where name = :v', ['v' => null]));
     }
 
-    /**
-     * Binds 2: a PL/SQL block's binds match its placeholders ignoring case,
-     * in whatever order the binds come, each
-     * OUT value comes back under the key the user wrote.
-     */
     #[Test]
     public function a_blocks_binds_match_its_placeholders_in_any_order_and_case(): void
     {
@@ -155,9 +136,6 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame(['echo' => ['240'], 'TOTAL' => [42]], $execution->outValues());
     }
 
-    /**
-     * Binds 1.
-     */
     #[Test]
     public function the_float_0_1_stores_exactly_0_1(): void
     {
@@ -173,10 +151,7 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame('0.1', self::value($connection, 'select :f from dual', ['f' => 0.1]));
     }
 
-    /**
-     * Binds 1: NUMBER's whole range takes a float, each stored as its
-     * shortest round-trip text.
-     */
+    /** Each float is stored as its shortest round-trip text. */
     #[Test]
     public function floats_bind_exactly_across_number_range(): void
     {
@@ -191,11 +166,7 @@ final class BindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * #66: one SQL text bound with values of different types, over one
-     * Session with the Statement cache on, gives each value back with its
-     * own PHP type, whichever type the cached statement saw before.
-     */
+    /** #66. */
     #[Test]
     public function one_sql_text_takes_binds_of_different_types_with_the_statement_cache_on(): void
     {
@@ -209,11 +180,9 @@ final class BindsTest extends ConformanceTestCase
     }
 
     /**
-     * #66: one SQL text bound with ever longer text, over one Session with
-     * the Statement cache on, gives the whole text back, inferred and typed.
-     * Two Sessions run it in turn: before the fix, the first one read every
-     * text whole and the second, once the server held what the first had
-     * parsed, read them cut short.
+     * #66. Two Sessions run it in turn: before the fix, the first one read
+     * every text whole and the second, once the server held what the first
+     * had parsed, read them cut short.
      */
     #[Test]
     public function one_sql_text_takes_ever_longer_text_with_the_statement_cache_on(): void
@@ -237,9 +206,6 @@ final class BindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 2, 15; Errors 11: each mistake names the fix, and the
-     * statement never reaches the server.
-     *
      * @return iterable<string, array{array<mixed>, string, string}>
      */
     public static function mistakes(): iterable
@@ -309,10 +275,6 @@ final class BindsTest extends ConformanceTestCase
         self::assertSame(0, $roundTrips);
     }
 
-    /**
-     * A Stringable whose __toString() throws: its own exception reaches the
-     * caller, and the Connection still works.
-     */
     #[Test]
     public function an_exception_from_to_string_reaches_the_caller(): void
     {

@@ -97,9 +97,6 @@ final readonly class Lob
         return LobStream::open($this->chunk(...));
     }
 
-    /**
-     * The next chunk: '' at the end. At most one Round trip.
-     */
     private function chunk(): string
     {
         $this->ensureOpen();

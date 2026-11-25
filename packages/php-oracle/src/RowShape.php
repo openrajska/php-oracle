@@ -6,7 +6,7 @@ namespace Rajska\Oracle;
 
 /**
  * How a Cursor shapes its rows: keyed by column name, or a list in column
- * order. Backed by the case name in lowerCamelCase.
+ * order.
  */
 enum RowShape: string
 {

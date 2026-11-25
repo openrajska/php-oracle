@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Starts two TCPS listeners for the TLS tests, inside the database container
-# (as the oracle user), next to the default listener and without touching it:
-#   RAJSKA_TLS  on 2484: one-way TLS (the server's certificate only);
-#   RAJSKA_MTLS on 2485: mutual TLS (the client must present a certificate).
-# Both serve FREEPDB1 through static registration, with the server wallet in
-# ./server. Each has a TNS_ADMIN of its own, which the server processes it
-# starts inherit. Idempotent: listeners already running are restarted.
+# Starts the TCPS listeners of the TLS tests inside the database container (as
+# the oracle user), next to the default listener and without touching it. Each
+# has a TNS_ADMIN of its own, which the server processes it starts inherit.
+# Idempotent: listeners already running are restarted.
 # Usage, from this folder copied into the container:
 #   bash listeners.sh [service]        (default service: FREEPDB1)
 set -euo pipefail

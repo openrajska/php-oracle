@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle\Bind;
 
 /**
- * Which way a typed Bind's value travels. Backed by the case name in
- * lowerCamelCase.
+ * Which way a typed Bind's value travels.
  */
 enum Direction: string
 {

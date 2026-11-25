@@ -25,7 +25,6 @@ use SensitiveParameter;
  * Each value is checked before any Round trip: a finite number for
  * FLOAT32 / FLOAT64 (FLOAT32 within its range), an int from -128 to 127
  * for INT8, a byte (0 to 255) for BINARY. A sparse VECTOR cannot be BINARY.
- * The format travels as the bind's `typeName`.
  */
 final readonly class Vector extends Bind
 {

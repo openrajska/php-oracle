@@ -105,9 +105,6 @@ final class ExtensionConnection implements DriverConnection
     }
 
     /**
-     * The `$options` array of `$options`, built once while Core passes the
-     * same DriverOptions.
-     *
      * @return array{autocommit: bool, timeout: ?int, fetchSize: int, numbers: string, temporals: string, lobs: string, rowShape: string, keyCase: string}
      */
     private function options(DriverOptions $options): array

@@ -21,9 +21,6 @@ use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use RuntimeException;
 
-/**
- * Conformance catalog, Errors (#27).
- */
 final class ErrorsTest extends ConformanceTestCase
 {
     /**
@@ -44,8 +41,6 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 1.
-     *
      * @param class-string $class
      * @param class-string $parent
      */
@@ -57,9 +52,6 @@ final class ErrorsTest extends ConformanceTestCase
         self::assertTrue(is_subclass_of($class, $parent), "$class extends $parent");
     }
 
-    /**
-     * Errors 2.
-     */
     #[Test]
     public function a_duplicate_gives_unique_violation_exception(): void
     {
@@ -76,10 +68,7 @@ final class ErrorsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Errors 13: a compilation error is success with info, not a throw; the
-     * warning belongs to that one Execution.
-     */
+    /** A compilation error is success with info, not a throw. */
     #[Test]
     public function a_compilation_error_gives_a_warning_and_a_valid_unit_gives_null(): void
     {
@@ -101,10 +90,9 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 5, the amendment to #32: on 26ai, ORA-00001 adds an ORA-03301
-     * line with the row's values unless the Session turns
-     * `error_message_details` off, which the Backend does when it creates
-     * the Session.
+     * On 26ai, ORA-00001 adds an ORA-03301 line with the row's values unless
+     * the Session turns `error_message_details` off, which the Backend does
+     * when it creates the Session.
      */
     #[Test]
     public function a_unique_violation_on_a_fresh_connection_carries_no_ora_03301_line_and_no_bound_value(): void
@@ -125,10 +113,6 @@ final class ErrorsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Errors 13: each Execution reports its own warning, so the same one
-     * twice in a row on one Session is reported both times.
-     */
     #[Test]
     public function the_same_compilation_error_twice_in_a_row_gives_a_warning_each_time(): void
     {
@@ -148,10 +132,6 @@ final class ErrorsTest extends ConformanceTestCase
         self::assertStringContainsString('compilation errors', $again);
     }
 
-    /**
-     * Errors 13: a warning never leaks into a later Execution, nor into
-     * another Connection that reuses the pooled Session.
-     */
     #[Test]
     public function a_warning_never_leaks_into_a_later_execution_or_the_next_connection_on_the_pooled_session(): void
     {
@@ -182,9 +162,6 @@ final class ErrorsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Errors 9, the Pool-exhausted part.
-     */
     #[Test]
     public function the_pool_at_its_ceiling_gives_pool_exhausted_exception(): void
     {
@@ -201,11 +178,6 @@ final class ErrorsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Errors 8, the honoured break: a CPU-bound query over the Call timeout
-     * throws TimeoutException, the server stops it, and the Connection
-     * works on.
-     */
     #[Test]
     public function a_call_timeout_on_a_cpu_bound_query_throws_and_the_connection_survives(): void
     {
@@ -227,10 +199,7 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 8, the ignored break: the server answers no break during a
-     * sleep, so the Session is lost. The call that timed out throws
-     * TimeoutException; the Connection is Broken, and the next call throws
-     * ConnectionLostException.
+     * The server answers no break during a sleep, so the Session is lost.
      */
     #[Test]
     public function a_call_timeout_on_a_sleep_makes_the_next_call_throw_connection_lost(): void
@@ -266,8 +235,8 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 14: the Release's rollback fails on the dead Session, which is
-     * discarded silently.
+     * The Release's rollback fails on the dead Session, which is discarded
+     * silently.
      */
     #[Test]
     #[DataProvider('releases')]
@@ -289,10 +258,8 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 15: a panic inside the Extension, injected through the
-     * debug-build hook (SQL starting with the comment `oracledb: panic`).
-     * The process survives, the Connection is Broken, and its Session never
-     * comes back.
+     * A panic inside the Extension, injected through the debug-build hook
+     * (SQL starting with the comment `oracledb: panic`).
      */
     #[Test]
     public function an_injected_panic_gives_connection_lost_and_makes_the_connection_broken(): void
@@ -325,8 +292,7 @@ final class ErrorsTest extends ConformanceTestCase
     }
 
     /**
-     * Errors 3. The expected offsets are the ones oci8 reports for the same
-     * statements.
+     * The expected offsets are the ones oci8 reports for the same statements.
      */
     #[Test]
     public function a_syntax_error_gives_query_exception_with_the_server_offset(): void

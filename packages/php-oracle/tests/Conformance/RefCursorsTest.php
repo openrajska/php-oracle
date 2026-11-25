@@ -20,9 +20,8 @@ use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\ValueMapping;
 
 /**
- * Conformance catalog: REF CURSORs (OUT, IN OUT, function return) and nested
- * `CURSOR()` columns, as handle cells of the Driver contract
- * (fixtures/sql/02_cursor.sql).
+ * REF CURSORs (OUT, IN OUT, function return) and nested `CURSOR()` columns;
+ * fixtures in fixtures/sql/02_cursor.sql.
  */
 final class RefCursorsTest extends ConformanceTestCase
 {
@@ -35,10 +34,6 @@ final class RefCursorsTest extends ConformanceTestCase
          order by c.id
         SQL;
 
-    /**
-     * Binds 12 and Scope 3: a REF CURSOR OUT arrives as a DriverCursor in its
-     * OUT value list, with its rows in their final PHP types.
-     */
     #[Test]
     public function a_ref_cursor_out_arrives_as_a_driver_cursor(): void
     {
@@ -58,11 +53,6 @@ final class RefCursorsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * The fixture REF CURSORs with a DATE column (function return, strongly
-     * typed, several OUTs) read in full, the Execution's `temporals`
-     * inherited.
-     */
     #[Test]
     public function ref_cursors_with_a_date_column_read_in_full(): void
     {
@@ -93,10 +83,7 @@ final class RefCursorsTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * Binds 12 and Scope 3: an IN OUT REF CURSOR goes as NULL, and the
-     * server opens it.
-     */
+    /** An IN OUT REF CURSOR goes as NULL. */
     #[Test]
     public function a_ref_cursor_in_out_is_opened_by_the_server(): void
     {
@@ -109,10 +96,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame([['NAME' => 'Plain'], ['NAME' => 'Ação']], self::drain(self::cursor($execution, 'io')));
     }
 
-    /**
-     * Binds 12 and Scope 3: a function's REF CURSOR return value, in a
-     * user-written block.
-     */
     #[Test]
     public function a_ref_cursor_function_return_arrives_as_a_driver_cursor(): void
     {
@@ -127,11 +110,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame(['number', 'varchar', 'cursor'], array_column($cursor->columns(), 'type'));
     }
 
-    /**
-     * Seam and rows 18: a REF CURSOR the block never opened still arrives
-     * as a DriverCursor, never null, and fails on its first read with the
-     * server's ORA-01001.
-     */
     #[Test]
     public function an_unopened_ref_cursor_fails_on_its_first_read(): void
     {
@@ -149,10 +127,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
-    /**
-     * Seam and rows 21: an empty REF CURSOR has its columns before the
-     * first row, and no rows.
-     */
     #[Test]
     public function an_empty_ref_cursor_describes_its_columns(): void
     {
@@ -173,10 +147,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame([[], []], [$cursor->fetchBatch(), $cursor->fetchBatch()]);
     }
 
-    /**
-     * Seam and rows 2 and 19, Scope 3: a nested `CURSOR()` cell is a
-     * DriverCursor; after the parent is read to its end, every child reads.
-     */
     #[Test]
     public function every_nested_cursor_reads_after_the_parent_is_read_to_its_end(): void
     {
@@ -198,10 +168,6 @@ final class RefCursorsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Seam and rows 19: an explicit `close()` of the parent invalidates its
-     * nested Cursors, read or not, and the Session goes on.
-     */
     #[Test]
     public function a_nested_cursor_fails_after_its_parents_close(): void
     {
@@ -231,10 +197,8 @@ final class RefCursorsTest extends ConformanceTestCase
     }
 
     /**
-     * Native surface 7: a nested Cursor keeps its parent open after the
-     * parent object is dropped. Without a Statement cache, the parent's
-     * server cursor would close with the object, and its nested cursors
-     * with it.
+     * Without a Statement cache, the parent's server cursor would close with
+     * the object, and its nested cursors with it.
      */
     #[Test]
     public function a_nested_cursor_keeps_its_parent_open_after_the_parent_object_is_dropped(): void
@@ -252,11 +216,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame([3, 8, 13, 18], array_column(self::drain($child), 'ID'));
     }
 
-    /**
-     * Values 2, Session features 4 and Native surface 6: REF CURSORs and
-     * nested Cursors inherit `rowShape`, `keyCase`, `values` and
-     * `fetchSize` from their execute.
-     */
     #[Test]
     public function ref_cursors_and_nested_cursors_inherit_the_executes_options(): void
     {
@@ -282,10 +241,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertCount(2, $categories->fetchBatch());
     }
 
-    /**
-     * Session features 4: a REF CURSOR reads `fetchSize` rows per Round
-     * trip: 25 rows with `fetchSize: 10` take 3.
-     */
     #[Test]
     public function a_ref_cursor_reads_fetch_size_rows_per_round_trip(): void
     {
@@ -314,11 +269,6 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame(3, $trips);
     }
 
-    /**
-     * Seam and rows 12: after the Connection's `close()`, REF CURSORs and
-     * nested Cursors fail as use after close, and the Session's next
-     * owner is unaffected.
-     */
     #[Test]
     public function after_close_ref_cursors_and_nested_cursors_fail_as_use_after_close(): void
     {
@@ -350,11 +300,7 @@ final class RefCursorsTest extends ConformanceTestCase
         self::assertSame([1, 2, 3, 4, 5], array_column(self::drain(self::cursor($execution, 'o')), 'ID'));
     }
 
-    /**
-     * Seam and rows 19: 1000 queries dropping 5 nested Cursors each unread,
-     * and 1000 REF CURSORs dropped unread, raise no ORA-01000
-     * (`open_cursors` is 300).
-     */
+    /** `open_cursors` is 300. */
     #[Test]
     public function cursors_dropped_unread_raise_no_ora_01000(): void
     {
@@ -389,8 +335,6 @@ final class RefCursorsTest extends ConformanceTestCase
     }
 
     /**
-     * Every remaining row of a DriverCursor.
-     *
      * @return list<array<int|string, mixed>>
      */
     private static function drain(DriverCursor $cursor): array

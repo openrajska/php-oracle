@@ -11,7 +11,6 @@ create table fx_tx_rows (
 );
 
 create or replace package fx_tx as
-  -- Inserts one row.
   procedure add_row(p_id in number, p_note in varchar2 default null);
 
   -- Inserts one row and returns how many rows the table now has.

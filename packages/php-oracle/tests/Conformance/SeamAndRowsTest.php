@@ -13,15 +13,8 @@ use Rajska\Oracle\RowShape;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
-/**
- * Conformance catalog, Seam and rows (#20, #24).
- */
 final class SeamAndRowsTest extends ConformanceTestCase
 {
-    /**
-     * Seam and rows 6: the server sees placeholders, and the values travel
-     * as binds, for a query, DML and an Anonymous block alike.
-     */
     #[Test]
     public function bind_values_never_reach_the_sql_text(): void
     {
@@ -55,10 +48,7 @@ final class SeamAndRowsTest extends ConformanceTestCase
         self::assertSame([], $leaks);
     }
 
-    /**
-     * Seam and rows 1: every statement kind returns a complete Execution; the
-     * count is the DML count, else 0. Calls are Core's (Api\CallsTest).
-     */
+    /** Calls are Core's (Api\CallsTest). */
     #[Test]
     public function every_statement_kind_returns_a_complete_execution(): void
     {
@@ -82,9 +72,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Seam and rows 3.
-     */
     #[Test]
     public function native_keys_are_as_oracle_reports_them_lower_keys_are_lowercase_and_list_rows_follow_column_order(): void
     {
@@ -102,11 +89,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Seam and rows 4: under Assoc, names that collide (as Oracle reports
-     * them, or once lowercased) fail when the Cursor opens; List does not
-     * mind them.
-     */
     #[Test]
     public function duplicate_column_names_under_assoc_fail_at_cursor_open_with_a_hint(): void
     {
@@ -133,11 +115,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Seam and rows 21 and Native surface 10: every field of every column,
-     * before the first row and for an empty result, with exactly Column's
-     * keys and enums as backing values.
-     */
     #[Test]
     public function columns_describe_every_field_before_the_first_row_also_for_an_empty_result(): void
     {
@@ -216,10 +193,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         $cursor->close();
     }
 
-    /**
-     * Seam and rows 21: LONG and LONG RAW are column-only types, and Lower
-     * applies to the names as it does to the row keys.
-     */
     #[Test]
     public function columns_describe_long_columns_and_follow_the_key_case(): void
     {
@@ -247,10 +220,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Seam and rows 21: a BFILE column is described, and only fetching it
-     * fails.
-     */
     #[Test]
     public function a_bfile_column_is_described_and_only_fetching_it_fails(): void
     {
@@ -262,10 +231,6 @@ final class SeamAndRowsTest extends ConformanceTestCase
         $cursor->fetchBatch();
     }
 
-    /**
-     * Seam and rows 12, for query Cursors: a Cursor of a closed Connection
-     * fails as use after close, and the Session's next owner reads normally.
-     */
     #[Test]
     public function after_close_the_connections_cursors_fail_as_use_after_close_and_the_next_owner_is_unaffected(): void
     {

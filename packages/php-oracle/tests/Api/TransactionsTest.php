@@ -21,9 +21,9 @@ use Throwable;
 use TypeError;
 
 /**
- * Transactions (catalog #26): Autocommit outside an Explicit transaction,
- * and `begin()` / `commit()` / `rollback()` / `transaction()` for manual
- * control (fixtures/sql/11_transaction.sql).
+ * Autocommit outside an Explicit transaction, and `begin()` / `commit()` /
+ * `rollback()` / `transaction()` for manual control
+ * (fixtures/sql/11_transaction.sql).
  */
 final class TransactionsTest extends TestCase
 {
@@ -61,9 +61,6 @@ final class TransactionsTest extends TestCase
         $this->connection->close();
     }
 
-    /**
-     * Transactions 2: after begin(), work is invisible until commit().
-     */
     #[Test]
     public function after_begin_work_is_invisible_until_commit(): void
     {
@@ -76,10 +73,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([1], self::$observer->committed());
     }
 
-    /**
-     * Transactions 2: after rollback(), work is gone, and the Connection is
-     * back in Autocommit.
-     */
     #[Test]
     public function after_rollback_work_is_gone_and_the_connection_is_back_in_autocommit(): void
     {
@@ -94,9 +87,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([3], self::$observer->committed());
     }
 
-    /**
-     * Transactions 2: after commit(), the Connection is back in Autocommit.
-     */
     #[Test]
     public function after_commit_the_connection_is_back_in_autocommit(): void
     {
@@ -109,10 +99,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([1, 2], self::$observer->committed());
     }
 
-    /**
-     * Transactions 1: under Autocommit, run(), procedure(), function() and
-     * a writing block are each visible to another Connection at once.
-     */
     #[Test]
     public function under_autocommit_every_verb_commits_at_once(): void
     {
@@ -130,8 +116,7 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * Transactions 1: select() commits too, so `SELECT … FOR UPDATE` under
-     * Autocommit keeps no lock.
+     * select() commits too.
      */
     #[Test]
     public function select_for_update_under_autocommit_keeps_no_lock(): void
@@ -144,8 +129,7 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * Inside begin(), every verb stays in the transaction, a function()
-     * included: its options resolve when its terminal runs.
+     * A function() included: its options resolve when its terminal runs.
      */
     #[Test]
     public function inside_begin_every_verb_stays_in_the_transaction(): void
@@ -166,10 +150,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([5], self::$observer->committed());
     }
 
-    /**
-     * Transactions 8 / §9: begin() costs no Round trip; commit() and
-     * rollback() one each.
-     */
     #[Test]
     public function begin_costs_no_round_trip_and_commit_and_rollback_one_each(): void
     {
@@ -185,9 +165,6 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * Transactions 3 and Errors 11: misuse of the transaction verbs throws
-     * UsageException before any Round trip.
-     *
      * @return iterable<string, array{0: Closure(Connection): void, 1: string, 2?: int}>
      */
     public static function misuses(): iterable
@@ -262,11 +239,6 @@ final class TransactionsTest extends TestCase
         self::assertSame($trips, $made);
     }
 
-    /**
-     * A misuse leaves the transaction state as it was: a nested begin()
-     * keeps the outer transaction open, and commit() outside one keeps
-     * Autocommit.
-     */
     #[Test]
     public function a_misuse_leaves_the_transaction_state_as_it_was(): void
     {
@@ -288,11 +260,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([1, 2], self::$observer->committed());
     }
 
-    /**
-     * Transactions 4: transaction() passes the Connection, returns the
-     * closure's value and commits, then the Connection is back in
-     * Autocommit.
-     */
     #[Test]
     public function transaction_returns_the_closures_value_and_commits(): void
     {
@@ -311,10 +278,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([1, 2, 3], self::$observer->committed());
     }
 
-    /**
-     * Transactions 4: when the closure throws, transaction() rolls back and
-     * rethrows the same instance; the Connection is back in Autocommit.
-     */
     #[Test]
     public function transaction_rolls_back_and_rethrows_the_same_instance(): void
     {
@@ -339,9 +302,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([2], self::$observer->committed());
     }
 
-    /**
-     * Transactions 4: an Error rolls back too.
-     */
     #[Test]
     public function transaction_rolls_back_on_an_error_too(): void
     {
@@ -362,10 +322,6 @@ final class TransactionsTest extends TestCase
         self::assertSame(0, $this->connection->select('select count(*) from fx_tx_rows')->value());
     }
 
-    /**
-     * Transactions 4: on a Broken Connection the rollback fails, and its
-     * failure becomes the rethrown exception's `previous`.
-     */
     #[Test]
     public function a_failed_rollback_becomes_previous_of_the_rethrown_exception(): void
     {
@@ -397,8 +353,8 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * A closure that closes the Connection and throws: the Release rolled
-     * back already, so the exception comes back as it was.
+     * The Release rolled back already, so the exception comes back as it
+     * was.
      */
     #[Test]
     public function a_closure_that_closes_the_connection_rethrows_with_nothing_chained(): void
@@ -423,8 +379,7 @@ final class TransactionsTest extends TestCase
     }
 
     /**
-     * Transactions 5: a deferred constraint fails the commit (ORA-02091),
-     * nothing is applied, and the Connection is back in Autocommit.
+     * A deferred constraint fails the commit (ORA-02091).
      */
     #[Test]
     public function a_failed_commit_throws_and_the_connection_is_back_in_autocommit(): void
@@ -445,9 +400,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([3], self::$observer->committed());
     }
 
-    /**
-     * Transactions 5: the same through transaction().
-     */
     #[Test]
     public function a_failed_commit_in_transaction_propagates_and_the_connection_is_back_in_autocommit(): void
     {
@@ -466,10 +418,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([3], self::$observer->committed());
     }
 
-    /**
-     * Transactions 6: `SAVEPOINT` / `ROLLBACK TO` through run() undo only
-     * the later work.
-     */
     #[Test]
     public function rollback_to_a_savepoint_through_run_undoes_only_the_later_work(): void
     {
@@ -486,10 +434,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([1, 3], self::$observer->committed());
     }
 
-    /**
-     * Transactions 6: destroying the Connection inside begin() rolls back,
-     * and the locks go with it; so does close().
-     */
     #[Test]
     public function destroying_or_closing_the_connection_inside_begin_rolls_back(): void
     {
@@ -514,9 +458,6 @@ final class TransactionsTest extends TestCase
         self::assertSame([['ID' => '1', 'NOTE' => 'committed']], self::$observer->select('select id, note from fx_tx_rows'));
     }
 
-    /**
-     * After close(), the transaction verbs fail like every other call.
-     */
     #[Test]
     public function the_transaction_verbs_fail_after_close(): void
     {
@@ -534,9 +475,6 @@ final class TransactionsTest extends TestCase
         $this->connection->transaction(static fn(): never => self::fail('The closure ran.'));
     }
 
-    /**
-     * Kills the Session behind a Connection from another Session, at once.
-     */
     private function kill(Connection $connection): void
     {
         $sid = self::sid($connection);

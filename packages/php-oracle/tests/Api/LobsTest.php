@@ -62,7 +62,7 @@ final class LobsTest extends TestCase
     }
 
     /**
-     * One pass, like a Cursor: what one read took, the next does not see.
+     * One pass, like a Cursor.
      */
     #[Test]
     public function contents_and_stream_go_on_from_where_the_last_read_stopped(): void
@@ -97,8 +97,7 @@ final class LobsTest extends TestCase
     }
 
     /**
-     * Values 13: a 100 MiB LOB streams with flat memory (resident set size,
-     * so the Extension's memory counts too).
+     * Measured as resident set size, so the Extension's memory counts too.
      */
     #[Test]
     #[Group('slow')]
@@ -169,10 +168,6 @@ final class LobsTest extends TestCase
         }
     }
 
-    /**
-     * After the Release every call fails, a stream's read included, with no
-     * PHP warning.
-     */
     #[Test]
     public function after_close_a_lob_and_its_stream_fail(): void
     {
@@ -222,11 +217,6 @@ final class LobsTest extends TestCase
         }
     }
 
-    /**
-     * Binds 8: `Clob::in()`, `NClob::in()` and `Blob::in()` from a string
-     * and from a file stream, into a table and into a function's parameter,
-     * and `inOut()` back through `OutValue::lob()`.
-     */
     #[Test]
     public function lob_binds_write_strings_and_streams(): void
     {
@@ -253,9 +243,6 @@ final class LobsTest extends TestCase
         );
     }
 
-    /**
-     * Binds 3: a plain string over 32767 bytes binds as a CLOB.
-     */
     #[Test]
     public function a_string_over_32767_bytes_binds_as_a_clob(): void
     {
@@ -268,10 +255,6 @@ final class LobsTest extends TestCase
         );
     }
 
-    /**
-     * Values 15: under `lobs: Inline` a LOB is a string, `EMPTY_*()` gives
-     * `''`, and `lob()` names the getter to use.
-     */
     #[Test]
     public function inline_lobs_are_strings(): void
     {

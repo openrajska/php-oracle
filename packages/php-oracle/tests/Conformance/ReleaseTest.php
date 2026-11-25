@@ -16,11 +16,11 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
 
 /**
- * What a Release costs and what it still undoes (#78, Pool and lifecycle 2).
- * The Release rolls back only when the server reported a transaction open at
- * the end of the Session's last call (the TTC end-of-call status), or when a
- * call of the Connection failed. Nothing here goes through Core's
- * transaction flag: at this seam there is none, only `autocommit`.
+ * What a Release costs and what it still undoes (#78). The Release rolls back
+ * only when the server reported a transaction open at the end of the
+ * Session's last call (the TTC end-of-call status), or when a call of the
+ * Connection failed. Nothing here goes through Core's transaction flag: at
+ * this seam there is none, only `autocommit`.
  */
 final class ReleaseTest extends ConformanceTestCase
 {
@@ -155,10 +155,6 @@ final class ReleaseTest extends ConformanceTestCase
     }
 
     /**
-     * Whatever kept a transaction open on the server, the Release rolls it
-     * back: another Session sees none of its rows and none of its locks,
-     * and the Session's next loan starts with no transaction of its own.
-     *
      * @param Closure(DriverConnection): mixed $work
      */
     #[Test]

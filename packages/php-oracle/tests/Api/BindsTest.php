@@ -61,10 +61,6 @@ final class BindsTest extends TestCase
     }
 
     /**
-     * Errors 5, for the typed binds: a value a factory rejects never
-     * appears in the exception's trace or string form, though the suite
-     * keeps exceptions' arguments (zend.exception_ignore_args=Off).
-     *
      * @return iterable<string, array{Closure(string): mixed}>
      */
     public static function rejectedValues(): iterable
@@ -97,11 +93,6 @@ final class BindsTest extends TestCase
         }
     }
 
-    /**
-     * Errors 5, for run(): a distinctive bound value never appears in the
-     * message, `sql()`, the trace string or the exception as a string, for
-     * a server error and for a bind refused before any Round trip.
-     */
     #[Test]
     public function a_bound_value_never_appears_in_a_run_error(): void
     {

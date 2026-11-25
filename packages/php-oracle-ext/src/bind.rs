@@ -318,7 +318,6 @@ impl Binds {
         Ok(out)
     }
 
-    /// Whether any bind is OUT or IN OUT.
     pub fn has_out(&self) -> bool {
         self.0.iter().any(|(_, value)| value.is_out())
     }

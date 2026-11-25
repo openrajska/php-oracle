@@ -19,10 +19,8 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Stringable;
 
 /**
- * Conformance catalog, Binds (#22) for the LOB classes: `Clob`, `NClob`
- * and `Blob` IN and IN OUT from a string or a stream, written into a
- * temporary LOB in chunks (Binds 4 and 8, C10), against fx_lobs and fx_lob
- * (fixtures/sql/05_lob.sql).
+ * Binds for the LOB classes, written into a temporary LOB in chunks (C10);
+ * fixtures in fixtures/sql/05_lob.sql.
  */
 final class LobBindsTest extends ConformanceTestCase
 {
@@ -52,10 +50,7 @@ final class LobBindsTest extends ConformanceTestCase
         yield 'Blob unchanged' => ['blob', Blob::in(''), '', Blob::inOut("\xff"), 'io', "\xff"];
     }
 
-    /**
-     * Binds 4: IN, OUT and IN OUT through a PL/SQL parameter of the class's
-     * type. An empty string is an empty LOB, not NULL.
-     */
+    /** An empty string is an empty LOB, not NULL. */
     #[Test]
     #[DataProvider('classes')]
     public function each_lob_class_binds_in_out_and_in_out_through_its_plsql_type(
@@ -103,9 +98,6 @@ final class LobBindsTest extends ConformanceTestCase
         yield 'Blob' => ['blob', Blob::in(null), Blob::out(), Blob::inOut(null)];
     }
 
-    /**
-     * Binds 4: a typed NULL, IN and IN OUT, gives NULL back.
-     */
     #[Test]
     #[DataProvider('nulls')]
     public function each_lob_class_binds_null(string $plsql, Bind $in, Bind $out, Bind $inOut): void
@@ -127,10 +119,7 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Binds 8: the 16 MiB text and bytes of fx_lobs row 4, from a string
-     * and from a stream, through SQL into a CLOB / NCLOB / BLOB column and
-     * into a PL/SQL parameter, are exact: the server compares them with
-     * row 4, and they read back byte for byte. The text has multibyte
+     * The server compares them with fx_lobs row 4. The text has multibyte
      * characters across chunk boundaries (C10).
      */
     #[Test]
@@ -195,12 +184,7 @@ final class LobBindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Binds 8 (C10): a chunk of text ends on a character boundary, so a
-     * 4-byte character survives at every position across the boundary
-     * between two chunks, from a string and from a stream, into a CLOB and
-     * an NCLOB.
-     */
+    /** A chunk of text ends on a character boundary (C10). */
     #[Test]
     public function a_supplemental_character_survives_at_every_chunk_boundary(): void
     {
@@ -222,10 +206,6 @@ final class LobBindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * IN OUT LOB binds round-trip: 1 MiB of text and bytes, changed by the
-     * block and left as they were.
-     */
     #[Test]
     public function a_large_in_out_lob_round_trips(): void
     {
@@ -245,8 +225,7 @@ final class LobBindsTest extends ConformanceTestCase
 
     /**
      * What an execute gives back may be the temporary LOB of its bind (an
-     * OUT parameter set to the IN one, a `select :c`): it stays readable
-     * while it is held, across later Round trips.
+     * OUT parameter set to the IN one, a `select :c`).
      */
     #[Test]
     public function a_lob_given_back_from_a_lob_bind_stays_readable_while_held(): void
@@ -264,10 +243,6 @@ final class LobBindsTest extends ConformanceTestCase
         self::assertSame("\x01\x02", self::read($rows[0]['B'] ?? null));
     }
 
-    /**
-     * A stream is read from where it stands to its end; an empty stream is
-     * an empty LOB.
-     */
     #[Test]
     public function a_stream_is_read_from_its_position_to_its_end(): void
     {
@@ -285,10 +260,7 @@ final class LobBindsTest extends ConformanceTestCase
         self::assertTrue(feof($stream));
     }
 
-    /**
-     * Text that is not UTF-8 fails, naming Blob::in(): a string before any
-     * Round trip, a stream when it gets there.
-     */
+    /** A string fails before any Round trip, a stream when it gets there. */
     #[Test]
     public function text_that_is_not_utf8_fails_naming_blob(): void
     {
@@ -322,9 +294,6 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * Anything but a string, an open stream or null fails when the bind is
-     * built.
-     *
      * @return iterable<string, array{Closure(): Bind, non-empty-string}>
      */
     public static function wrongValues(): iterable
@@ -361,10 +330,7 @@ final class LobBindsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * #73: a LOB written through an IN bind comes back from SQL `RETURNING
-     * … INTO` as the stored LOB, in `execute()` and in `executeMany()`.
-     */
+    /** #73. */
     #[Test]
     public function a_lob_written_by_sql_comes_back_from_returning(): void
     {
@@ -390,10 +356,8 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * #40: the temporary LOBs written for binds are freed, on the Session's
-     * next Round trip or at the latest by the Release: a long run on one
-     * Connection does not pile them up, and the Session's next owner has
-     * none.
+     * #40: the temporary LOBs written for binds are freed on the Session's
+     * next Round trip, or at the latest by the Release.
      */
     #[Test]
     public function temporary_lobs_of_binds_do_not_pile_up_or_reach_the_next_owner(): void
@@ -431,8 +395,6 @@ final class LobBindsTest extends ConformanceTestCase
     }
 
     /**
-     * A stream holding `$contents`, at its start.
-     *
      * @return resource
      */
     private static function stream(string $contents)
@@ -445,9 +407,6 @@ final class LobBindsTest extends ConformanceTestCase
         return $stream;
     }
 
-    /**
-     * Every chunk of a LOB until the end.
-     */
     private static function read(mixed $lob): string
     {
         self::assertInstanceOf(DriverLob::class, $lob);

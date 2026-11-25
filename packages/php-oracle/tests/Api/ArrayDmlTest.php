@@ -20,10 +20,10 @@ use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
 /**
- * Array DML (catalog #26): `runMany()` sends every row in one Round trip,
- * gives a `ArrayDml`, and throws one `ArrayDmlException` listing every failing
- * row, none of that call's rows applied (fixtures/sql/06_batch.sql,
- * 11_transaction.sql). One observer Session serves the whole file.
+ * Array DML: `runMany()` sends every row in one Round trip, gives a
+ * `ArrayDml`, and throws one `ArrayDmlException` listing every failing row,
+ * none of that call's rows applied (fixtures/sql/06_batch.sql,
+ * 11_transaction.sql).
  */
 final class ArrayDmlTest extends TestCase
 {
@@ -55,10 +55,6 @@ final class ArrayDmlTest extends TestCase
         self::clear();
     }
 
-    /**
-     * Transactions 9: an ArrayDml counts the rows sent and the rows applied,
-     * and under Autocommit they are committed.
-     */
     #[Test]
     public function run_many_gives_an_array_dml_and_commits_under_autocommit(): void
     {
@@ -74,10 +70,6 @@ final class ArrayDmlTest extends TestCase
         self::assertSame(5, $updated->affected());
     }
 
-    /**
-     * Transactions 11: out() gives one OutValue per row, in row order: the
-     * rows RETURNING gave back, or a PL/SQL OUT value.
-     */
     #[Test]
     public function out_gives_one_out_value_per_row_in_order(): void
     {
@@ -99,8 +91,7 @@ final class ArrayDmlTest extends TestCase
     }
 
     /**
-     * out() with an unknown or an IN-only name fails like Execution::out(),
-     * and so does any name on an empty ArrayDml, which has no OUT values.
+     * So does any name on an empty ArrayDml, which has no OUT values.
      */
     #[Test]
     public function out_with_an_unknown_or_an_in_only_name_fails(): void
@@ -124,11 +115,6 @@ final class ArrayDmlTest extends TestCase
         $empty->out('anything');
     }
 
-    /**
-     * Transactions 10 and Errors 12: inside begin(), failing rows give one
-     * ArrayDmlException, and only that call is undone: the transaction and
-     * its earlier work go on.
-     */
     #[Test]
     public function failing_rows_inside_begin_undo_only_that_call(): void
     {
@@ -156,11 +142,6 @@ final class ArrayDmlTest extends TestCase
         self::assertSame('1', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
-    /**
-     * Errors 5, for runMany(): a distinctive bound value never appears in
-     * the message, the trace string or the exception as a string, for a
-     * row error or a refused row.
-     */
     #[Test]
     public function a_bound_value_never_appears_in_a_run_many_error(): void
     {
@@ -186,9 +167,6 @@ final class ArrayDmlTest extends TestCase
         }
     }
 
-    /**
-     * After close(), runMany() fails like every verb.
-     */
     #[Test]
     public function run_many_after_close_fails(): void
     {

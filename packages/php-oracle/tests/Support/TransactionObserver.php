@@ -101,9 +101,6 @@ final readonly class TransactionObserver
         }
     }
 
-    /**
-     * Empties fx_tx_rows.
-     */
     public function clear(): void
     {
         $this->execute('delete from fx_tx_rows');

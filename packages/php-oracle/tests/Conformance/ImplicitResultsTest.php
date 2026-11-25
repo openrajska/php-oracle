@@ -17,16 +17,14 @@ use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\ValueMapping;
 
 /**
- * Conformance catalog: the Implicit results of a block
- * (`DBMS_SQL.RETURN_RESULT`) as `implicitResults()`, a list of DriverCursors
- * in production order (fixtures/sql/02_cursor.sql).
+ * The Implicit results of a block (`DBMS_SQL.RETURN_RESULT`); fixtures in
+ * fixtures/sql/02_cursor.sql.
  */
 final class ImplicitResultsTest extends ConformanceTestCase
 {
     /** fx_cursor.implicit_results: items (id, name, price), then categories (id, name); plus an OUT. */
     private const string REPORT = 'begin fx_cursor.implicit_results(:n); select count(*) into :total from fx_items; end;';
 
-    /** One Implicit result of 25 numbered rows. */
     private const string LEVELS = <<<'SQL'
         declare
           c sys_refcursor;
@@ -36,10 +34,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
         end;
         SQL;
 
-    /**
-     * Seam and rows 6 and 20: two Implicit results with different columns
-     * come in production order, next to an OUT value, and read interleaved.
-     */
     #[Test]
     public function two_implicit_results_come_in_order_next_to_an_out_value_and_read_interleaved(): void
     {
@@ -60,8 +54,7 @@ final class ImplicitResultsTest extends ConformanceTestCase
     }
 
     /**
-     * Seam and rows 6: each Implicit result reads on its own, in any order:
-     * the last one read alone, the first one dropped unread.
+     * The last one read alone, the first one dropped unread.
      */
     #[Test]
     public function each_implicit_result_reads_on_its_own(): void
@@ -75,10 +68,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
-    /**
-     * Seam and rows 20: a block with no `RETURN_RESULT` gives `[]`, and so
-     * does a query and DML.
-     */
     #[Test]
     public function a_statement_with_no_return_result_gives_no_implicit_results(): void
     {
@@ -95,9 +84,9 @@ final class ImplicitResultsTest extends ConformanceTestCase
     }
 
     /**
-     * Seam and rows 20: a `RAISE` after `RETURN_RESULT` throws, with no
-     * partial results: 500 such runs leave no server cursor open (no
-     * ORA-01000 with `open_cursors` = 300), and the Session goes on.
+     * A `RAISE` after `RETURN_RESULT` throws, with no partial results: 500
+     * such runs leave no server cursor open (no ORA-01000 with
+     * `open_cursors` = 300).
      */
     #[Test]
     public function a_raise_after_return_result_throws(): void
@@ -120,10 +109,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
         self::assertSame([1, 2, 3, 4, 5], array_column(self::rows($connection, 'select id from fx_categories order by id'), 'ID'));
     }
 
-    /**
-     * Values 2 and Native surface 6: Implicit results inherit `rowShape`,
-     * `keyCase`, `values` and `fetchSize` from their execute.
-     */
     #[Test]
     public function implicit_results_inherit_the_executes_options(): void
     {
@@ -143,10 +128,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
         self::assertCount(3, $categories->fetchBatch());
     }
 
-    /**
-     * Session features 4: an Implicit result reads `fetchSize` rows per
-     * Round trip: 25 rows with `fetchSize: 10` take 3.
-     */
     #[Test]
     public function an_implicit_result_reads_fetch_size_rows_per_round_trip(): void
     {
@@ -170,11 +151,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
         self::assertSame(3, $trips);
     }
 
-    /**
-     * Seam and rows 12: after the Connection's `close()`, Implicit results,
-     * read or not, fail as use after close, and the Session's next owner is
-     * unaffected.
-     */
     #[Test]
     public function after_close_implicit_results_fail_as_use_after_close(): void
     {
@@ -205,8 +181,8 @@ final class ImplicitResultsTest extends ConformanceTestCase
     }
 
     /**
-     * Seam and rows 20: 1000 runs with unread Implicit results raise no
-     * ORA-01000 (`open_cursors` is 300).
+     * 1000 runs with unread Implicit results raise no ORA-01000
+     * (`open_cursors` is 300).
      */
     #[Test]
     public function implicit_results_dropped_unread_raise_no_ora_01000(): void
@@ -223,8 +199,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
     }
 
     /**
-     * The Implicit results of an Execution, checked to be `$count`.
-     *
      * @return list<DriverCursor>
      */
     private static function results(DriverExecution $execution, int $count): array
@@ -236,8 +210,6 @@ final class ImplicitResultsTest extends ConformanceTestCase
     }
 
     /**
-     * Every remaining row of a DriverCursor.
-     *
      * @return list<array<int|string, mixed>>
      */
     private static function drain(DriverCursor $cursor): array

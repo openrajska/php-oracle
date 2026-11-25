@@ -24,10 +24,7 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\ValueMapping;
 
 /**
- * Conformance catalog: LOB reads (Values 13, 14, 15; Scope 1 for NCLOB;
- * Native surface 8 and 10; Seam and rows 2), as handle cells of the Driver
- * contract (fixtures/sql/05_lob.sql), in the rows of a query, a REF CURSOR, a
- * nested `CURSOR()` or an Implicit result.
+ * LOB reads; fixtures in fixtures/sql/05_lob.sql.
  */
 final class LobsTest extends ConformanceTestCase
 {
@@ -49,10 +46,6 @@ final class LobsTest extends ConformanceTestCase
           from fx_lobs where id <= 4 order by id
         SQL;
 
-    /**
-     * Values 13 and Seam and rows 2: a CLOB and a BLOB cell is a DriverLob
-     * read chunk by chunk; the scalar cells beside it are plain values.
-     */
     #[Test]
     public function a_lob_cell_is_a_driver_lob_read_chunk_by_chunk(): void
     {
@@ -69,10 +62,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame("\xde\xad\xbe\xef", self::read($row['BINARY_VALUE']));
     }
 
-    /**
-     * Values 13: `EMPTY_*()` is a LOB of size 0, read with no Round trip;
-     * NULL is `null`; a 1-byte LOB.
-     */
     #[Test]
     public function an_empty_lob_has_size_0_and_null_is_null(): void
     {
@@ -99,8 +88,7 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Values 13 and Scope 1: an NCLOB reads as UTF-8; `size()` counts UCS-2
-     * code units, so a supplemental character counts two.
+     * A supplemental character is two UCS-2 code units.
      */
     #[Test]
     public function an_nclob_reads_as_utf8_and_size_counts_ucs2_code_units(): void
@@ -114,10 +102,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame($text, self::read($row['N']));
     }
 
-    /**
-     * Values 13: the 16 MiB CLOB and BLOB read back exactly, each chunk in
-     * at most one Round trip.
-     */
     #[Test]
     public function a_16_mib_clob_and_blob_read_back_exactly_one_round_trip_per_chunk(): void
     {
@@ -154,10 +138,7 @@ final class LobsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Values 13 (C9): a supplemental character is never split, wherever a
-     * chunk ends, in a CLOB and in an NCLOB, from an OUT bind too.
-     */
+    /** C9. */
     #[Test]
     public function surrogate_pairs_survive_at_every_chunk_boundary(): void
     {
@@ -191,12 +172,7 @@ final class LobsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Binds: `Clob::out()`, `NClob::out()` and `Blob::out()` bring back a
-     * DriverLob from PL/SQL, `RETURNING … INTO` inside a block included;
-     * NULL is `null`. SQL `RETURNING … INTO` brings back one per returned
-     * row (#73): EMPTY_CLOB() reads as '', NULL is `null`.
-     */
+    /** #73 for SQL `RETURNING … INTO`. */
     #[Test]
     public function lob_out_binds_bring_back_driver_lobs(): void
     {
@@ -248,11 +224,6 @@ final class LobsTest extends ConformanceTestCase
         $connection->rollback();
     }
 
-    /**
-     * Values 14 and Native surface 8: after Release, every call of a LOB
-     * fails as use after close, also once its Session went to another
-     * Connection, which is unaffected.
-     */
     #[Test]
     public function a_lob_after_release_fails_even_when_its_session_went_to_another_connection(): void
     {
@@ -272,10 +243,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame(self::SMALL, self::read(self::lob($row['TEXT_VALUE'])));
     }
 
-    /**
-     * Values 14: a LOB does not keep its Session: once its Connection and
-     * Cursor are gone, the Session goes back to the Pool, and the LOB fails.
-     */
     #[Test]
     public function a_lob_does_not_keep_the_session_alive(): void
     {
@@ -292,10 +259,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertUseAfterClose($lob);
     }
 
-    /**
-     * Native surface 8: a closed LOB fails as use after close; `close()` is
-     * idempotent.
-     */
     #[Test]
     public function a_closed_lob_fails_and_close_is_idempotent(): void
     {
@@ -314,10 +277,6 @@ final class LobsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Values 15: `lobs: Inline` gives the same values as strings and bytes,
-     * `EMPTY_*()` as `''` and NULL as `null`, OUT LOBs too.
-     */
     #[Test]
     public function inline_lobs_give_strings_empty_and_null(): void
     {
@@ -353,12 +312,9 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Values 15: under `lobs: Inline`, a query of LOBs no larger than the LOB
-     * prefetch size (32767 characters or bytes) costs the Round trips of the
-     * query alone, as under `lobs: Locator` with nothing read: each LOB came
-     * with its locator. A LOB over the prefetch size costs one Round trip
-     * more, and still reads exactly; an empty or NULL one costs none. The
-     * Column types stay the LOB types.
+     * The LOB prefetch size is 32767 characters or bytes; each LOB within it
+     * came with its locator. A LOB over it costs one Round trip more; an
+     * empty or NULL one costs none.
      */
     #[Test]
     public function inline_lobs_within_the_prefetch_size_cost_no_round_trip_of_their_own(): void
@@ -420,10 +376,7 @@ final class LobsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Values 13: a LOB no larger than the LOB prefetch size came with its
-     * locator, so `readChunk()` reads it with no Round trip.
-     */
+    /** A LOB within the LOB prefetch size came with its locator. */
     #[Test]
     public function a_lob_within_the_prefetch_size_reads_with_no_round_trip(): void
     {
@@ -438,10 +391,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame(0, $trips);
     }
 
-    /**
-     * Values 15 (spec §12): an inline LOB too large for PHP's memory_limit
-     * throws UnsupportedException, pointing to the default mode.
-     */
     #[Test]
     public function an_inline_lob_too_large_for_memory_fails_pointing_to_the_default_mode(): void
     {
@@ -461,11 +410,6 @@ final class LobsTest extends ConformanceTestCase
         self::assertSame(1, self::value($connection, 'select 1 from dual'), 'The Connection still works');
     }
 
-    /**
-     * Values 15: a chunk PHP's memory_limit cannot hold fails with
-     * UnsupportedException instead of PHP's fatal error, for a BLOB and a
-     * CLOB, and the LOB reads once memory allows.
-     */
     #[Test]
     public function a_chunk_too_large_for_memory_fails_instead_of_ending_the_request(): void
     {
@@ -491,8 +435,6 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * The Cursors a query's rows can arrive in, besides its own.
-     *
      * @return array<string, array{string}>
      */
     public static function cursorKinds(): array
@@ -501,8 +443,6 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Each Cursor kind under each LobMode.
-     *
      * @return array<string, array{string, LobMode}>
      */
     public static function cursorKindsAndLobModes(): array
@@ -517,12 +457,6 @@ final class LobsTest extends ConformanceTestCase
         return $cases;
     }
 
-    /**
-     * Values 13 and 15: the CLOB, NCLOB and BLOB columns of a REF CURSOR, a
-     * nested `CURSOR()` or an Implicit result read like those of the same
-     * query run on its own: small multibyte, empty, NULL and 16 MiB values,
-     * as `Lob`s or inline.
-     */
     #[Test]
     #[DataProvider('cursorKindsAndLobModes')]
     public function lob_columns_of_a_cursor_read_like_those_of_a_query(string $kind, LobMode $mode): void
@@ -542,13 +476,6 @@ final class LobsTest extends ConformanceTestCase
         ], $query);
     }
 
-    /**
-     * Values 13 and 15: the LOB columns of a REF CURSOR, a nested `CURSOR()`
-     * or an Implicit result cost the Round trips they cost in a query: none
-     * in the fetch under `lobs: Locator`, and under `lobs: Inline` what they
-     * add to the query (one per LOB over the LOB prefetch size). A LOB
-     * within the LOB prefetch size reads with no Round trip.
-     */
     #[Test]
     #[DataProvider('cursorKinds')]
     public function lob_columns_of_a_cursor_cost_the_round_trips_they_cost_in_a_query(string $kind): void
@@ -601,8 +528,7 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Opens the Cursor of the given kind over the query's rows. The second
-     * element keeps the parent of a nested Cursor open.
+     * The second element keeps the parent of a nested Cursor open.
      *
      * @return array{DriverCursor, ?DriverCursor}
      */
@@ -633,8 +559,6 @@ final class LobsTest extends ConformanceTestCase
     }
 
     /**
-     * Every remaining row of a DriverCursor.
-     *
      * @return list<array<int|string, mixed>>
      */
     private static function drain(DriverCursor $cursor): array
@@ -664,9 +588,6 @@ final class LobsTest extends ConformanceTestCase
         }, $row), $rows);
     }
 
-    /**
-     * Every chunk until the end, then '' on every later call.
-     */
     private static function read(DriverLob $lob): string
     {
         $contents = '';

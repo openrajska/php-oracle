@@ -32,10 +32,6 @@ final class OptionsTest extends TestCase
         yield 'timeout INF' => ['timeout', INF];
     }
 
-    /**
-     * Session features 4: a Fetch size of 0 or less fails, as does a
-     * timeout that is not a positive number of seconds.
-     */
     #[Test]
     #[DataProvider('invalidValues')]
     public function execute_options_reject_invalid_values_with_usage_exception(string $field, int|float $value): void
@@ -76,10 +72,6 @@ final class OptionsTest extends TestCase
         new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]);
     }
 
-    /**
-     * The checks run in pure PHP: a process without the Extension gets the
-     * same ConfigurationException, before anything could reach it.
-     */
     #[Test]
     public function connection_config_validates_without_the_extension(): void
     {

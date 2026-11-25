@@ -52,10 +52,6 @@ final class RefCursorsTest extends TestCase
         $this->connection->close();
     }
 
-    /**
-     * Binds 13 and Seam and rows 13: IN, OUT, IN OUT, two REF CURSOR OUTs
-     * and an IN OUT REF CURSOR in one Call; the Cursors read interleaved.
-     */
     #[Test]
     public function a_procedure_gives_its_ref_cursors_as_cursors_read_interleaved(): void
     {
@@ -89,10 +85,6 @@ final class RefCursorsTest extends TestCase
         self::assertSame([['NAME' => 'Plain'], ['NAME' => 'Ação']], $execution->out('io_names')->cursor()->all());
     }
 
-    /**
-     * Binds 12 and 13, Seam and rows 14: the `cursor()` terminal gives a
-     * function's REF CURSOR, whose rows hold nested Cursors.
-     */
     #[Test]
     public function the_cursor_terminal_gives_a_functions_ref_cursor(): void
     {
@@ -110,9 +102,6 @@ final class RefCursorsTest extends TestCase
         );
     }
 
-    /**
-     * Seam and rows 19: `all()` on the parent, then every child.
-     */
     #[Test]
     public function every_nested_cursor_reads_after_the_parents_all(): void
     {
@@ -126,9 +115,8 @@ final class RefCursorsTest extends TestCase
     }
 
     /**
-     * Seam and rows 19: a child fails after its parent's `close()`, also
-     * when it still holds rows of its last batch, or when `first()` closed
-     * the parent.
+     * Also when it still holds rows of its last batch, or when `first()`
+     * closed the parent.
      */
     #[Test]
     public function a_nested_cursor_fails_after_its_parents_close(): void
@@ -155,11 +143,6 @@ final class RefCursorsTest extends TestCase
         self::nested($first['ITEMS'])->all();
     }
 
-    /**
-     * Values 2, Session features 4: REF CURSORs and nested Cursors inherit
-     * the Execution's `rowShape`, `keyCase`, `values` and `fetchSize`,
-     * `ExecuteOptions` overriding the config.
-     */
     #[Test]
     public function ref_cursors_and_nested_cursors_inherit_the_executions_options(): void
     {
@@ -179,10 +162,6 @@ final class RefCursorsTest extends TestCase
         self::assertSame([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75], [16, 'Item 0016', 20]], $items->all());
     }
 
-    /**
-     * Values 2 and Session features 4, for a nested Cursor read through the
-     * public API: Lower keys, Float numbers, 3 rows per Round trip.
-     */
     #[Test]
     public function a_nested_cursor_reads_with_the_executions_options(): void
     {
@@ -211,8 +190,7 @@ final class RefCursorsTest extends TestCase
     }
 
     /**
-     * Seam and rows 12: after the Connection's `close()`, REF CURSORs and
-     * nested Cursors fail as use after close, also with rows in hand.
+     * Also with rows in hand.
      */
     #[Test]
     public function after_close_ref_cursors_and_nested_cursors_fail_as_use_after_close(): void
@@ -235,8 +213,7 @@ final class RefCursorsTest extends TestCase
     }
 
     /**
-     * Seam and rows 18: a REF CURSOR the block never opened is a Cursor,
-     * never null, and fails on its first read with the server's ORA-01001.
+     * A REF CURSOR the block never opened is a Cursor, never null.
      */
     #[Test]
     public function an_unopened_ref_cursor_fails_on_its_first_read(): void
@@ -251,11 +228,6 @@ final class RefCursorsTest extends TestCase
         }
     }
 
-    /**
-     * Scope 8: a Cursor passed back to the server, as a plain value or in
-     * `Cursor::inOut()`, fails with `UnsupportedException` before any Round
-     * trip.
-     */
     #[Test]
     public function a_cursor_passed_back_as_in_fails_loudly(): void
     {
@@ -281,10 +253,6 @@ final class RefCursorsTest extends TestCase
         }
     }
 
-    /**
-     * OutValue getters narrow: `cursor()` on a scalar fails, and a scalar
-     * getter on a REF CURSOR names `cursor()`.
-     */
     #[Test]
     public function getters_narrow_between_cursors_and_scalars(): void
     {

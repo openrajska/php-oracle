@@ -9,9 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Rajska\Oracle\Type;
 use Rajska\Oracle\VectorFormat;
 
-/**
- * The enums a Column reports, as spec #32 §6 lists them.
- */
 final class TypeTest extends TestCase
 {
     #[Test]

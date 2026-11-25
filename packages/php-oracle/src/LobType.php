@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Rajska\Oracle;
 
 /**
- * The kind of a LOB. Backed by the case name in lowerCamelCase.
+ * The kind of a LOB.
  */
 enum LobType: string
 {

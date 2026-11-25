@@ -9,9 +9,6 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
-/**
- * The suite-wide rules of spec #32's Testing Decisions hold for every test.
- */
 final class SuiteRulesTest extends TestCase
 {
     #[Test]

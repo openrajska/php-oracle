@@ -52,7 +52,6 @@ pub fn of(db_type: &DbType) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
-/// The type a name names.
 pub fn db_type(name: &str) -> Option<&'static DbType> {
     NAMES
         .iter()

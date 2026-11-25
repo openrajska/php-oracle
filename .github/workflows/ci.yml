@@ -1,10 +1,3 @@
-# Builds the Extension (oracledb) for PHP 8.4 NTS and ZTS, starts Oracle
-# AI Database 26ai Free, installs the fixtures and runs both suites: the
-# Extension's (cargo) and Core's (PHPUnit, with the Extension loaded).
-#
-# Core's suite also runs against the minimum Extension Core declares
-# (spec #32 §15), built from its release tag: see
-# .github/scripts/extension-matrix.sh for when that leg runs.
 name: ci
 
 # Every commit is tested once: pushes to this repository's branches run it,

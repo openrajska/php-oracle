@@ -43,9 +43,6 @@ final class IndependentSession
         return new self($connection);
     }
 
-    /**
-     * The SID of this Session, read once when it opened.
-     */
     public function sid(): int
     {
         return $this->sid;

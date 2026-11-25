@@ -21,7 +21,6 @@ set -euo pipefail
 work=\$(mktemp -d)
 days=36500
 
-# The CA.
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days \$days \
   -subj "/CN=rajska-oracle test CA" -keyout \$work/ca.key -out \$work/ca.crt \
   -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
@@ -41,7 +40,6 @@ openssl pkcs12 -export -in \$work/server.crt -inkey \$work/server.key \
   -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 -out \$work/server.p12
 cp \$work/server.p12 \$work/ca.crt server/
 
-# The client, for mTLS.
 openssl req -newkey rsa:2048 -nodes -sha256 -subj "/CN=rajska-oracle test client" \
   -keyout \$work/client.key -out \$work/client.csr
 openssl x509 -req -sha256 -days \$days -in \$work/client.csr \

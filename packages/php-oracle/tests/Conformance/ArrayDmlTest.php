@@ -28,10 +28,7 @@ use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
 /**
- * Array DML (catalog #26, Transactions and Array DML 9–14) at the Driver
- * contract: `executeMany()` sends every row in one execute, applies every
- * row or none, and reports every failing row
- * (fixtures/sql/06_batch.sql, 11_transaction.sql).
+ * Array DML; fixtures in fixtures/sql/06_batch.sql, 11_transaction.sql.
  *
  * One observer Session and one Round trip counter serve the whole file: the
  * shared listener refuses logons under load (ORA-12516).
@@ -68,10 +65,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::clear();
     }
 
-    /**
-     * Transactions 9: 1000 valid rows take one Round trip, and every one is
-     * applied and committed.
-     */
     #[Test]
     public function a_thousand_valid_rows_take_one_round_trip(): void
     {
@@ -91,10 +84,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(1000, self::committed());
     }
 
-    /**
-     * Transactions 9: a row may write the first row's keys in another order
-     * and case; each value still binds to its own placeholder.
-     */
     #[Test]
     public function rows_bind_by_name_whatever_the_order_and_case_of_their_keys(): void
     {
@@ -113,12 +102,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Transactions 10 and Errors 12: rows 3, 5 and 7 fail (ORA-00001,
-     * 01400, 02290); one ArrayDmlException lists exactly those, with row 3's
-     * code, and nothing is applied: under Autocommit the valid rows are not
-     * committed, nor left in the Session's transaction.
-     */
     #[Test]
     public function failing_rows_under_autocommit_give_one_array_dml_exception_and_apply_nothing(): void
     {
@@ -134,10 +117,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
     }
 
-    /**
-     * Transactions 10: inside an Explicit transaction, the failing call
-     * undoes its own rows only; earlier work stays, uncommitted.
-     */
     #[Test]
     public function failing_rows_inside_a_transaction_keep_the_earlier_work_uncommitted(): void
     {
@@ -155,10 +134,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, self::committed());
     }
 
-    /**
-     * Errors 12: it is still a ArrayDmlException when every failure is
-     * ORA-00001, never a UniqueViolationException.
-     */
     #[Test]
     public function only_duplicates_still_give_an_array_dml_exception(): void
     {
@@ -174,10 +149,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, self::committed());
     }
 
-    /**
-     * Transactions 11: `RETURNING` gives each row the list of what its
-     * execution returned, in row order.
-     */
     #[Test]
     public function returning_gives_one_list_per_row_in_order(): void
     {
@@ -207,11 +178,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         }, $ids));
     }
 
-    /**
-     * Transactions 11 (#73): `RETURNING` a LOB, an Object or a Collection
-     * gives each row the list of what its execution returned, NULL as
-     * `null`, like any other type.
-     */
+    /** #73. */
     #[Test]
     public function returning_lobs_objects_and_collections_gives_one_list_per_row(): void
     {
@@ -242,10 +209,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         $connection->rollback();
     }
 
-    /**
-     * Transactions 11: a PL/SQL OUT bind gives each row its value, in row
-     * order; a block counts no rows.
-     */
+    /** A PL/SQL block counts no rows. */
     #[Test]
     public function a_plsql_out_bind_gives_one_value_per_row_in_order(): void
     {
@@ -261,9 +225,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(['doubled' => [[2], [4], [6]], 'name' => [['a1'], ['b2'], ['c3']]], $arrayDml->outValues());
     }
 
-    /**
-     * Transactions 12: no rows make no Round trip and an empty result.
-     */
     #[Test]
     public function no_rows_make_no_round_trip(): void
     {
@@ -282,8 +243,6 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 13: what runMany() refuses before any Round trip.
-     *
      * @return iterable<string, array{string, list<array<string, mixed>>, string}>
      */
     public static function refusals(): iterable
@@ -304,9 +263,6 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 13 and Errors 11: each refusal is a UsageException
-     * naming the row and bind, before any Round trip.
-     *
      * @param list<array<string, mixed>> $rows
      */
     #[Test]
@@ -328,10 +284,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, $trips);
     }
 
-    /**
-     * Transactions 13: a row that is not an array is refused before any
-     * Round trip.
-     */
     #[Test]
     public function a_row_that_is_not_an_array_is_refused(): void
     {
@@ -344,9 +296,8 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 13: Implicit results are refused loudly, once the block
-     * ran, and its rows are undone: inside a transaction, and under
-     * Autocommit too, where a PL/SQL block commits only after it succeeded.
+     * Under Autocommit the rows are undone too: a PL/SQL block commits only
+     * after it succeeded.
      */
     #[Test]
     public function implicit_results_are_refused_once_the_block_ran(): void
@@ -368,11 +319,10 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * §9: under Autocommit, a PL/SQL block runs without autocommit and the
-     * commit follows once it succeeded: one Round trip more than DML, whose
-     * commit rides on the execute (C21). Both commit every row. (The
-     * block's first run in a Session costs one more: the crate runs its
-     * first row alone.)
+     * Under Autocommit, a PL/SQL block runs without autocommit and the commit
+     * follows once it succeeded: one Round trip more than DML, whose commit
+     * rides on the execute (C21). Both commit every row. (The block's first
+     * run in a Session costs one more: the crate runs its first row alone.)
      */
     #[Test]
     public function under_autocommit_a_plsql_block_takes_one_more_round_trip_for_its_commit(): void
@@ -393,8 +343,8 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Transactions 14: a string over 32767 bytes makes its whole column
-     * CLOB, short strings included; '' stays NULL, as in VARCHAR2.
+     * A string over 32767 bytes makes its whole column CLOB; '' stays NULL,
+     * as in VARCHAR2.
      */
     #[Test]
     public function a_long_string_makes_its_column_clob(): void
@@ -411,10 +361,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(['length' => [[5], [20000], [null], [null]]], $arrayDml->outValues());
     }
 
-    /**
-     * Transactions 14: an all-null column inserts NULLs, a NULL takes its
-     * column's type, and an int and a float bind as one exact NUMBER.
-     */
     #[Test]
     public function nulls_take_their_columns_type_and_ints_and_floats_bind_as_an_exact_number(): void
     {
@@ -438,11 +384,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(['copy' => [[1], ['0.1'], [null]]], $exact->outValues());
     }
 
-    /**
-     * §9: Struct, Collection and Indexed bind per row, IN and OUT (C2
-     * covers the Array DML path), and an Object type changing down a column is
-     * refused before any Round trip.
-     */
+    /** C2 covers the Array DML path. */
     #[Test]
     public function objects_collections_and_associative_arrays_bind_per_row(): void
     {
@@ -473,10 +415,9 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * §9, atomic per call: per-row errors are for DML (C3); a PL/SQL block
-     * stops at its first failing row with that row's server error, which
-     * does not say which row it was, and the rows before it are undone too,
-     * under Autocommit and inside a transaction.
+     * Atomic per call: per-row errors are for DML (C3); a PL/SQL block stops
+     * at its first failing row with that row's server error, which does not
+     * say which row it was.
      */
     #[Test]
     public function a_block_failing_at_a_row_leaves_nothing_applied(): void
@@ -501,10 +442,7 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame('0', self::$observer->select('select count(*) as n from fx_tx_rows')[0]['N']);
     }
 
-    /**
-     * C3: the server returns at most 65535 row errors. Past that the call
-     * fails as a QueryException that says so, and nothing is applied.
-     */
+    /** C3: the server returns at most 65535 row errors. */
     #[Test]
     public function more_failing_rows_than_the_server_lists_fail_the_call_and_apply_nothing(): void
     {
@@ -525,10 +463,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, self::committed());
     }
 
-    /**
-     * §9: inside an Explicit transaction the savepoint costs one more Round
-     * trip, and the rows stay uncommitted.
-     */
     #[Test]
     public function inside_a_transaction_an_array_dml_takes_one_more_round_trip_for_its_savepoint(): void
     {
@@ -542,10 +476,6 @@ final class ArrayDmlTest extends ConformanceTestCase
         self::assertSame(0, self::committed());
     }
 
-    /**
-     * A placeholder written twice in SQL needs one value per occurrence,
-     * which named rows cannot give yet: refused before any Round trip.
-     */
     #[Test]
     public function a_placeholder_written_twice_is_refused_before_any_round_trip(): void
     {
@@ -594,9 +524,6 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Each failing row as [index, code], checking its message is the
-     * server's for that code.
-     *
      * @return list<array{int, int}>
      */
     private static function failures(ArrayDmlException $e): array
@@ -609,8 +536,6 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Valid fx_batch_rows rows with ids 1 to $count.
-     *
      * @return list<array{id: int, code: string, qty: int}>
      */
     private static function valid(int $count): array
@@ -634,8 +559,6 @@ final class ArrayDmlTest extends ConformanceTestCase
     }
 
     /**
-     * Each returned LOB's contents, per row; NULL stays `null`.
-     *
      * @param list<list<mixed>> $lists
      *
      * @return list<list<string|null>>

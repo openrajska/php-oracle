@@ -49,7 +49,6 @@ create or replace package fx_cursor as
   -- A REF CURSOR as the function return value: items with id <= p_limit.
   function items(p_limit in number) return sys_refcursor;
 
-  -- A strongly typed REF CURSOR OUT parameter.
   procedure typed_cursor(p_limit in number, o_items out item_cursor);
 
   -- Each category with a nested CURSOR() column of its items with id <= 20

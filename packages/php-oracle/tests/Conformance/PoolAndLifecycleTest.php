@@ -23,14 +23,8 @@ use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tracing;
 use Rajska\Oracle\ValueMapping;
 
-/**
- * Conformance catalog, Pool and lifecycle (#19, #21).
- */
 final class PoolAndLifecycleTest extends ConformanceTestCase
 {
-    /**
-     * Pool and lifecycle 1.
-     */
     #[Test]
     public function two_connects_give_two_sessions_that_do_not_see_each_others_uncommitted_changes(): void
     {
@@ -95,9 +89,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+\.\d+\.\d+$/', $this->connect()->serverVersion());
     }
 
-    /**
-     * Pool and lifecycle 5, the standalone part.
-     */
     #[Test]
     public function a_standalone_connection_starts_clean_and_logs_off(): void
     {
@@ -137,9 +128,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         self::assertNotSame(self::sid($first), self::sid($second));
     }
 
-    /**
-     * Pool and lifecycle 7: the ceiling.
-     */
     #[Test]
     public function at_max_connections_a_connect_fails_as_pool_exhausted_after_acquire_timeout_and_succeeds_after_a_release(): void
     {
@@ -162,9 +150,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         self::assertSame($sid, self::sid($this->connect(...$fields)));
     }
 
-    /**
-     * Pool and lifecycle 7: the growth.
-     */
     #[Test]
     public function the_pool_grows_one_session_at_a_time_up_to_max_connections(): void
     {
@@ -193,10 +178,8 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 13 (and Native surface 4: a `$session` difference
-     * alone shares the Pool). With the Pool's one Session held, a config
-     * that shares the Pool finds it exhausted; once it is free, that config
-     * gets the same Session.
+     * With the Pool's one Session held, a config that shares the Pool finds
+     * it exhausted; once it is free, that config gets the same Session.
      *
      * @param array<string, mixed> $difference
      */
@@ -220,9 +203,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         self::assertSame($sid, self::sid($this->connect(...$difference, ...$fields)));
     }
 
-    /**
-     * Pool and lifecycle 13: the Pool-key part.
-     */
     #[Test]
     public function a_different_statement_cache_size_or_password_gives_another_pool(): void
     {
@@ -243,10 +223,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Pool and lifecycle 1, across the Pool: two Connections held at once
-     * never share a Session.
-     */
     #[Test]
     public function connections_held_at_once_never_share_a_session(): void
     {
@@ -258,9 +234,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Scope 6, the ping: after 60 s idle, an acquire pings each free
-     * Session first. The live one comes back; the killed one is dropped and
-     * replaced, so no Connection gets a dead Session.
+     * After 60 s idle, an acquire pings each free Session first.
      */
     #[Test]
     #[Group('slow')]
@@ -299,9 +273,9 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 2. Destroying the Connection releases it in the
-     * native free path, in the middle of the request: no request end (no
-     * RSHUTDOWN, which FrankenPHP's worker mode skips) is involved.
+     * Destroying the Connection releases it in the native free path, in the
+     * middle of the request: no request end (no RSHUTDOWN, which FrankenPHP's
+     * worker mode skips) is involved.
      */
     #[Test]
     #[DataProvider('releases')]
@@ -327,8 +301,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 3.
-     *
      * @return iterable<string, array{Closure(DriverConnection): mixed}>
      */
     public static function connectionCalls(): iterable
@@ -342,9 +314,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 3: every call after `close()` fails, and a second
-     * `close()` is fine.
-     *
      * @param Closure(DriverConnection): mixed $call
      */
     #[Test]
@@ -363,9 +332,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         $connection->close();
     }
 
-    /**
-     * Pool and lifecycle 4.
-     */
     #[Test]
     public function a_live_cursor_delays_the_release_and_freeing_it_then_rolls_back(): void
     {
@@ -388,8 +354,8 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 5, the pooled part: Release resets nothing, so the
-     * Session's next owner sees its package state (documented).
+     * Release resets nothing, so the Session's next owner sees its package
+     * state (documented).
      */
     #[Test]
     public function package_state_survives_a_pooled_release(): void
@@ -415,12 +381,6 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         yield 'kill' => [false];
     }
 
-    /**
-     * Pool and lifecycle 6 and Errors 6: the call that sees the loss throws
-     * ConnectionLostException with the original code and message; every
-     * later call throws it with the same code and "Connection is broken:
-     * <original message>". Release discards the Session.
-     */
     #[Test]
     #[DataProvider('kills')]
     public function a_killed_session_makes_the_connection_broken_and_never_comes_back(bool $immediate): void

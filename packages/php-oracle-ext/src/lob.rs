@@ -63,7 +63,6 @@ pub fn lob_type(db_type: &DbType) -> Option<&'static str> {
     is_lob(db_type).then(|| type_name::of(db_type)).flatten()
 }
 
-/// CLOB, NCLOB or BLOB.
 pub fn is_lob(db_type: &DbType) -> bool {
     db_type == DB_TYPE_CLOB || db_type == DB_TYPE_NCLOB || db_type == DB_TYPE_BLOB
 }
@@ -253,7 +252,6 @@ fn request_string_type_info() -> u32 {
     })
 }
 
-/// A PHP string of these bytes.
 fn binary(bytes: Vec<u8>) -> Zval {
     let mut zval = Zval::new();
     zval.set_binary(bytes);

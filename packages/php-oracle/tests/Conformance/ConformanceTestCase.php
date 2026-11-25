@@ -17,9 +17,8 @@ use Rajska\Oracle\ValueMapping;
 use RuntimeException;
 
 /**
- * The conformance catalog of spec #32 runs at the Driver contract seam:
- * `new ExtensionDriver()->connect($config)`. Every Connection a test opens
- * through connect() is closed after it.
+ * The conformance tests run at the Driver contract seam:
+ * `new ExtensionDriver()->connect($config)`.
  */
 abstract class ConformanceTestCase extends TestCase
 {
@@ -93,8 +92,6 @@ abstract class ConformanceTestCase extends TestCase
     }
 
     /**
-     * Every row of a query, read through the Driver contract.
-     *
      * @param array<string, mixed> $binds
      *
      * @return list<array<int|string, mixed>>
@@ -131,9 +128,6 @@ abstract class ConformanceTestCase extends TestCase
         return array_values($rows[0])[0];
     }
 
-    /**
-     * The SID of the Session behind a Connection.
-     */
     protected static function sid(DriverConnection $connection): int
     {
         $sid = self::value($connection, "select sys_context('userenv', 'sid') from dual");

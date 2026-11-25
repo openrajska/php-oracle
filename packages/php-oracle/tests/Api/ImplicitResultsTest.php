@@ -41,10 +41,6 @@ final class ImplicitResultsTest extends TestCase
         $this->connection->close();
     }
 
-    /**
-     * Seam and rows 20: a report procedure's two Implicit results come in
-     * order, next to an OUT value, and read interleaved.
-     */
     #[Test]
     public function a_blocks_implicit_results_come_in_order_next_to_an_out_value(): void
     {
@@ -69,10 +65,6 @@ final class ImplicitResultsTest extends TestCase
         self::assertSame([], $items->all());
     }
 
-    /**
-     * Seam and rows 6: a procedure's Implicit results, readable in any
-     * order and on their own; `results()` is always the same list.
-     */
     #[Test]
     public function a_procedures_implicit_results_read_in_any_order(): void
     {
@@ -84,10 +76,6 @@ final class ImplicitResultsTest extends TestCase
         self::assertSame([['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']], $results[0]->all());
     }
 
-    /**
-     * Seam and rows 20: no `RETURN_RESULT` gives `[]`, for a block, a query
-     * and DML.
-     */
     #[Test]
     public function a_statement_with_no_return_result_gives_no_results(): void
     {
@@ -97,8 +85,7 @@ final class ImplicitResultsTest extends TestCase
     }
 
     /**
-     * Seam and rows 20: a `RAISE` after `RETURN_RESULT` throws, so there
-     * are no partial results.
+     * So there are no partial results.
      */
     #[Test]
     public function a_raise_after_return_result_throws(): void
@@ -112,11 +99,6 @@ final class ImplicitResultsTest extends TestCase
         self::assertSame(1, $this->connection->select('select 1 from dual')->value());
     }
 
-    /**
-     * Values 2 and Session features 4: Implicit results inherit the
-     * Execution's options, `ExecuteOptions` overriding the config: List rows,
-     * Lower keys, Float numbers, 3 rows per Round trip.
-     */
     #[Test]
     public function implicit_results_inherit_the_executions_options(): void
     {
@@ -149,8 +131,7 @@ final class ImplicitResultsTest extends TestCase
     }
 
     /**
-     * Seam and rows 12: after the Connection's `close()`, Implicit results
-     * fail as use after close, also with rows in hand.
+     * Also with rows in hand.
      */
     #[Test]
     public function after_close_implicit_results_fail_as_use_after_close(): void
@@ -175,8 +156,6 @@ final class ImplicitResultsTest extends TestCase
     }
 
     /**
-     * The Implicit results of an Execution, checked to be `$count`.
-     *
      * @return list<Cursor>
      */
     private static function results(Execution $execution, int $count): array

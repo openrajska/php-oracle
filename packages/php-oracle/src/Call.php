@@ -25,15 +25,12 @@ use SensitiveParameter;
  *
  * The name and every parameter name are validated before any Round trip,
  * and they are the only text of the user's that enters the block: bound
- * values travel as binds. The Backend only sees SQL text and binds; a Call's
- * errors get their `call()` here, and a library-written message names the
- * parameter, not its synthetic bind.
+ * values travel as binds.
  *
  * @internal
  */
 final readonly class Call
 {
-    /** An unquoted identifier: a letter, then letters, digits, _, $ or #. */
     private const string UNQUOTED = '/\G[A-Za-z][A-Za-z0-9_$#]*/';
 
     /** The longest identifier, in bytes, quotes excluded. */
@@ -120,9 +117,6 @@ final readonly class Call
         return new self($name, $arguments, $synthetic, $parameters);
     }
 
-    /**
-     * Runs the Call as a procedure.
-     */
     public function procedure(DriverConnection $driver, DriverOptions $options, ConnectionState $connection): Execution
     {
         $sql = "BEGIN {$this->name}{$this->arguments}; END;";

@@ -44,9 +44,6 @@ final class CursorTest extends TestCase
         $this->connection->close();
     }
 
-    /**
-     * Seam and rows 7.
-     */
     #[Test]
     public function select_equals_run_rows(): void
     {
@@ -59,10 +56,6 @@ final class CursorTest extends TestCase
         self::assertSame([['ID' => 1, 'NAME' => 'Item 0001']], $this->connection->select($sql, ['last' => 1])->all());
     }
 
-    /**
-     * Seam and rows 7: rows come batch by batch as they are read, not with
-     * the execute.
-     */
     #[Test]
     public function select_is_lazy(): void
     {
@@ -91,7 +84,7 @@ final class CursorTest extends TestCase
     }
 
     /**
-     * Seam and rows 7: Core never classifies SQL.
+     * Core never classifies SQL.
      */
     #[Test]
     public function select_of_an_update_runs_it_then_fails_in_rows(): void
@@ -117,10 +110,6 @@ final class CursorTest extends TestCase
         }
     }
 
-    /**
-     * Seam and rows 8: keys are 0-based positions; a second foreach
-     * continues where the first stopped; past the end there is nothing.
-     */
     #[Test]
     public function foreach_is_single_pass_and_continues_where_it_stopped(): void
     {
@@ -142,9 +131,6 @@ final class CursorTest extends TestCase
         self::assertSame([], $cursor->all());
     }
 
-    /**
-     * Seam and rows 8.
-     */
     #[Test]
     public function all_returns_the_remaining_rows(): void
     {
@@ -158,10 +144,6 @@ final class CursorTest extends TestCase
         self::assertSame([], $cursor->all());
     }
 
-    /**
-     * Seam and rows 8 and 9: first() and value() read the next row, then
-     * close.
-     */
     #[Test]
     public function first_and_value_return_the_next_row_then_close(): void
     {
@@ -182,9 +164,6 @@ final class CursorTest extends TestCase
         $this->assertClosed($cursor);
     }
 
-    /**
-     * Seam and rows 9.
-     */
     #[Test]
     public function reading_after_close_fails_and_a_double_close_is_fine(): void
     {
@@ -200,8 +179,7 @@ final class CursorTest extends TestCase
     }
 
     /**
-     * Seam and rows 10: two Cursors read interleaved, also from two Fibers,
-     * with DML and a commit between batches.
+     * Also from two Fibers.
      */
     #[Test]
     public function two_cursors_read_interleaved_with_dml_and_commit_between_batches(): void
@@ -253,7 +231,7 @@ final class CursorTest extends TestCase
     }
 
     /**
-     * Seam and rows 11: dropping a Cursor half-read closes its server cursor.
+     * Dropping a Cursor half-read closes its server cursor.
      */
     #[Test]
     public function two_thousand_cursors_dropped_half_read_raise_no_ora_01000(): void
@@ -270,10 +248,6 @@ final class CursorTest extends TestCase
         self::assertSame(5, $this->connection->select('select count(*) from (' . self::FIVE_ROWS . ')')->value());
     }
 
-    /**
-     * Seam and rows 21, through the public API: Column objects with enums,
-     * before the first row.
-     */
     #[Test]
     public function columns_are_column_objects_before_the_first_row(): void
     {
@@ -328,9 +302,7 @@ final class CursorTest extends TestCase
     }
 
     /**
-     * Scope 8 through the public API: an XMLTYPE column is a Column of
-     * `Type::Xmltype`; reading its value throws UnsupportedException, and
-     * the Connection reads on. The other scalar types arrive as stated.
+     * The Connection reads on, and the other scalar types arrive as stated.
      */
     #[Test]
     public function an_xmltype_column_is_described_and_reading_it_is_unsupported(): void
@@ -356,10 +328,6 @@ final class CursorTest extends TestCase
         );
     }
 
-    /**
-     * Values 11 and 12 through the public API: a JSON column decodes to
-     * arrays, a VECTOR column to a list or a `SparseVector`.
-     */
     #[Test]
     public function json_and_vector_columns_arrive_decoded(): void
     {
@@ -375,10 +343,6 @@ final class CursorTest extends TestCase
         self::assertEquals(new SparseVector(10, [0 => -128, 9 => 127]), $row['s8']);
     }
 
-    /**
-     * Seam and rows 22: the config's rowShape and keyCase apply, and
-     * ExecuteOptions overrides them for one Execution.
-     */
     #[Test]
     public function row_shape_and_key_case_come_from_the_config_and_execute_options_override_them(): void
     {
@@ -395,9 +359,6 @@ final class CursorTest extends TestCase
         }
     }
 
-    /**
-     * Values 2: numbers: Float per Connection and per Execution.
-     */
     #[Test]
     public function numbers_float_works_per_connection_and_per_execution(): void
     {
@@ -416,9 +377,6 @@ final class CursorTest extends TestCase
         }
     }
 
-    /**
-     * Errors 13 and Seam and rows 1, through the public API.
-     */
     #[Test]
     public function ddl_runs_through_run_and_a_compilation_error_is_a_warning(): void
     {
@@ -434,11 +392,6 @@ final class CursorTest extends TestCase
         }
     }
 
-    /**
-     * Seam and rows 12, through the public API: closing the Connection
-     * invalidates its Cursors, even one with rows of its last batch still
-     * in hand.
-     */
     #[Test]
     public function after_the_connection_closes_its_cursor_fails_even_with_rows_left_in_its_batch(): void
     {

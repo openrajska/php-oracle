@@ -11,18 +11,14 @@ use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Tests\Support\ConnectTargets;
 
 /**
- * Conformance catalog, Detection and versioning 1–3 (#18, #29): how Core
- * finds the Extension and checks its version, each case in a fresh PHP
- * process (tests/Support/detect.php).
+ * How Core finds the Extension and checks its version, each case in a fresh
+ * PHP process (tests/Support/detect.php).
  *
  * The declared minimum is 0.1.0 (`ext-oracledb: ^0.1`): the accepted
  * range is `>= 0.1.0, < 0.2.0`, Composer's caret for a 0.x version.
  */
 final class DetectionTest extends TestCase
 {
-    /**
-     * Detection and versioning 1.
-     */
     #[Test]
     public function without_the_extension_connect_says_how_to_install_it_and_classes_still_load(): void
     {
@@ -54,9 +50,6 @@ final class DetectionTest extends TestCase
         yield 'the next major' => ['1.0.0'];
     }
 
-    /**
-     * Detection and versioning 2.
-     */
     #[Test]
     #[DataProvider('outsideTheRange')]
     public function an_extension_outside_the_range_is_refused_naming_both_versions_the_range_and_the_upgrade_command(string $version): void
@@ -84,9 +77,6 @@ final class DetectionTest extends TestCase
         yield 'a later patch' => ['0.1.17'];
     }
 
-    /**
-     * Detection and versioning 2, the accepted side.
-     */
     #[Test]
     #[DataProvider('insideTheRange')]
     public function an_extension_inside_the_range_connects(string $version): void
@@ -98,9 +88,6 @@ final class DetectionTest extends TestCase
         }
     }
 
-    /**
-     * Detection and versioning 3.
-     */
     #[Test]
     public function the_check_runs_once_per_process_on_the_first_connect(): void
     {
@@ -123,8 +110,6 @@ final class DetectionTest extends TestCase
     }
 
     /**
-     * Runs tests/Support/detect.php in a fresh PHP process.
-     *
      * @return array{
      *     loaded: bool,
      *     classes: int,

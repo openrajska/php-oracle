@@ -32,14 +32,11 @@ use Rajska\Oracle\Type;
 use Rajska\Oracle\ValueMapping;
 
 /**
- * Conformance catalog, Objects, Collections and Associative arrays (#25):
- * plain PHP arrays both ways, as column values, OUT values and `Struct`,
- * `Collection` and `Indexed` binds (fixtures/sql/03_object.sql,
- * 04_pipe.sql, 12_object_kinds.sql).
+ * Objects, Collections and Associative arrays; fixtures in
+ * fixtures/sql/03_object.sql, 04_pipe.sql, 12_object_kinds.sql.
  */
 final class ObjectsTest extends ConformanceTestCase
 {
-    /** Echoes an IN bind into an OUT bind of the same type. */
     private const string ECHO = 'begin :o := :i; end;';
 
     /** fx_shapes, as rows: values, all NULL, empty Collections. */
@@ -60,21 +57,12 @@ final class ObjectsTest extends ConformanceTestCase
 
     private const array NULL_POINT = ['X' => null, 'Y' => null, 'LABEL' => null];
 
-    /**
-     * Objects 1: an Object column is an array keyed by attribute name, a
-     * Collection a list, a Collection of Objects a list of arrays; NULL,
-     * all-NULL and empty stay apart (Objects 2).
-     */
     #[Test]
     public function object_and_collection_columns_arrive_as_arrays(): void
     {
         self::assertSame(self::SHAPES, self::rows($this->connect(), 'select * from fx_shapes order by id'));
     }
 
-    /**
-     * Objects 1: the same holds in a REF CURSOR, an Implicit result and
-     * `TABLE(pipelined_fn())`.
-     */
     #[Test]
     public function the_same_arrays_arrive_through_a_ref_cursor_an_implicit_result_and_a_pipelined_function(): void
     {
@@ -106,9 +94,8 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 1: attribute keys follow `keyCase` (as written for a quoted
-     * attribute under Native), and the row shape does not reach inside an
-     * Object.
+     * A quoted attribute keeps its case under Native, and the row shape does
+     * not reach inside an Object.
      */
     #[Test]
     public function attribute_keys_follow_key_case(): void
@@ -129,11 +116,6 @@ final class ObjectsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * An Object or Collection column is described with its type: `Column`'s
-     * `objectType` is the canonical name, and nested table and VARRAY are
-     * both `collection`.
-     */
     #[Test]
     public function object_and_collection_columns_describe_their_type(): void
     {
@@ -160,9 +142,8 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 3: attributes follow every `ValueMapping`, as columns of
-     * their type do. fx_all_scalars row 1 holds every attribute type of
-     * the coverage table; row 2 is all NULL.
+     * fx_all_scalars row 1 holds every attribute type of the coverage table;
+     * row 2 is all NULL.
      */
     #[Test]
     public function attributes_follow_every_value_mapping(): void
@@ -213,9 +194,9 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 3, BOOLEAN: the server writes TRUE in a BOOLEAN attribute as
-     * `00 00 00 01` when PL/SQL builds the Object and as `01 00 00 00`
-     * when SQL builds it; both read TRUE (fork patch, #71).
+     * The server writes TRUE in a BOOLEAN attribute as `00 00 00 01` when
+     * PL/SQL builds the Object and as `01 00 00 00` when SQL builds it; both
+     * read TRUE (fork patch, #71).
      */
     #[Test]
     public function a_boolean_attribute_reads_as_stored(): void
@@ -232,10 +213,6 @@ final class ObjectsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Objects 4: Struct, Collection and Indexed round-trip IN, OUT and IN
-     * OUT, through PL/SQL parameters of their type.
-     */
     #[Test]
     public function struct_collection_and_indexed_round_trip_in_out_and_in_out(): void
     {
@@ -285,12 +262,7 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertSame([[1 => 1]], $map['io']);
     }
 
-    /**
-     * Objects 4: Struct and Collection bind into SQL too, and come back
-     * from SQL `RETURNING … INTO`, one value per returned row (#73), as
-     * from `RETURNING … INTO` inside a PL/SQL block. An atomic NULL is
-     * `null`.
-     */
+    /** #73 for SQL `RETURNING … INTO`. */
     #[Test]
     public function struct_and_collection_bind_into_sql_and_come_back_from_returning_into(): void
     {
@@ -357,9 +329,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 4: a fetched value binds back unchanged, under the default
-     * mapping and under `TemporalMode::String` and `NumberMode::Float`.
-     *
      * @return iterable<string, array{ValueMapping}>
      */
     public static function mappings(): iterable
@@ -398,9 +367,9 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 4: values reach the server as the attribute types store them:
-     * the Wall clock of a DATE, the Instant and offset of a TSTZ, the
-     * Instant of a TSLTZ, an exact NUMBER from a float.
+     * Values reach the server as the attribute types store them: the Wall
+     * clock of a DATE, the Instant and offset of a TSTZ, the Instant of a
+     * TSLTZ, an exact NUMBER from a float.
      */
     #[Test]
     public function bound_attributes_reach_the_server_as_their_types_store_them(): void
@@ -423,11 +392,6 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertSame('.1|2026-03-01 10:00:00|2026-03-01 10:00:00.500 -03:30|2026-03-01 08:00:00|T|ç|', $text);
     }
 
-    /**
-     * Objects 2 and 4: NULL semantics on IN and OUT. `in(null)` is a typed
-     * NULL; `[]` an empty Collection; an Object of NULLs is not NULL; NULL
-     * elements are kept.
-     */
     #[Test]
     public function null_empty_and_all_null_values_stay_apart_in_and_out(): void
     {
@@ -472,10 +436,6 @@ final class ObjectsTest extends ConformanceTestCase
         );
     }
 
-    /**
-     * Objects 5: an Associative array keeps sparse and negative keys, in key
-     * order; a nested table with deleted elements gives the rest as a list.
-     */
     #[Test]
     public function indexed_keeps_sparse_and_negative_keys_in_order_and_a_sparse_nested_table_gives_a_list(): void
     {
@@ -494,9 +454,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 6: `TABLE(:ids)` with 10,000 ids, over SYS.ODCINUMBERLIST,
-     * SYS.ODCIVARCHAR2LIST and a user type, joined to a table.
-     *
      * @return iterable<string, array{string, list<int|string>}>
      */
     public static function idLists(): iterable
@@ -531,9 +488,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 8: each mistake fails before any Round trip (the types are
-     * described already), naming the fix.
-     *
      * @return iterable<string, array{Bind, string}>
      */
     public static function mistakes(): iterable
@@ -568,8 +522,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 8: these fail before any Round trip with UsageException.
-     *
      * @param non-empty-string $message
      */
     #[Test]
@@ -609,9 +561,7 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 9: type names follow Oracle's identifier rules. Unquoted
-     * parts are case-insensitive, a quoted part is kept; the current
-     * schema, a synonym and `PKG.TYPE` resolve.
+     * Unquoted parts are case-insensitive, a quoted part is kept.
      *
      * @return iterable<string, array{string}>
      */
@@ -669,11 +619,6 @@ final class ObjectsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Objects 10: describing a type costs Round trips only on its first use
-     * in a Session; `hr.address` and `HR.ADDRESS` are one type, and the
-     * Session keeps the description for its next loan.
-     */
     #[Test]
     public function describing_a_type_costs_round_trips_only_on_its_first_use_in_a_session(): void
     {
@@ -707,9 +652,9 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 11: after `ALTER TYPE` in another Session, a Session that
-     * described the type keeps the old shape (never invalidated): it fails
-     * loudly, or stays consistent with that shape, never corrupted.
+     * After `ALTER TYPE` in another Session, a Session that described the
+     * type keeps the old shape (never invalidated): it fails loudly, or stays
+     * consistent with that shape, never corrupted.
      *
      * Observed on 26ai, recorded for Known limitations:
      * - in the Session that described the type before, binding the old
@@ -788,9 +733,6 @@ final class ObjectsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Objects 12: a VARRAY over its limit fails on the server, ORA-22165.
-     */
     #[Test]
     public function a_varray_over_its_limit_fails_on_the_server(): void
     {
@@ -807,9 +749,7 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Objects 12: each later attribute type fails loudly on read and on
-     * bind; NULL reads as null. JSON, VECTOR and LONG cannot be attributes
-     * of an Object type at all.
+     * JSON, VECTOR and LONG cannot be attributes of an Object type at all.
      *
      * @return iterable<string, array{string, string}>
      */
@@ -836,7 +776,6 @@ final class ObjectsTest extends ConformanceTestCase
         } catch (UnsupportedException $e) {
             self::assertStringContainsString($named, $e->getMessage());
         }
-        // The Connection is still usable.
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
 
@@ -873,9 +812,6 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertSame([['ID' => 1, 'DOC' => null, 'NDOC' => null, 'BIN' => null]], $out->outValues()['o']);
     }
 
-    /**
-     * Objects 12: an instance of a subtype fails loudly, read or bound.
-     */
     #[Test]
     public function a_subtype_instance_fails_loudly(): void
     {
@@ -897,10 +833,6 @@ final class ObjectsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Objects 13: a Collection of Collections, and an Associative array of
-     * Objects, round-trip.
-     */
     #[Test]
     public function a_collection_of_collections_round_trips(): void
     {
@@ -920,10 +852,6 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertSame([[-1 => null, 5 => ['X' => 1, 'Y' => 2, 'LABEL' => null]]], $out['points_o']);
     }
 
-    /**
-     * Scope 8: an Associative array indexed by strings fails loudly, IN
-     * and OUT, rather than losing its keys.
-     */
     #[Test]
     public function an_index_by_varchar2_bind_fails_loudly(): void
     {
@@ -960,8 +888,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * An Object as the test reads it.
-     *
      * @return array<string, mixed>
      */
     private static function struct(mixed $value): array
@@ -976,8 +902,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * A Collection as the test reads it.
-     *
      * @return list<mixed>
      */
     private static function elements(mixed $value): array
@@ -1010,8 +934,6 @@ final class ObjectsTest extends ConformanceTestCase
     }
 
     /**
-     * Each value of an array as `Temporals::shown()` writes it.
-     *
      * @param array<array-key, mixed> $values
      *
      * @return array<array-key, mixed>

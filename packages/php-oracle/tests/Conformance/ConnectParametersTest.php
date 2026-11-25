@@ -20,9 +20,6 @@ use Throwable;
 use WeakMap;
 
 /**
- * Conformance catalog, the connect parameters (#41, spec #32 §11): Pool and
- * lifecycle 8–12, Scope 7, Errors 9 (connect timeout) and 10.
- *
  * "No network I/O" is shown with a host that never answers
  * (192.0.2.1, RFC 5737) and the default connectTimeout of 20 s: a check that
  * failed only after trying to connect would take 20 s.
@@ -67,10 +64,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         yield 'an unknown one' => ['?expire_time=1', 'ConnectionConfig fields'];
     }
 
-    /**
-     * Pool and lifecycle 8 and Errors 10: Easy Connect Plus `?params` fail
-     * before any network I/O, saying what to use instead.
-     */
     #[Test]
     #[DataProvider('easyConnectPlusParameters')]
     public function easy_connect_plus_parameters_are_rejected_before_any_network_io(string $parameters, string $instead): void
@@ -93,11 +86,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         yield 'TRANSPORT_CONNECT_TIMEOUT' => ['(TRANSPORT_CONNECT_TIMEOUT=5)', 'connectTimeout'];
     }
 
-    /**
-     * Pool and lifecycle 8 and Errors 10: a descriptor that sets a key the
-     * Backend would ignore fails before any network I/O, naming the key and
-     * what to use instead.
-     */
     #[Test]
     #[DataProvider('rejectedKeys')]
     public function a_descriptor_key_the_backend_would_ignore_is_rejected_before_any_network_io(string $setting, string $instead): void
@@ -109,10 +97,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         self::assertStringContainsString($instead, $exception->getMessage());
     }
 
-    /**
-     * Pool and lifecycle 8: the same check applies to the entry a TNS alias
-     * names, from configDir and from $TNS_ADMIN.
-     */
     #[Test]
     public function a_tns_alias_whose_entry_sets_a_rejected_key_is_rejected_before_any_network_io(): void
     {
@@ -140,10 +124,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         yield 'TNS alias from $TNS_ADMIN' => ['TNS_ADMIN'];
     }
 
-    /**
-     * Pool and lifecycle 8: Easy Connect, a descriptor and a TNS alias all
-     * connect.
-     */
     #[Test]
     #[DataProvider('dsnForms')]
     public function every_dsn_form_connects(string $form): void
@@ -166,10 +146,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 8 and Errors 9: a host that never answers fails
-     * with ConnectionException (ORA-12170) once connectTimeout has passed,
-     * pooled and standalone. The crate waits its retry delay (1 s) after
-     * the last attempt too, hence the margin.
+     * The crate waits its retry delay (1 s) after the last attempt too, hence
+     * the margin.
      */
     #[Test]
     #[DataProvider('pooledAndStandalone')]
@@ -198,8 +176,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 9 and Scope 7: one-way TLS to a server whose
-     * certificate a private CA signed, with that CA in ewallet.pem.
+     * One-way TLS to a server whose certificate a private CA signed, with
+     * that CA in ewallet.pem.
      */
     #[Test]
     #[DataProvider('pooledAndStandalone')]
@@ -216,9 +194,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 9: mTLS, with the client's certificate and key in
-     * ewallet.pem (and the private CA), the key plain or encrypted with
-     * walletPassword.
+     * mTLS, with the client's certificate and key in ewallet.pem (and the
+     * private CA).
      *
      * @return iterable<string, array{string, ?string, bool}>
      */
@@ -246,10 +223,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 9: the server certificate is verified. Without the
-     * private CA (no wallet: the bundled webpki roots only) the connect
-     * fails, and so does a host the certificate does not name (its IP
-     * address).
+     * Without the private CA (no wallet: the bundled webpki roots only) the
+     * connect fails.
      */
     #[Test]
     public function the_server_certificate_is_verified_against_the_roots_and_the_host_name(): void
@@ -288,10 +263,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         yield 'ewallet.p12' => ['p12'];
     }
 
-    /**
-     * Pool and lifecycle 9 and Errors 10: a wallet without ewallet.pem
-     * fails before any network I/O, with conversion instructions.
-     */
     #[Test]
     #[DataProvider('unreadableWallets')]
     public function a_wallet_that_is_not_pem_fails_with_conversion_instructions(string $wallet): void
@@ -312,8 +283,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 10 and Scope 7: with proxyUser, `user` logs on and
-     * the Session belongs to the proxy client, pooled and standalone.
+     * With proxyUser, `user` logs on and the Session belongs to the proxy
+     * client.
      */
     #[Test]
     #[DataProvider('pooledAndStandalone')]
@@ -342,9 +313,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Scope 7: DRCP through the dsn. The Session runs on a pooled server and
-     * gets the Session setup (no ORA-03301 line carrying values in
-     * ORA-00001; spec #32 amendment to §11 / §12).
+     * The Session runs on a pooled server and still gets the Session setup
+     * (no ORA-03301 line carrying values in ORA-00001).
      */
     #[Test]
     #[DataProvider('drcpTargets')]
@@ -369,9 +339,7 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 11: two processes with no drcpConnectionClass
-     * report the same connection class in V$CPOOL_CC_STATS: one derived
-     * from the user, not a random one per process.
+     * The class is derived from the user, not random per process.
      */
     #[Test]
     public function two_processes_without_a_class_share_one_drcp_connection_class(): void
@@ -390,9 +358,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         self::assertSame([["$user.RAJSKA:{$this->user()}"], ["$user.RAJSKA:{$this->user()}"]], $classes);
     }
 
-    /**
-     * Pool and lifecycle 11: drcpConnectionClass, when given, is the class.
-     */
     #[Test]
     public function drcp_connection_class_names_the_class(): void
     {
@@ -406,11 +371,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         self::assertGreaterThan($before["$user.RAJSKA41"] ?? 0, $after["$user.RAJSKA41"] ?? 0);
     }
 
-    /**
-     * Pool and lifecycle 12: `password` and `walletPassword` never appear in
-     * `var_dump()` or `print_r()` of the config, nor in the message, string
-     * or trace of a failing connect.
-     */
     #[Test]
     public function secrets_never_appear_in_dumps_messages_or_traces(): void
     {
@@ -434,9 +394,9 @@ final class ConnectParametersTest extends ConformanceTestCase
     }
 
     /**
-     * Pool and lifecycle 12: the adapter keeps what it built from a config
-     * only while the config lives, so its password is not held for the rest
-     * of the worker's life once the application lets the config go.
+     * The adapter keeps what it built from a config only while the config
+     * lives, so its password is not held for the rest of the worker's life
+     * once the application lets the config go.
      */
     #[Test]
     public function the_adapter_holds_a_configs_password_no_longer_than_the_config(): void
@@ -452,10 +412,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         self::assertFalse(self::adapterHolds($password));
     }
 
-    /**
-     * Whether any static property of the adapter holds `$secret`, in an
-     * array or a WeakMap, at any depth.
-     */
     private static function adapterHolds(string $secret): bool
     {
         $holds = static function (mixed $value) use (&$holds, $secret): bool {
@@ -476,10 +432,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         return $holds(new ReflectionClass(ExtensionDriver::class)->getStaticProperties());
     }
 
-    /**
-     * Pool and lifecycle 9 and 12: a wrong walletPassword is a configuration
-     * error, and neither secret shows in it.
-     */
     #[Test]
     public function a_wrong_wallet_password_is_a_configuration_error_that_shows_no_secret(): void
     {
@@ -511,9 +463,6 @@ final class ConnectParametersTest extends ConformanceTestCase
         self::fail('connect() succeeded.');
     }
 
-    /**
-     * Connects and expects a ConfigurationException before any network I/O.
-     */
     private function rejected(string $dsn, mixed ...$fields): ConfigurationException
     {
         $started = microtime(true);

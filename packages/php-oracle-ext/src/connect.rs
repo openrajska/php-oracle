@@ -271,7 +271,6 @@ pub fn connection_class(class: Option<&str>, user: &str) -> String {
     )
 }
 
-/// The transport connect timeout, from milliseconds.
 pub fn connect_timeout(milliseconds: i64) -> Result<Duration, Error> {
     u64::try_from(milliseconds)
         .ok()

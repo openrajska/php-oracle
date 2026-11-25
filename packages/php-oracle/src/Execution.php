@@ -26,8 +26,6 @@ final class Execution
     private ?array $outValues = null;
 
     /**
-     * The Implicit results, each wrapped once as a Cursor.
-     *
      * @var list<Cursor>|null
      */
     private ?array $results = null;
@@ -121,9 +119,6 @@ final class Execution
     }
 
     /**
-     * The OUT values with each REF CURSOR wrapped as a Cursor and each LOB as
-     * a Lob; a bind whose values are neither is left as it is.
-     *
      * @param array<string, list<mixed>> $outValues
      *
      * @return array<string, list<mixed>>

@@ -5,9 +5,7 @@ parameters:
         - tests
         - bench/src
     excludePaths:
-        # Raises PHP issues on purpose (see SuiteRulesTest).
         - tests/Harness/Probes
     tmpDir: .phpstan.cache
-    # The Extension's native surface; analysis runs without the Extension.
     scanFiles:
         - stubs/oracledb.stub.php

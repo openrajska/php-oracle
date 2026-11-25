@@ -9,15 +9,11 @@ use Rajska\Oracle\Tests\Support\ConnectTargets;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 
 /**
- * Conformance catalog, Detection and versioning 4 (#18, #29). Cases 1–3
- * (detection, the version range, once per process) run in fresh processes
- * through the public API: tests/Api/DetectionTest.
+ * The other cases (detection, the version range, once per process) run in
+ * fresh processes through the public API: tests/Api/DetectionTest.
  */
 final class DetectionAndVersioningTest extends ConformanceTestCase
 {
-    /**
-     * Detection and versioning 4: the Server version.
-     */
     #[Test]
     public function the_server_version_is_five_part_matches_version_full_and_costs_no_round_trip(): void
     {
@@ -44,9 +40,6 @@ final class DetectionAndVersioningTest extends ConformanceTestCase
     }
 
     /**
-     * Detection and versioning 4: the Extension's version is its Cargo
-     * package version, in `phpversion()` and in `php --ri`.
-     *
      * The Extension under test is built from `EXTENSION_CARGO_TOML` when CI
      * runs the suite against an older Extension (the declared minimum), and
      * from the monorepo's packages/php-oracle-ext otherwise.

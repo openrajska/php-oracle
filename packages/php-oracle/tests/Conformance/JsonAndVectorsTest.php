@@ -23,16 +23,10 @@ use Rajska\Oracle\ValueMapping;
 use Rajska\Oracle\VectorFormat;
 
 /**
- * Conformance catalog: JSON and VECTOR values (Values 11, 12, 16; Scope 1
- * and 2 for these types).
+ * JSON and VECTOR values.
  */
 final class JsonAndVectorsTest extends ConformanceTestCase
 {
-    /**
-     * Values 11: native JSON decodes like `json_decode($text, true)`, its
-     * numbers exact (or floats under `numbers: Float`); key order is not
-     * guaranteed.
-     */
     #[Test]
     public function json_decodes_like_json_decode_with_exact_numbers(): void
     {
@@ -67,11 +61,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         self::assertSame('12345678901234567890', $doc['big']);
     }
 
-    /**
-     * Values 11: extended scalars follow their column rules under the
-     * Execution's `ValueMapping`: TIMESTAMP, TSTZ, INTERVALs, binary,
-     * BINARY_DOUBLE / FLOAT and a VECTOR inside.
-     */
     #[Test]
     public function json_extended_scalars_follow_their_column_rules(): void
     {
@@ -115,10 +104,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * Values 12, Scope 1: FLOAT32 / FLOAT64 give floats, INT8 ints, BINARY
-     * ints of bytes, a sparse VECTOR a `SparseVector`, NULL `null`.
-     */
     #[Test]
     public function vector_columns_give_lists_or_sparse_vectors(): void
     {
@@ -145,10 +130,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         self::assertSame([1 => 1.5, 5 => 0.1], $rows[0]['S32']->values);
     }
 
-    /**
-     * Values 12: a VECTOR column describes its dimensions, format and
-     * sparseness; a flexible one gives `null` for both.
-     */
     #[Test]
     public function vector_columns_describe_dimensions_format_and_sparseness(): void
     {
@@ -169,10 +150,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         ));
     }
 
-    /**
-     * Values 11: an OSON id (the `_id` of a JSON collection table) fails
-     * loudly, and the Connection stays usable.
-     */
+    /** An OSON id is the `_id` of a JSON collection table. */
     #[Test]
     public function an_oson_id_fails_loudly(): void
     {
@@ -188,8 +166,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
     }
 
     /**
-     * Each input kind of `Json::in()` and what reading it back gives.
-     *
      * @return iterable<string, array{mixed, mixed}>
      */
     public static function jsonInputs(): iterable
@@ -221,8 +197,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
     }
 
     /**
-     * Values 11: `Json::in()` of each input kind round-trips through a JSON
-     * column; a `DateTimeInterface` stores its Wall clock as a TIMESTAMP.
+     * A `DateTimeInterface` stores its Wall clock as a TIMESTAMP.
      */
     #[Test]
     #[DataProvider('jsonInputs')]
@@ -242,10 +217,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         });
     }
 
-    /**
-     * `Json::in()` refuses what JSON cannot hold when the bind is built, and
-     * the Backend refuses text that is not UTF-8 before any Round trip.
-     */
     #[Test]
     public function json_in_refuses_what_json_cannot_hold(): void
     {
@@ -263,10 +234,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         $this->connect()->execute('select :doc from dual', ['doc' => Json::in(['bytes' => "\xff"])], self::options());
     }
 
-    /**
-     * Values 12: a Float64 bind (the default format) fills a FLOAT32
-     * column, dense and sparse, and reads back in the column's format.
-     */
     #[Test]
     public function a_float64_vector_bind_fills_a_float32_column(): void
     {
@@ -289,9 +256,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
     }
 
     /**
-     * Each format of `Vector::in()`, dense and sparse, and what it reads
-     * back as.
-     *
      * @return iterable<string, array{Vector, mixed}>
      */
     public static function vectorBinds(): iterable
@@ -306,10 +270,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         yield 'NULL' => [Vector::in(null), null];
     }
 
-    /**
-     * Values 12, Scope 2: `Vector::in()` of each format, dense and sparse,
-     * IN to a VECTOR column of the bind's own format, and back.
-     */
     #[Test]
     #[DataProvider('vectorBinds')]
     public function vector_in_round_trips_each_format(Vector $bind, mixed $expected): void
@@ -325,9 +285,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
     }
 
     /**
-     * A `Vector` bind's values are checked before any Round trip, naming
-     * the rule.
-     *
      * @return iterable<string, array{Vector, string}>
      */
     public static function vectorMistakes(): iterable
@@ -355,9 +312,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         $this->connect()->execute('select :v from dual', ['v' => $bind], self::options());
     }
 
-    /**
-     * A `SparseVector` checks its own shape.
-     */
     #[Test]
     public function a_sparse_vector_checks_its_dimensions_and_positions(): void
     {
@@ -371,11 +325,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         }
     }
 
-    /**
-     * Scope 2, Values 12: JSON and VECTOR IN, OUT and IN OUT through PL/SQL
-     * parameters of their types, NULL included; a sparse VECTOR OUT value
-     * arrives as a `SparseVector`.
-     */
     #[Test]
     public function json_and_vector_bind_in_out_and_in_out_through_plsql(): void
     {
@@ -425,10 +374,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         self::assertSame([10, [2 => 4.5]], [$sparse->dimensions, $sparse->values]);
     }
 
-    /**
-     * Scope 4 for these types: JSON and VECTOR come back from `RETURNING …
-     * INTO`, one value per row.
-     */
     #[Test]
     public function json_and_vector_come_back_from_returning_into(): void
     {
@@ -454,10 +399,6 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         self::assertSame([4 => 0.5], $values['rs'][0]->values);
     }
 
-    /**
-     * Values 16: a JSON OUT value follows the column mapping under every
-     * `ValueMapping`: its numbers and timestamps change with it.
-     */
     #[Test]
     public function json_out_values_follow_the_value_mapping(): void
     {

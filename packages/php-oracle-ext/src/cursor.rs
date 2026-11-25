@@ -253,8 +253,7 @@ impl Column {
         }
     }
 
-    /// The value of a column of a scalar type (any but `Mapping::Cursor`
-    /// and `Mapping::Lob`).
+    /// The value of a column of a scalar type.
     fn value(&self, row: &Row, index: usize) -> Result<Zval, Error> {
         let mut zval = Zval::new();
         match &self.mapping {

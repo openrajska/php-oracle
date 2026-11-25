@@ -491,7 +491,6 @@ fn unparsed(text: &Text) -> Error {
 const PHP_DATE_INIT_FORMAT: c_int = 0x02;
 
 unsafe extern "C" {
-    /// `DateTimeImmutable`'s class entry.
     fn php_date_get_immutable_ce() -> *mut zend_class_entry;
     /// `object_init_ex(object, ce)`.
     fn php_date_instantiate(ce: *mut zend_class_entry, object: *mut Zval) -> *mut Zval;
@@ -545,7 +544,6 @@ fn call(name: &str, args: Vec<&dyn IntoZvalDyn>) -> Result<Zval, Error> {
     Ok(value)
 }
 
-/// Calls a method of the object in `object`.
 fn call_method(object: &Zval, name: &str, args: Vec<&dyn IntoZvalDyn>) -> Result<Zval, Error> {
     let value = object
         .object()

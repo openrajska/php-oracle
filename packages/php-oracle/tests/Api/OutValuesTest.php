@@ -69,9 +69,6 @@ final class OutValuesTest extends TestCase
         self::assertSame('3.5', $execution->out('total')->value());
     }
 
-    /**
-     * Seam and rows 16.
-     */
     #[Test]
     public function getters_narrow_and_never_convert(): void
     {
@@ -93,10 +90,6 @@ final class OutValuesTest extends TestCase
         self::assertFails(fn(): ?bool => $execution->out('text')->bool(), "OUT bind 'text' holds string, not a bool.");
     }
 
-    /**
-     * Seam and rows 16, Values 16: the ValueMapping of the Execution decides
-     * the PHP type, and the getter follows it.
-     */
     #[Test]
     public function the_value_mapping_decides_what_a_getter_finds(): void
     {
@@ -109,10 +102,6 @@ final class OutValuesTest extends TestCase
         self::assertSame(12.5, $execution->out('fraction')->float());
     }
 
-    /**
-     * `dateTime()` and `interval()` read temporal OUT values, NULL included,
-     * and narrow like every getter.
-     */
     #[Test]
     public function date_time_and_interval_read_temporal_out_values(): void
     {
@@ -138,11 +127,6 @@ final class OutValuesTest extends TestCase
         self::assertFails(fn(): ?DateTimeImmutable => $string->out('d')->dateTime(), "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
     }
 
-    /**
-     * Objects 7: `array()` reads an Object, a Collection or an Associative
-     * array, NULL included; it fails on a scalar, and a scalar getter on an
-     * array names `array()`.
-     */
     #[Test]
     public function array_reads_objects_and_collections_and_fails_on_a_scalar(): void
     {
@@ -166,11 +150,6 @@ final class OutValuesTest extends TestCase
         self::assertFails(fn(): ?string => $execution->out('point')->string(), "OUT bind 'point' holds array, not a string. Read it with array().");
     }
 
-    /**
-     * A JSON object or array is read with `array()`, a JSON scalar with its
-     * own getter; a VECTOR is a list or a `SparseVector`, read with
-     * `value()`.
-     */
     #[Test]
     public function json_and_vector_out_values_have_their_mapped_types(): void
     {
@@ -192,9 +171,6 @@ final class OutValuesTest extends TestCase
         self::assertSame([4, [2 => 0.5]], [$sparse->dimensions, $sparse->values]);
     }
 
-    /**
-     * Seam and rows 17, Scope 4.
-     */
     #[Test]
     public function returning_into_gives_one_value_per_row(): void
     {
@@ -217,10 +193,6 @@ final class OutValuesTest extends TestCase
         self::assertFails(fn(): mixed => $none->out('id')->value(), "OUT bind 'id' returned 0 rows, and value() needs exactly one");
     }
 
-    /**
-     * Scope 4 (#73): a LOB, an Object and a Collection come back from SQL
-     * `RETURNING … INTO` like any other type.
-     */
     #[Test]
     public function returning_into_a_lob_an_object_or_a_collection_gives_one_value_per_row(): void
     {
@@ -242,9 +214,6 @@ final class OutValuesTest extends TestCase
         ], $rows);
     }
 
-    /**
-     * Seam and rows 15.
-     */
     #[Test]
     public function out_with_an_unknown_or_in_only_name_fails(): void
     {
@@ -263,9 +232,6 @@ final class OutValuesTest extends TestCase
         );
     }
 
-    /**
-     * Binds 15: the name is matched ignoring case, as placeholders are.
-     */
     #[Test]
     public function out_matches_the_name_ignoring_case(): void
     {
@@ -275,10 +241,6 @@ final class OutValuesTest extends TestCase
         self::assertSame(7, $execution->out('total')->int());
     }
 
-    /**
-     * Binds 9: an invalid decimal string fails when the bind is built,
-     * before any Round trip.
-     */
     #[Test]
     public function a_number_string_must_be_a_decimal_literal(): void
     {

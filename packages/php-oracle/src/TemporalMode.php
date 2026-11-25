@@ -6,8 +6,7 @@ namespace Rajska\Oracle;
 
 /**
  * How DATE, TIMESTAMP, TSTZ and TSLTZ values reach PHP: as
- * `DateTimeImmutable`, or as NLS-independent ISO text. Backed by the case
- * name in lowerCamelCase.
+ * `DateTimeImmutable`, or as NLS-independent ISO text.
  */
 enum TemporalMode: string
 {

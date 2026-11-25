@@ -6,7 +6,6 @@ namespace Rajska\Oracle;
 
 /**
  * An Oracle type, as a column describes it and as a bind declares it.
- * Backed by the case name in lowerCamelCase.
  *
  * The column-only cases (`Long`, `LongRaw`, `Urowid`, `Bfile`, `Xmltype`)
  * never name a bind. Nested table and VARRAY are both `Collection`. A column
