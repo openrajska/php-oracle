@@ -154,7 +154,7 @@ final class OutputTest extends TestCase
         unset($first);
 
         $second = $this->next();
-        self::assertSame($session, $this->session($second), 'B has A\'s Session.');
+        self::assertSame($session, $this->session($second), "B has A's Session.");
         if ($enable) {
             $second->enableOutput();
         }
@@ -174,6 +174,7 @@ final class OutputTest extends TestCase
         $session = $this->session($first);
         $first->enableOutput();
         $first->run("begin dbms_output.put_line('secret of A'); end;");
+
         $cursor = $first->select('select level n from dual connect by level <= 3', [], new ExecuteOptions(fetchSize: 1));
         $rows = [];
         foreach ($cursor as $row) {
@@ -186,7 +187,7 @@ final class OutputTest extends TestCase
         unset($cursor);
 
         $second = $this->next();
-        self::assertSame($session, $this->session($second), 'B has A\'s Session.');
+        self::assertSame($session, $this->session($second), "B has A's Session.");
         self::assertSame([], $second->output());
     }
 

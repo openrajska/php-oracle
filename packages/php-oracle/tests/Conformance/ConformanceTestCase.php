@@ -172,8 +172,8 @@ abstract class ConformanceTestCase extends TestCase
             $observer->select('select id from fx_items where id = :id for update nowait', ['id' => $item]);
 
             return false;
-        } catch (RuntimeException $e) {
-            self::assertSame(54, $e->getCode(), $e->getMessage());
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame(54, $runtimeException->getCode(), $runtimeException->getMessage());
 
             return true;
         } finally {

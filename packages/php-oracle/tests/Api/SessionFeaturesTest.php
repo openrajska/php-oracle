@@ -67,9 +67,9 @@ final class SessionFeaturesTest extends TestCase
         try {
             $connection->select(self::CPU_BOUND)->value();
             self::fail('The query finished within the Call timeout.');
-        } catch (TimeoutException $e) {
-            self::assertSame('Call timeout of 500 ms exceeded.', $e->getMessage());
-            self::assertSame(self::CPU_BOUND, $e->sql());
+        } catch (TimeoutException $timeoutException) {
+            self::assertSame('Call timeout of 500 ms exceeded.', $timeoutException->getMessage());
+            self::assertSame(self::CPU_BOUND, $timeoutException->sql());
         }
 
         self::assertSame(1, $connection->select('select 1 from dual')->value());

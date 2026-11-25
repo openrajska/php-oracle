@@ -227,8 +227,8 @@ final class TransactionsTest extends TestCase
         $made = self::$counter->during($sid, function () use ($misuse, &$thrown): void {
             try {
                 $misuse($this->connection);
-            } catch (Throwable $e) {
-                $thrown = $e;
+            } catch (Throwable $throwable) {
+                $thrown = $throwable;
             }
         });
 
@@ -290,8 +290,8 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (DomainException $e) {
-            $caught = $e;
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
         }
 
         self::assertSame($thrown, $caught);
@@ -313,8 +313,8 @@ final class TransactionsTest extends TestCase
 
                 throw new TypeError('not an exception');
             });
-        } catch (TypeError $e) {
-            $caught = $e->getMessage();
+        } catch (TypeError $typeError) {
+            $caught = $typeError->getMessage();
         }
 
         self::assertSame('not an exception', $caught);
@@ -340,8 +340,8 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (DomainException $e) {
-            $caught = $e;
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
         } finally {
             $connection->close();
         }
@@ -369,8 +369,8 @@ final class TransactionsTest extends TestCase
 
                 throw $thrown;
             });
-        } catch (DomainException $e) {
-            $caught = $e;
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
         }
 
         self::assertSame($thrown, $caught);
@@ -391,8 +391,8 @@ final class TransactionsTest extends TestCase
         try {
             $this->connection->commit();
             self::fail('The commit did not fail.');
-        } catch (QueryException $e) {
-            self::assertSame(2091, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(2091, $queryException->getCode());
         }
 
         self::assertSame([], self::$observer->committed());
@@ -409,8 +409,8 @@ final class TransactionsTest extends TestCase
                 $connection->run('insert into fx_tx_rows (id, qty) values (2, -1)');
             });
             self::fail('The commit did not fail.');
-        } catch (QueryException $e) {
-            self::assertSame(2091, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(2091, $queryException->getCode());
         }
 
         self::assertSame([], self::$observer->committed());

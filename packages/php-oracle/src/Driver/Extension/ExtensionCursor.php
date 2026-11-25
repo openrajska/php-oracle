@@ -73,8 +73,8 @@ final class ExtensionCursor implements DriverCursor
     {
         try {
             return $this->native->columns();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 
@@ -89,8 +89,8 @@ final class ExtensionCursor implements DriverCursor
                 $this->native->columns(),
                 static fn(array $column): bool => \in_array($column['type'], self::HANDLES, true),
             ));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
         if ($this->handles === []) {
             return $rows;
@@ -116,8 +116,8 @@ final class ExtensionCursor implements DriverCursor
     {
         try {
             $this->native->close();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 }

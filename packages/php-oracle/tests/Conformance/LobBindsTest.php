@@ -325,8 +325,8 @@ final class LobBindsTest extends ConformanceTestCase
         try {
             $bind();
             self::fail('The value was accepted.');
-        } catch (UsageException $e) {
-            self::assertSame($message, $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame($message, $usageException->getMessage());
         }
     }
 
@@ -389,8 +389,8 @@ final class LobBindsTest extends ConformanceTestCase
         try {
             $connection->execute('begin :v := :v; end;', $binds, self::options());
             self::fail('The bind was accepted.');
-        } catch (UsageException $e) {
-            self::assertSame($message, $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame($message, $usageException->getMessage());
         }
     }
 

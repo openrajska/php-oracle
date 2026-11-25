@@ -20,8 +20,8 @@ final class SuiteRulesTest extends TestCase
 
         try {
             $throw('kept');
-        } catch (RuntimeException $exception) {
-            self::assertSame(['kept'], $exception->getTrace()[0]['args'] ?? null);
+        } catch (RuntimeException $runtimeException) {
+            self::assertSame(['kept'], $runtimeException->getTrace()[0]['args'] ?? null);
 
             return;
         }
@@ -36,8 +36,8 @@ final class SuiteRulesTest extends TestCase
 
         try {
             $throw('a string longer than fifteen bytes');
-        } catch (RuntimeException $exception) {
-            self::assertStringContainsString("('a string longer than fifteen bytes')", $exception->getTraceAsString());
+        } catch (RuntimeException $runtimeException) {
+            self::assertStringContainsString("('a string longer than fifteen bytes')", $runtimeException->getTraceAsString());
 
             return;
         }

@@ -401,9 +401,9 @@ final class LobsTest extends ConformanceTestCase
         try {
             self::rows($connection, 'select binary_value from fx_lobs where id = 4', [], self::options(values: new ValueMapping(lobs: LobMode::Inline)));
             self::fail('A 16 MiB LOB was read inline under an 8 MiB margin.');
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString('Column BINARY_VALUE', $e->getMessage());
-            self::assertStringContainsString('LobMode::Locator', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString('Column BINARY_VALUE', $unsupportedException->getMessage());
+            self::assertStringContainsString('LobMode::Locator', $unsupportedException->getMessage());
         } finally {
             \ini_set('memory_limit', (string) $limit);
         }

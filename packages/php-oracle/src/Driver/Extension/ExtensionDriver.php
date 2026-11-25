@@ -79,8 +79,8 @@ final class ExtensionDriver implements Driver
 
         try {
             return new ExtensionConnection(NativeConnection::connect($pool, $session));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 

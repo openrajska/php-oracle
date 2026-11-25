@@ -263,9 +263,9 @@ final class BindsTest extends ConformanceTestCase
                     // @phpstan-ignore argument.type (the mistake is the point)
                     $connection->execute($sql, $binds, self::options());
                     self::fail('The bind mistake ran.');
-                } catch (UsageException $e) {
-                    self::assertStringContainsString($fix, $e->getMessage());
-                    self::assertSame($sql, $e->sql());
+                } catch (UsageException $usageException) {
+                    self::assertStringContainsString($fix, $usageException->getMessage());
+                    self::assertSame($sql, $usageException->sql());
                 }
             });
         } finally {
@@ -291,8 +291,8 @@ final class BindsTest extends ConformanceTestCase
                 }
             }], self::options());
             self::fail('The bind ran.');
-        } catch (DomainException $e) {
-            self::assertSame($thrown, $e);
+        } catch (DomainException $domainException) {
+            self::assertSame($thrown, $domainException);
         }
 
         self::assertSame(1, self::value($connection, 'select :v from dual', ['v' => 1]));

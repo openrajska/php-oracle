@@ -183,9 +183,9 @@ final class ValuesTest extends ConformanceTestCase
         try {
             $connection->execute('select :v from dual', ['v' => TimestampTz::in($lmt)], self::options());
             self::fail('An offset with seconds was bound.');
-        } catch (UsageException $e) {
-            self::assertStringContainsString("Bind 'v'", $e->getMessage());
-            self::assertStringContainsString('whole minutes', $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringContainsString("Bind 'v'", $usageException->getMessage());
+            self::assertStringContainsString('whole minutes', $usageException->getMessage());
         }
 
         // As the Instant (TSLTZ) or the Wall clock, the same date binds.

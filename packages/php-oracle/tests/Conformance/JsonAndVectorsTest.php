@@ -159,8 +159,8 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         try {
             self::rows($connection, 'select data from fx_json_docs');
             self::fail('An OSON id was read.');
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString('OSON id', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString('OSON id', $unsupportedException->getMessage());
         }
         self::assertSame([['NAME' => 'first']], self::rows($connection, "select json_value(data, '$.name') name from fx_json_docs"));
     }
@@ -182,6 +182,7 @@ final class JsonAndVectorsTest extends ConformanceTestCase
         }, ['kind' => 'serialized', 'nested' => []]];
         yield 'object with public properties' => [new class {
             public int $visible = 1;
+
             protected int $hidden = 2;
         }, ['visible' => 1]];
         yield 'backed enum' => [[Direction::In], ['in']];

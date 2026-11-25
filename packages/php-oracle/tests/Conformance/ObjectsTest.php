@@ -106,7 +106,7 @@ final class ObjectsTest extends ConformanceTestCase
             [[['x' => '1.5', 'y' => -2, 'label' => 'center'], [['x' => 0, 'y' => 0, 'label' => 'a']]]],
             self::rows(
                 $connection,
-                'select center, fx_point_list(fx_point(0, 0, \'a\')) from fx_shapes where id = 1',
+                "select center, fx_point_list(fx_point(0, 0, 'a')) from fx_shapes where id = 1",
                 options: self::options(rowShape: RowShape::List, keyCase: KeyCase::Lower),
             ),
         );
@@ -234,7 +234,7 @@ final class ObjectsTest extends ConformanceTestCase
         self::assertSame([3], $point['n']);
 
         $collections = $connection->execute(
-            'begin fx_object.reverse_numbers(:numbers, :reversed); fx_object.append_tag(:tags, \'z\'); :sum := fx_object.sum_numbers(:numbers); end;',
+            "begin fx_object.reverse_numbers(:numbers, :reversed); fx_object.append_tag(:tags, 'z'); :sum := fx_object.sum_numbers(:numbers); end;",
             [
                 'numbers' => Collection::in('fx_number_list', [1, 2.5, -3]),
                 'reversed' => Collection::out('fx_number_list'),
@@ -550,8 +550,8 @@ final class ObjectsTest extends ConformanceTestCase
                 try {
                     $connection->execute(self::ECHO, ['i' => $bind, 'o' => Number::out()], self::options());
                     self::fail('The bind was accepted.');
-                } catch (UsageException $e) {
-                    self::assertStringStartsWith($message, $e->getMessage());
+                } catch (UsageException $usageException) {
+                    self::assertStringStartsWith($message, $usageException->getMessage());
                 }
             });
         } finally {
@@ -743,8 +743,8 @@ final class ObjectsTest extends ConformanceTestCase
                 self::options(),
             );
             self::fail('The VARRAY took 11 elements.');
-        } catch (QueryException $e) {
-            self::assertSame(22165, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(22165, $queryException->getCode());
         }
     }
 
@@ -773,8 +773,8 @@ final class ObjectsTest extends ConformanceTestCase
         try {
             self::rows($connection, "select $value as v from dual");
             self::fail('The value was read.');
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString($named, $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString($named, $unsupportedException->getMessage());
         }
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }
@@ -821,15 +821,15 @@ final class ObjectsTest extends ConformanceTestCase
         try {
             self::rows($connection, 'select animal from fx_animals where id = 2');
             self::fail('The subtype instance was read.');
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString('FX_ANIMAL holds an instance of an object subtype', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString('FX_ANIMAL holds an instance of an object subtype', $unsupportedException->getMessage());
         }
         try {
             $connection->execute(self::ECHO, ['i' => Struct::in('fx_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => Number::out()], self::options());
             self::fail('The subtype instance was bound.');
-        } catch (UnsupportedException $e) {
-            self::assertStringStartsWith("Bind 'i': ", $e->getMessage());
-            self::assertStringContainsString('FX_DOG holds an instance of an object subtype', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringStartsWith("Bind 'i': ", $unsupportedException->getMessage());
+            self::assertStringContainsString('FX_DOG holds an instance of an object subtype', $unsupportedException->getMessage());
         }
     }
 

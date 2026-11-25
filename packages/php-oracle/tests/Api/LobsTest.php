@@ -212,8 +212,8 @@ final class LobsTest extends TestCase
         try {
             $execution->out('c')->string();
             self::fail('string() read a Lob.');
-        } catch (UsageException $e) {
-            self::assertStringEndsWith('not a string. Read it with lob().', $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringEndsWith('not a string. Read it with lob().', $usageException->getMessage());
         }
     }
 
@@ -269,13 +269,13 @@ final class LobsTest extends TestCase
             $this->connection->select('select text_value, binary_value from fx_lobs where id <= 3 order by id', [], $inline)->all(),
         );
 
-        $execution = $this->connection->run('begin :c := to_clob(\'text\'); end;', ['c' => Clob::out()], $inline);
+        $execution = $this->connection->run("begin :c := to_clob('text'); end;", ['c' => Clob::out()], $inline);
         self::assertSame('text', $execution->out('c')->string());
         try {
             $execution->out('c')->lob();
             self::fail('lob() read a string.');
-        } catch (UsageException $e) {
-            self::assertStringEndsWith('Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().', $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringEndsWith('Under ValueMapping(lobs: LobMode::Inline), a LOB arrives as a string: read it with string().', $usageException->getMessage());
         }
     }
 

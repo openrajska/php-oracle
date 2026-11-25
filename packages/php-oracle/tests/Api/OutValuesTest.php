@@ -58,7 +58,7 @@ final class OutValuesTest extends TestCase
     public function a_block_reads_its_out_and_in_out_binds(): void
     {
         $execution = $this->connection->run(
-            'begin :total := :a + :b; :greeting := :greeting || \', world\'; :ok := :total > 2; end;',
+            "begin :total := :a + :b; :greeting := :greeting || ', world'; :ok := :total > 2; end;",
             ['a' => 1, 'b' => Number::in('2.5'), 'total' => Number::out(), 'greeting' => Varchar::inOut('hello'), 'ok' => Boolean::out()],
         );
 
@@ -73,7 +73,7 @@ final class OutValuesTest extends TestCase
     public function getters_narrow_and_never_convert(): void
     {
         $execution = $this->connection->run(
-            'begin :fraction := 12.5; :integral := 5; :nothing := null; :text := \'5\'; end;',
+            "begin :fraction := 12.5; :integral := 5; :nothing := null; :text := '5'; end;",
             ['fraction' => Number::out(), 'integral' => Number::out(), 'nothing' => Number::out(), 'text' => Varchar::out()],
         );
 
@@ -217,7 +217,7 @@ final class OutValuesTest extends TestCase
     #[Test]
     public function out_with_an_unknown_or_in_only_name_fails(): void
     {
-        $sql = 'begin :total := :a; :Label := \'x\'; end;';
+        $sql = "begin :total := :a; :Label := 'x'; end;";
         $execution = $this->connection->run($sql, ['a' => 1, 'total' => Number::out(), 'Label' => Varchar::inOut(null)]);
 
         $this->assertFails(fn(): OutValue => $execution->out('missing'), "No OUT bind is named 'missing'; they are 'total', 'Label'.", $sql);
@@ -251,10 +251,10 @@ final class OutValuesTest extends TestCase
         try {
             $call();
             self::fail("Expected a UsageException: $message");
-        } catch (UsageException $e) {
-            self::assertStringContainsString($message, $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringContainsString($message, $usageException->getMessage());
             if ($sql !== null) {
-                self::assertSame($sql, $e->sql());
+                self::assertSame($sql, $usageException->sql());
             }
         }
     }

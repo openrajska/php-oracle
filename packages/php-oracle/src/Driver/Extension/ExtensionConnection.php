@@ -35,8 +35,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $result = $this->native->execute($sql, $binds, $this->options($options));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $sql);
         }
 
         return new ExtensionExecution(
@@ -52,8 +52,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $result = $this->native->executeMany($sql, $rows, $this->options($options));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $sql);
         }
 
         return new ExtensionArrayDml($result['rowCount'], ExtensionCursor::handlesPerRow($result['outValues'], $sql));
@@ -63,8 +63,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $this->native->commit();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 
@@ -72,8 +72,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $this->native->rollback();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 
@@ -81,8 +81,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $this->native->trace(ExtensionDriver::tracing($tracing));
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 
@@ -90,8 +90,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             return $this->native->serverVersion();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 
@@ -99,8 +99,8 @@ final class ExtensionConnection implements DriverConnection
     {
         try {
             $this->native->close();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException);
         }
     }
 

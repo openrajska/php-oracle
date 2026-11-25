@@ -150,8 +150,8 @@ final readonly class Call
     {
         try {
             return $driver->execute($sql, $binds, $options);
-        } catch (OracleException $e) {
-            throw $this->named($e);
+        } catch (OracleException $oracleException) {
+            throw $this->named($oracleException);
         }
     }
 

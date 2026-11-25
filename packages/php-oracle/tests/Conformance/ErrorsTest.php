@@ -60,11 +60,11 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $this->connect()->execute($sql, [], self::options());
             self::fail('The duplicate was inserted.');
-        } catch (UniqueViolationException $e) {
-            self::assertSame(1, $e->getCode());
-            self::assertStringStartsWith('ORA-00001', $e->getMessage());
-            self::assertSame($sql, $e->sql());
-            self::assertNull($e->call());
+        } catch (UniqueViolationException $uniqueViolationException) {
+            self::assertSame(1, $uniqueViolationException->getCode());
+            self::assertStringStartsWith('ORA-00001', $uniqueViolationException->getMessage());
+            self::assertSame($sql, $uniqueViolationException->sql());
+            self::assertNull($uniqueViolationException->call());
         }
     }
 
@@ -104,10 +104,10 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $connection->execute($insert, ['id' => 39002, 'code' => 'zq39secret'], self::options(autocommit: false));
             self::fail('The duplicate was inserted.');
-        } catch (UniqueViolationException $e) {
-            self::assertStringStartsWith('ORA-00001', $e->getMessage());
-            self::assertStringNotContainsString('ORA-03301', $e->getMessage());
-            self::assertStringNotContainsString('zq39secret', $e->getMessage());
+        } catch (UniqueViolationException $uniqueViolationException) {
+            self::assertStringStartsWith('ORA-00001', $uniqueViolationException->getMessage());
+            self::assertStringNotContainsString('ORA-03301', $uniqueViolationException->getMessage());
+            self::assertStringNotContainsString('zq39secret', $uniqueViolationException->getMessage());
         } finally {
             $connection->rollback();
         }
@@ -171,10 +171,10 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $this->connect(...$fields);
             self::fail('A second Session came out of a Pool of one.');
-        } catch (PoolExhaustedException $e) {
-            self::assertSame(0, $e->getCode());
-            self::assertStringContainsString('acquireTimeout', $e->getMessage());
-            self::assertNull($e->sql());
+        } catch (PoolExhaustedException $poolExhaustedException) {
+            self::assertSame(0, $poolExhaustedException->getCode());
+            self::assertStringContainsString('acquireTimeout', $poolExhaustedException->getMessage());
+            self::assertNull($poolExhaustedException->sql());
         }
     }
 
@@ -188,10 +188,10 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $connection->execute($sql, [], self::options(timeout: 0.5))->cursor()?->fetchBatch();
             self::fail('The query finished within its Call timeout.');
-        } catch (TimeoutException $e) {
-            self::assertSame(0, $e->getCode());
-            self::assertSame('Call timeout of 500 ms exceeded.', $e->getMessage());
-            self::assertSame($sql, $e->sql());
+        } catch (TimeoutException $timeoutException) {
+            self::assertSame(0, $timeoutException->getCode());
+            self::assertSame('Call timeout of 500 ms exceeded.', $timeoutException->getMessage());
+            self::assertSame($sql, $timeoutException->sql());
         }
         self::assertLessThan(5, microtime(true) - $started, 'The break stopped the query.');
 
@@ -211,14 +211,14 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $connection->execute('begin fx_pool.sleep(3); end;', [], self::options(timeout: 0.5));
             self::fail('The sleep finished within its Call timeout.');
-        } catch (TimeoutException $e) {
-            self::assertStringStartsWith('Call timeout of 500 ms exceeded', $e->getMessage());
+        } catch (TimeoutException $timeoutException) {
+            self::assertStringStartsWith('Call timeout of 500 ms exceeded', $timeoutException->getMessage());
         }
         try {
             $connection->execute('select 1 from dual', [], self::options());
             self::fail('A Broken Connection ran a statement.');
-        } catch (ConnectionLostException $later) {
-            self::assertSame('Connection is broken: ' . $e->getMessage(), $later->getMessage());
+        } catch (ConnectionLostException $connectionLostException) {
+            self::assertSame('Connection is broken: ' . $timeoutException->getMessage(), $connectionLostException->getMessage());
         }
         $connection->close();
 
@@ -272,15 +272,16 @@ final class ErrorsTest extends ConformanceTestCase
         try {
             $connection->execute('/* oracledb: panic */ select 1 from dual', [], self::options());
             self::markTestSkipped('The panic hook exists in debug builds of the Extension only.');
-        } catch (ConnectionLostException $e) {
-            self::assertSame(0, $e->getCode());
-            self::assertStringStartsWith('internal error in oracledb: ', $e->getMessage());
+        } catch (ConnectionLostException $connectionLostException) {
+            self::assertSame(0, $connectionLostException->getCode());
+            self::assertStringStartsWith('internal error in oracledb: ', $connectionLostException->getMessage());
+            $panic = $connectionLostException->getMessage();
         }
         try {
             $connection->execute('select 1 from dual', [], self::options());
             self::fail('A Broken Connection ran a statement.');
-        } catch (ConnectionLostException $later) {
-            self::assertSame('Connection is broken: ' . $e->getMessage(), $later->getMessage());
+        } catch (ConnectionLostException $connectionLostException) {
+            self::assertSame('Connection is broken: ' . $panic, $connectionLostException->getMessage());
         }
         $connection->close();
 

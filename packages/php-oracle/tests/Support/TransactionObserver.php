@@ -78,9 +78,9 @@ final readonly class TransactionObserver
             $this->session->select('select id from fx_tx_rows where id = :id for update nowait', ['id' => $id]);
 
             return false;
-        } catch (RuntimeException $e) {
-            if ($e->getCode() !== 54) {
-                throw $e;
+        } catch (RuntimeException $runtimeException) {
+            if ($runtimeException->getCode() !== 54) {
+                throw $runtimeException;
             }
 
             return true;

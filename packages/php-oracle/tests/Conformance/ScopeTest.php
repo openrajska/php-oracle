@@ -78,10 +78,10 @@ final class ScopeTest extends ConformanceTestCase
             try {
                 $connection->execute('insert into fx_long_rows (id, text) values (1000, :v)', ['v' => $bind], self::options(autocommit: false));
                 self::fail('A LONG bind over 32767 bytes ran.');
-            } catch (UnsupportedException $e) {
-                self::assertStringContainsString("Bind 'v'", $e->getMessage());
-                self::assertStringContainsString($fix, $e->getMessage());
-                self::assertStringContainsString('more than 32767 bytes', $e->getMessage());
+            } catch (UnsupportedException $unsupportedException) {
+                self::assertStringContainsString("Bind 'v'", $unsupportedException->getMessage());
+                self::assertStringContainsString($fix, $unsupportedException->getMessage());
+                self::assertStringContainsString('more than 32767 bytes', $unsupportedException->getMessage());
             }
         });
 
@@ -155,10 +155,10 @@ final class ScopeTest extends ConformanceTestCase
         try {
             self::rows($connection, 'select sys.anydata.convertvarchar2(:v) v from dual', ['v' => 'secret']);
             self::fail('An ANYDATA value was fetched.');
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString('Column V', $e->getMessage());
-            self::assertStringContainsString('SYS.ANYDATA', $e->getMessage());
-            self::assertStringNotContainsString('secret', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString('Column V', $unsupportedException->getMessage());
+            self::assertStringContainsString('SYS.ANYDATA', $unsupportedException->getMessage());
+            self::assertStringNotContainsString('secret', $unsupportedException->getMessage());
         }
 
         foreach (['IN' => Struct::in('SYS.ANYDATA', []), 'OUT' => Struct::out('sys.anydata')] as $direction => $bind) {
@@ -178,9 +178,9 @@ final class ScopeTest extends ConformanceTestCase
         try {
             $rows = $cursor->fetchBatch();
             self::fail('A value was fetched: ' . var_export($rows, true));
-        } catch (UnsupportedException $e) {
-            self::assertStringContainsString('Column V', $e->getMessage());
-            self::assertStringContainsString($type, $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertStringContainsString('Column V', $unsupportedException->getMessage());
+            self::assertStringContainsString($type, $unsupportedException->getMessage());
         } finally {
             $cursor->close();
         }

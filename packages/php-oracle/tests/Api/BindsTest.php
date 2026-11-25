@@ -75,7 +75,7 @@ final class BindsTest extends TestCase
     #[DataProvider('rejectedValues')]
     public function a_value_a_typed_bind_rejects_never_appears_in_its_exception(Closure $factory): void
     {
-        self::assertSame('0', \ini_get('zend.exception_ignore_args'), 'the suite keeps exceptions\' arguments');
+        self::assertSame('0', \ini_get('zend.exception_ignore_args'), "the suite keeps exceptions' arguments");
         $secret = 'zq32secret';
 
         try {
@@ -91,7 +91,7 @@ final class BindsTest extends TestCase
     #[Test]
     public function a_bound_value_never_appears_in_a_run_error(): void
     {
-        self::assertSame('0', \ini_get('zend.exception_ignore_args'), 'the suite keeps exceptions\' arguments');
+        self::assertSame('0', \ini_get('zend.exception_ignore_args'), "the suite keeps exceptions' arguments");
         $secret = 'zq32secret';
         $calls = [
             'server error' => fn(): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),

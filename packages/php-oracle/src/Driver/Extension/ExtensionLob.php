@@ -23,8 +23,8 @@ final readonly class ExtensionLob implements DriverLob
     {
         try {
             return LobType::from($this->native->type());
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 
@@ -32,8 +32,8 @@ final readonly class ExtensionLob implements DriverLob
     {
         try {
             return $this->native->size();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 
@@ -41,8 +41,8 @@ final readonly class ExtensionLob implements DriverLob
     {
         try {
             return $this->native->readChunk();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 
@@ -50,8 +50,8 @@ final readonly class ExtensionLob implements DriverLob
     {
         try {
             $this->native->close();
-        } catch (NativeException $e) {
-            throw ExceptionTranslator::translate($e, $this->sql);
+        } catch (NativeException $nativeException) {
+            throw ExceptionTranslator::translate($nativeException, $this->sql);
         }
     }
 }

@@ -223,8 +223,8 @@ final class RefCursorsTest extends TestCase
         try {
             $cursor->all();
             self::fail('An unopened REF CURSOR was read.');
-        } catch (QueryException $e) {
-            self::assertSame(1001, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(1001, $queryException->getCode());
         }
     }
 
@@ -242,8 +242,8 @@ final class RefCursorsTest extends TestCase
                     try {
                         $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind]);
                         self::fail("A Cursor bound back as $how.");
-                    } catch (UnsupportedException $e) {
-                        self::assertStringContainsString("Bind 'c': passing a Cursor back to the server is not supported yet", $e->getMessage(), $how);
+                    } catch (UnsupportedException $unsupportedException) {
+                        self::assertStringContainsString("Bind 'c': passing a Cursor back to the server is not supported yet", $unsupportedException->getMessage(), $how);
                     }
                 });
                 self::assertSame(0, $trips, $how);
@@ -264,14 +264,14 @@ final class RefCursorsTest extends TestCase
         try {
             $execution->out('n')->cursor();
             self::fail('cursor() read a NUMBER.');
-        } catch (UsageException $e) {
-            self::assertSame("OUT bind 'n' holds int, not a Cursor. Read it with int().", $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame("OUT bind 'n' holds int, not a Cursor. Read it with int().", $usageException->getMessage());
         }
         try {
             $execution->out('c')->int();
             self::fail('int() read a REF CURSOR.');
-        } catch (UsageException $e) {
-            self::assertSame("OUT bind 'c' holds Rajska\\Oracle\\Cursor, not an int. Read it with cursor().", $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame("OUT bind 'c' holds Rajska\\Oracle\\Cursor, not an int. Read it with cursor().", $usageException->getMessage());
         }
         self::assertSame(1, self::nested($execution->out('c')->value())->value());
     }

@@ -276,8 +276,8 @@ final class ArrayDmlTest extends ConformanceTestCase
             try {
                 self::many($connection, $sql, $rows);
                 self::fail('The Array DML ran.');
-            } catch (UsageException $e) {
-                self::assertSame($message, $e->getMessage());
+            } catch (UsageException $usageException) {
+                self::assertSame($message, $usageException->getMessage());
             }
         });
 
@@ -409,8 +409,8 @@ final class ArrayDmlTest extends ConformanceTestCase
         try {
             self::many($connection, $block, [$row(1), $changed]);
             self::fail('The Object type changed down the column.');
-        } catch (UsageException $e) {
-            self::assertStringStartsWith("Row 1, bind 'point': Struct::inOut('fx_polygon'), but row 0 made the column Struct::inOut('fx_point');", $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringStartsWith("Row 1, bind 'point': Struct::inOut('fx_polygon'), but row 0 made the column Struct::inOut('fx_point');", $usageException->getMessage());
         }
     }
 
@@ -454,9 +454,9 @@ final class ArrayDmlTest extends ConformanceTestCase
         try {
             self::many($connection, self::INSERT, $rows);
             self::fail('The rows were inserted.');
-        } catch (QueryException $e) {
-            self::assertNotInstanceOf(ArrayDmlException::class, $e);
-            self::assertSame('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.', $e->getMessage());
+        } catch (QueryException $queryException) {
+            self::assertNotInstanceOf(ArrayDmlException::class, $queryException);
+            self::assertSame('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.', $queryException->getMessage());
         }
 
         self::assertSame(0, self::value($connection, 'select count(*) from fx_batch_rows'));
@@ -486,8 +486,8 @@ final class ArrayDmlTest extends ConformanceTestCase
             try {
                 self::many($connection, 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
                 self::fail('The Array DML ran.');
-            } catch (UnsupportedException $e) {
-                self::assertSame('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.', $e->getMessage());
+            } catch (UnsupportedException $unsupportedException) {
+                self::assertSame('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.', $unsupportedException->getMessage());
             }
         });
 
@@ -517,8 +517,8 @@ final class ArrayDmlTest extends ConformanceTestCase
     {
         try {
             $call();
-        } catch (ArrayDmlException $e) {
-            return $e;
+        } catch (ArrayDmlException $arrayDmlException) {
+            return $arrayDmlException;
         }
         self::fail('No ArrayDmlException.');
     }

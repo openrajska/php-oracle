@@ -443,8 +443,8 @@ final class NativeSurfaceTest extends ConformanceTestCase
     {
         try {
             $call();
-        } catch (NativeException $e) {
-            return $e;
+        } catch (NativeException $nativeException) {
+            return $nativeException;
         }
         self::fail('The native call did not throw.');
     }

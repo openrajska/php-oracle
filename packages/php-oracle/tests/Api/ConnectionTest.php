@@ -90,9 +90,9 @@ final class ConnectionTest extends TestCase
         try {
             Oracle::connect(TestDatabase::fromEnvironment()->config(password: 'not-the-password'));
             self::fail('connect() succeeded with a wrong password.');
-        } catch (ConnectionException $e) {
-            self::assertSame(1017, $e->getCode());
-            self::assertStringStartsWith('ORA-01017', $e->getMessage());
+        } catch (ConnectionException $connectionException) {
+            self::assertSame(1017, $connectionException->getCode());
+            self::assertStringStartsWith('ORA-01017', $connectionException->getMessage());
         }
     }
 
@@ -104,9 +104,9 @@ final class ConnectionTest extends TestCase
         try {
             $this->connection->run('select 1 from dual');
             self::fail('run() after close() succeeded.');
-        } catch (UsageException $e) {
-            self::assertSame('The Connection is closed.', $e->getMessage());
-            self::assertSame('select 1 from dual', $e->sql());
+        } catch (UsageException $usageException) {
+            self::assertSame('The Connection is closed.', $usageException->getMessage());
+            self::assertSame('select 1 from dual', $usageException->sql());
         }
         $this->connection->close();
     }

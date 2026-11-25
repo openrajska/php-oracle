@@ -76,8 +76,8 @@ final class TransactionsTest extends ConformanceTestCase
                 self::options(),
             );
             self::fail('The block did not fail.');
-        } catch (QueryException $e) {
-            self::assertSame(20043, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(20043, $queryException->getCode());
         }
 
         self::assertSame([['ID' => '1', 'NOTE' => null]], self::$observer->select('select id, note from fx_tx_rows'));
@@ -134,8 +134,8 @@ final class TransactionsTest extends ConformanceTestCase
         try {
             $cursor->fetchBatch();
             self::fail('The second fetch did not fail.');
-        } catch (QueryException $e) {
-            self::assertSame(1002, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(1002, $queryException->getCode());
         } finally {
             $cursor->close();
         }

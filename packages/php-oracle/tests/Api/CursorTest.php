@@ -313,8 +313,8 @@ final class CursorTest extends TestCase
         try {
             $cursor->first();
             self::fail('An XMLTYPE value was read.');
-        } catch (UnsupportedException $e) {
-            self::assertSame('Column DOC: XMLTYPE values cannot be fetched yet.', $e->getMessage());
+        } catch (UnsupportedException $unsupportedException) {
+            self::assertSame('Column DOC: XMLTYPE values cannot be fetched yet.', $unsupportedException->getMessage());
         }
 
         self::assertSame(
@@ -409,8 +409,8 @@ final class CursorTest extends TestCase
                 $served[] = $row;
             }
             self::fail('foreach after the Connection closed succeeded.');
-        } catch (UsageException $e) {
-            self::assertSame('The Connection is closed.', $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame('The Connection is closed.', $usageException->getMessage());
         }
         self::assertSame([], $served, 'No row of the batch is served after the Connection closed.');
         $this->assertClosed($cursor);

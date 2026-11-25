@@ -90,8 +90,8 @@ final class CallsTest extends TestCase
                 'io_text' => Varchar::inOut('hi'),
             ]);
             self::fail('A name with a NUL byte ran.');
-        } catch (UsageException $e) {
-            self::assertStringStartsWith("Call name 'fx_call.echo\0p_num' is not valid", $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringStartsWith("Call name 'fx_call.echo\0p_num' is not valid", $usageException->getMessage());
         }
     }
 
@@ -105,10 +105,10 @@ final class CallsTest extends TestCase
         try {
             $execution->rows();
             self::fail('A procedure gave rows.');
-        } catch (UsageException $e) {
-            self::assertStringStartsWith('The statement is not a query', $e->getMessage());
-            self::assertSame('BEGIN fx_call.grow(io_text => :b1, p_length => :b2); END;', $e->sql());
-            self::assertSame('fx_call.grow', $e->call());
+        } catch (UsageException $usageException) {
+            self::assertStringStartsWith('The statement is not a query', $usageException->getMessage());
+            self::assertSame('BEGIN fx_call.grow(io_text => :b1, p_length => :b2); END;', $usageException->sql());
+            self::assertSame('fx_call.grow', $usageException->call());
         }
         self::assertSame('aaa', $execution->out('io_text')->string());
     }
@@ -183,10 +183,10 @@ final class CallsTest extends TestCase
         try {
             $this->connection->function('fx_object.split_csv', ['p_csv' => 'a'])->struct('fx_string_varray');
             self::fail('struct() read a Collection.');
-        } catch (UsageException $e) {
-            self::assertStringStartsWith('The return value of fx_object.split_csv: ', $e->getMessage());
-            self::assertStringEndsWith('.FX_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.', $e->getMessage());
-            self::assertSame('fx_object.split_csv', $e->call());
+        } catch (UsageException $usageException) {
+            self::assertStringStartsWith('The return value of fx_object.split_csv: ', $usageException->getMessage());
+            self::assertStringEndsWith('.FX_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.', $usageException->getMessage());
+            self::assertSame('fx_object.split_csv', $usageException->call());
         }
     }
 
@@ -278,10 +278,10 @@ final class CallsTest extends TestCase
         try {
             $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'P_Label' => 'x', 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)])->out('nothing');
             self::fail('out() found a parameter that is not there.');
-        } catch (UsageException $e) {
-            self::assertSame("No OUT bind is named 'nothing'; they are 'o_doubled', 'o_label', 'io_text'.", $e->getMessage());
-            self::assertSame('BEGIN fx_call.echo(p_num => :b1, P_Label => :b2, o_doubled => :b3, o_label => :b4, io_text => :b5); END;', $e->sql());
-            self::assertSame('fx_call.echo', $e->call());
+        } catch (UsageException $usageException) {
+            self::assertSame("No OUT bind is named 'nothing'; they are 'o_doubled', 'o_label', 'io_text'.", $usageException->getMessage());
+            self::assertSame('BEGIN fx_call.echo(p_num => :b1, P_Label => :b2, o_doubled => :b3, o_label => :b4, io_text => :b5); END;', $usageException->sql());
+            self::assertSame('fx_call.echo', $usageException->call());
         }
     }
 
@@ -416,10 +416,10 @@ final class CallsTest extends TestCase
                     try {
                         $call();
                         self::fail("'$name' was accepted.");
-                    } catch (UsageException $e) {
-                        self::assertStringContainsString($message, $e->getMessage());
-                        self::assertSame($name, $e->call());
-                        self::assertNull($e->sql());
+                    } catch (UsageException $usageException) {
+                        self::assertStringContainsString($message, $usageException->getMessage());
+                        self::assertSame($name, $usageException->call());
+                        self::assertNull($usageException->sql());
                     }
                 });
                 self::assertSame(0, $trips);

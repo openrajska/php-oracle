@@ -227,8 +227,8 @@ final class TypedBindsTest extends ConformanceTestCase
         try {
             $bind();
             self::fail('The interval was accepted.');
-        } catch (UsageException $e) {
-            self::assertStringStartsWith($message, $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertStringStartsWith($message, $usageException->getMessage());
         }
     }
 
@@ -395,8 +395,8 @@ final class TypedBindsTest extends ConformanceTestCase
         try {
             $connection->execute("select cast('x' as varchar2(4001)) from dual", [], self::options());
             self::fail('The database has max_string_size = EXTENDED; this case needs STANDARD.');
-        } catch (QueryException $e) {
-            self::assertSame(910, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(910, $queryException->getCode());
         }
 
         foreach ([4000, 4001, 32767] as $bytes) {
@@ -417,8 +417,8 @@ final class TypedBindsTest extends ConformanceTestCase
         try {
             $connection->execute('insert into fx_bind_rows (name) values (:v)', ['v' => Varchar::in(str_repeat('y', 4001))], self::options());
             self::fail('A 4001-byte value went into a 4000-byte column.');
-        } catch (QueryException $e) {
-            self::assertSame(12899, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(12899, $queryException->getCode());
         }
     }
 
@@ -665,9 +665,9 @@ final class TypedBindsTest extends ConformanceTestCase
                 try {
                     $connection->execute('begin :v := :v; end;', ['v' => $bind], self::options());
                     self::fail('The bind mistake ran.');
-                } catch (UsageException $e) {
-                    self::assertStringContainsString("Bind 'v'", $e->getMessage());
-                    self::assertStringContainsString($fix, $e->getMessage());
+                } catch (UsageException $usageException) {
+                    self::assertStringContainsString("Bind 'v'", $usageException->getMessage());
+                    self::assertStringContainsString($fix, $usageException->getMessage());
                 }
             });
         } finally {

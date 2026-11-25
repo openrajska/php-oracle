@@ -93,8 +93,8 @@ final class ImplicitResultsTest extends TestCase
         try {
             $this->connection->run("begin fx_cursor.implicit_results(3); raise_application_error(-20056, 'after the results'); end;");
             self::fail('A RAISE after RETURN_RESULT did not throw.');
-        } catch (QueryException $e) {
-            self::assertSame(20056, $e->getCode());
+        } catch (QueryException $queryException) {
+            self::assertSame(20056, $queryException->getCode());
         }
         self::assertSame(1, $this->connection->select('select 1 from dual')->value());
     }

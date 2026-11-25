@@ -120,6 +120,7 @@ final class ArrayDmlTest extends TestCase
     {
         $this->connection->begin();
         $this->connection->run('insert into fx_tx_rows (id) values (1)');
+
         $rows = $this->valid(8);
         $rows[3]['id'] = 1;
         $rows[5]['code'] = null;
@@ -128,11 +129,11 @@ final class ArrayDmlTest extends TestCase
         try {
             $this->connection->runMany(self::INSERT, $rows);
             self::fail('The bad rows were inserted.');
-        } catch (ArrayDmlException $e) {
-            self::assertSame(1, $e->getCode());
-            self::assertSame(self::INSERT, $e->sql());
-            self::assertStringStartsWith('3 of 8 rows failed; first: row 3: ORA-00001', $e->getMessage());
-            self::assertSame([[3, 1], [5, 1400], [7, 2290]], array_map(static fn(RowFailure $row): array => [$row->index, $row->code], $e->rows()));
+        } catch (ArrayDmlException $arrayDmlException) {
+            self::assertSame(1, $arrayDmlException->getCode());
+            self::assertSame(self::INSERT, $arrayDmlException->sql());
+            self::assertStringStartsWith('3 of 8 rows failed; first: row 3: ORA-00001', $arrayDmlException->getMessage());
+            self::assertSame([[3, 1], [5, 1400], [7, 2290]], array_map(static fn(RowFailure $row): array => [$row->index, $row->code], $arrayDmlException->rows()));
         }
         $this->connection->runMany(self::INSERT, $this->valid(2));
         self::assertSame(0, $this->committed());

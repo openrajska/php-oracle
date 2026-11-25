@@ -194,9 +194,9 @@ final class Connection
         $this->inCallback = true;
         try {
             $result = $callback($this);
-        } catch (Throwable $e) {
+        } catch (Throwable $throwable) {
             $this->inCallback = false;
-            $this->rollBackAfter($e);
+            $this->rollBackAfter($throwable);
         }
         $this->inCallback = false;
         $this->commit();
@@ -407,15 +407,15 @@ final class Connection
             if (!$this->state->released) {
                 $this->driver->rollback();
             }
-        } catch (Throwable $failure) {
+        } catch (Throwable $throwable) {
             $last = $e;
-            while ($last !== $failure && ($previous = $last->getPrevious()) instanceof Throwable) {
+            while ($last !== $throwable && ($previous = $last->getPrevious()) instanceof Throwable) {
                 $last = $previous;
             }
-            if ($last !== $failure) {
+            if ($last !== $throwable) {
                 // Throwable has no setter: `previous` is private to Exception and to Error.
                 new ReflectionProperty($last instanceof Exception ? Exception::class : Error::class, 'previous')
-                    ->setValue($last, $failure);
+                    ->setValue($last, $throwable);
             }
         } finally {
             $this->inTransaction = false;

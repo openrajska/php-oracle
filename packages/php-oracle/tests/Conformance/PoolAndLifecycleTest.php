@@ -217,9 +217,9 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
             // it over, while a Pool of its own logs on and fails.
             $this->connect(...['password' => 'not-the-password'] + $fields);
             self::fail('A wrong password got a Session.');
-        } catch (ConnectionException $e) {
-            self::assertSame(ConnectionException::class, $e::class);
-            self::assertSame(1017, $e->getCode());
+        } catch (ConnectionException $connectionException) {
+            self::assertSame(ConnectionException::class, $connectionException::class);
+            self::assertSame(1017, $connectionException->getCode());
         }
     }
 
@@ -326,8 +326,8 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         try {
             $call($connection);
             self::fail('A call after close() succeeded.');
-        } catch (UsageException $e) {
-            self::assertSame('The Connection is closed.', $e->getMessage());
+        } catch (UsageException $usageException) {
+            self::assertSame('The Connection is closed.', $usageException->getMessage());
         }
         $connection->close();
     }
@@ -337,6 +337,7 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
     {
         $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config());
         $connection->execute("update fx_items set name = 'uncommitted' where id = 42", [], self::options(autocommit: false));
+
         $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], self::options(fetchSize: 2, autocommit: false))->cursor();
         self::assertNotNull($cursor);
         self::assertSame([['N' => 1], ['N' => 2]], $cursor->fetchBatch());
@@ -400,8 +401,8 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
         try {
             self::value($connection, 'select 1 from dual');
             self::fail('A call on a killed Session succeeded.');
-        } catch (ConnectionLostException $lost) {
-            self::assertStringStartsNotWith('Connection is broken: ', $lost->getMessage());
+        } catch (ConnectionLostException $connectionLostException) {
+            self::assertStringStartsNotWith('Connection is broken: ', $connectionLostException->getMessage());
         }
         foreach ([
             'execute()' => static fn(): DriverExecution => $connection->execute('select 1 from dual', [], self::options()),
@@ -415,8 +416,8 @@ final class PoolAndLifecycleTest extends ConformanceTestCase
                 $call();
                 self::fail("$what on a Broken Connection succeeded.");
             } catch (ConnectionLostException $later) {
-                self::assertSame($lost->getCode(), $later->getCode(), $what);
-                self::assertSame('Connection is broken: ' . $lost->getMessage(), $later->getMessage(), $what);
+                self::assertSame($connectionLostException->getCode(), $later->getCode(), $what);
+                self::assertSame('Connection is broken: ' . $connectionLostException->getMessage(), $later->getMessage(), $what);
             }
         }
 

@@ -120,9 +120,9 @@ final class RefCursorsTest extends ConformanceTestCase
         try {
             $cursor->fetchBatch();
             self::fail('An unopened REF CURSOR was read.');
-        } catch (QueryException $e) {
-            self::assertSame(1001, $e->getCode());
-            self::assertStringStartsWith('ORA-01001', $e->getMessage());
+        } catch (QueryException $queryException) {
+            self::assertSame(1001, $queryException->getCode());
+            self::assertStringStartsWith('ORA-01001', $queryException->getMessage());
         }
         self::assertSame(1, self::value($connection, 'select 1 from dual'));
     }

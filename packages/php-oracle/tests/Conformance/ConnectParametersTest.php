@@ -157,10 +157,10 @@ final class ConnectParametersTest extends ConformanceTestCase
         try {
             $this->connect(dsn: self::NOWHERE, connectTimeout: 1.5, standalone: $standalone);
             self::fail('connect() to an unroutable host succeeded.');
-        } catch (ConnectionException $e) {
+        } catch (ConnectionException $connectionException) {
             $elapsed = microtime(true) - $started;
-            self::assertSame(12170, $e->getCode(), $e->getMessage());
-            self::assertStringContainsString('connectTimeout of 1500 ms', $e->getMessage());
+            self::assertSame(12170, $connectionException->getCode(), $connectionException->getMessage());
+            self::assertStringContainsString('connectTimeout of 1500 ms', $connectionException->getMessage());
             self::assertGreaterThanOrEqual(1.4, $elapsed);
             self::assertLessThan(4.0, $elapsed);
         }
@@ -233,8 +233,8 @@ final class ConnectParametersTest extends ConformanceTestCase
         try {
             $this->connect(dsn: $dsn, standalone: true);
             self::fail('TLS to a private CA connected without its wallet.');
-        } catch (ConnectionException $e) {
-            self::assertStringContainsString('UnknownIssuer', $e->getMessage());
+        } catch (ConnectionException $connectionException) {
+            self::assertStringContainsString('UnknownIssuer', $connectionException->getMessage());
         }
 
         $parts = ConnectTargets::parts($dsn);
@@ -249,8 +249,8 @@ final class ConnectParametersTest extends ConformanceTestCase
                 standalone: true,
             );
             self::fail('TLS connected to a host name the certificate does not name.');
-        } catch (ConnectionException $e) {
-            self::assertStringContainsString('certificate not valid for name', $e->getMessage());
+        } catch (ConnectionException $connectionException) {
+            self::assertStringContainsString('certificate not valid for name', $connectionException->getMessage());
         }
     }
 
@@ -332,9 +332,9 @@ final class ConnectParametersTest extends ConformanceTestCase
             $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41a'], self::options(autocommit: false));
             $connection->execute('insert into fx_batch_rows (id, code, qty) values (:id, :code, 1)', ['id' => 41, 'code' => 'DRCP41b'], self::options(autocommit: false));
             self::fail('The duplicate insert succeeded.');
-        } catch (UniqueViolationException $e) {
-            self::assertStringNotContainsString('ORA-03301', $e->getMessage());
-            self::assertStringNotContainsString('DRCP41', $e->getMessage());
+        } catch (UniqueViolationException $uniqueViolationException) {
+            self::assertStringNotContainsString('ORA-03301', $uniqueViolationException->getMessage());
+            self::assertStringNotContainsString('DRCP41', $uniqueViolationException->getMessage());
         }
     }
 
@@ -457,8 +457,8 @@ final class ConnectParametersTest extends ConformanceTestCase
     {
         try {
             $this->driver()->connect($config)->close();
-        } catch (Throwable $e) {
-            return $e;
+        } catch (Throwable $throwable) {
+            return $throwable;
         }
         self::fail('connect() succeeded.');
     }
@@ -469,10 +469,10 @@ final class ConnectParametersTest extends ConformanceTestCase
         try {
             $this->connect(...['dsn' => $dsn, 'standalone' => true, ...$fields]);
             self::fail("connect() accepted the dsn $dsn.");
-        } catch (ConfigurationException $e) {
+        } catch (ConfigurationException $configurationException) {
             self::assertLessThan(1.0, microtime(true) - $started, 'The check waited for the network.');
 
-            return $e;
+            return $configurationException;
         }
     }
 
