@@ -110,7 +110,7 @@ jobs:
           # oci8 only for the test harness's IndependentSession, never a Backend.
           extensions: oci8
           tools: composer
-          coverage: none
+          coverage: xdebug
         env:
           phpts: ${{ matrix.ts }}
 
@@ -193,16 +193,9 @@ jobs:
         # Composer runs without the Extension loaded (spec #32 §15).
         run: composer install --no-interaction --no-progress --ignore-platform-req=ext-oracledb
 
-      - name: Code style and refactoring
-        working-directory: packages/php-oracle
-        run: |
-          composer format:check
-          composer refactor:check
+      - name: Load the Extension
+        run: echo "extension=$EXTENSION" | sudo tee "$(php -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')/oracledb.ini"
 
-      - name: Static analysis
+      - name: Core checks and suite
         working-directory: packages/php-oracle
-        run: composer analyse
-
-      - name: Core suite
-        working-directory: packages/php-oracle
-        run: php -d extension="$EXTENSION" vendor/bin/phpunit
+        run: composer test
