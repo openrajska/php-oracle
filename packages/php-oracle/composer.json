@@ -47,7 +47,7 @@
             "pint --parallel --test",
             "rector --dry-run"
         ],
-        "test:unit": "XDEBUG_MODE=\"coverage\" pest --parallel --coverage --exactly=100.0",
+        "test:unit": "XDEBUG_MODE=\"coverage\" pest --parallel --processes=4 --coverage --exactly=100.0",
         "test:types": [
             "phpstan --memory-limit=-1"
         ],

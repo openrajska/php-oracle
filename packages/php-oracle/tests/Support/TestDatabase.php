@@ -9,18 +9,21 @@ use RuntimeException;
 use SensitiveParameter;
 
 /**
- * Where the suites find Oracle: the ORACLE_CONNECT_STRING, ORACLE_USER and
- * ORACLE_PASSWORD environment variables (ddev's web container sets them).
- * The user owns the fixtures (fixtures/sql/install.sql) and has the grants
- * of fixtures/sql/grants.sql.
+ * Where the suites find Oracle: ORACLE_CONNECT_STRING, and the admin user the
+ * image ships (ORACLE_ADMIN_USER, ORACLE_ADMIN_PASSWORD; ddev and CI set
+ * them). Each test process works in a schema of its own, `test` or
+ * `test_<TEST_TOKEN>` under `--parallel`, that TestSchema prepares on the
+ * process's first call.
  */
-final readonly class TestDatabase
+final class TestDatabase
 {
+    private static self | null $current = null;
+
     private function __construct(
-        public string $connectString,
-        public string $user,
+        public readonly string $connectString,
+        public readonly string $user,
         #[SensitiveParameter]
-        public string $password,
+        public readonly string $password,
     ) {
     }
 
@@ -41,11 +44,15 @@ final readonly class TestDatabase
 
     public static function fromEnvironment(): self
     {
-        return new self(
-            self::variable('ORACLE_CONNECT_STRING'),
-            self::variable('ORACLE_USER'),
-            self::variable('ORACLE_PASSWORD'),
-        );
+        if (self::$current instanceof self) {
+            return self::$current;
+        }
+        $connectString = self::variable('ORACLE_CONNECT_STRING');
+        $token = getenv('TEST_TOKEN');
+        $schema = \is_string($token) && $token !== '' ? "test_$token" : 'test';
+        TestSchema::prepare($connectString, self::variable('ORACLE_ADMIN_USER'), self::variable('ORACLE_ADMIN_PASSWORD'), $schema);
+
+        return self::$current = new self($connectString, $schema, $schema);
     }
 
     private static function variable(string $name): string
