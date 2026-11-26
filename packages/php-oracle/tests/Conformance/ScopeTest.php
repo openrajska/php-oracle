@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\ScopeTest;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\Bindable;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
@@ -41,7 +41,7 @@ test('long and long raw writes up to 32767 bytes round trip', function (): void 
  * Writing more than 32767 bytes into a LONG or LONG RAW column takes a
  * LONG bind, which is later.
  *
- * @return iterable<string, array{Bind, string}>
+ * @return iterable<string, array{Bindable, string}>
  */
 dataset('longBinds', function () {
     yield 'Varchar' => [new In\Varchar(str_repeat('a', 32768)), 'over 32767 bytes; bind it with In\Clob'];
@@ -50,7 +50,7 @@ dataset('longBinds', function () {
     yield 'Raw' => [new In\Raw(str_repeat("\x00", 32768)), 'over 32767; bind them with In\Blob'];
 });
 
-test('a long bind over 32767 bytes is unsupported before any round trip', function (Bind $bind, string $fix): void {
+test('a long bind over 32767 bytes is unsupported before any round trip', function (Bindable $bind, string $fix): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
 

@@ -4,13 +4,14 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\InOut;
 
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\Concerns\BindsText;
+use Rajska\Oracle\Binds\ReturnsValue;
+use Rajska\Oracle\Binds\SendsValue;
 
 /**
  * An IN OUT VARCHAR2 bind. Declares the largest buffer: 32767 bytes in PL/SQL.
  */
-final readonly class Varchar extends Bind
+final readonly class Varchar implements SendsValue, ReturnsValue
 {
     use BindsText;
 }

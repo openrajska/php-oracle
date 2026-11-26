@@ -4,16 +4,15 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\SendsValue;
 use SensitiveParameter;
 
 /**
  * BOOLEAN, in SQL and PL/SQL.
  */
-final readonly class Boolean extends Bind
+final readonly class Boolean implements SendsValue
 {
-    public function __construct(#[SensitiveParameter] bool | null $value)
+    public function __construct(#[SensitiveParameter] public bool | null $value)
     {
-        parent::__construct($value);
     }
 }

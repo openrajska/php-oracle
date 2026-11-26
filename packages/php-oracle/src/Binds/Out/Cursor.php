@@ -4,8 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\Out;
 
-use Rajska\Oracle\Binds\Bind;
-use Rajska\Oracle\Binds\Concerns\BindsNull;
+use Rajska\Oracle\Binds\ReturnsValue;
 
 /**
  * REF CURSOR: the server opens it and sends it back, read with
@@ -13,7 +12,7 @@ use Rajska\Oracle\Binds\Concerns\BindsNull;
  * options. There is no `In\Cursor`: passing a Cursor back to the server is
  * later.
  */
-final readonly class Cursor extends Bind
+final readonly class Cursor implements ReturnsValue
 {
-    use BindsNull;
+    //
 }

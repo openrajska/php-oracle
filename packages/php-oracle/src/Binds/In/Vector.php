@@ -4,8 +4,8 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\Concerns\BindsVector;
+use Rajska\Oracle\Binds\SendsValue;
 
 /**
  * VECTOR: a dense one from a `list` of numbers, a sparse one from a
@@ -24,7 +24,7 @@ use Rajska\Oracle\Binds\Concerns\BindsVector;
  * FLOAT32 / FLOAT64 (FLOAT32 within its range), an int from -128 to 127
  * for INT8, a byte (0 to 255) for BINARY. A sparse VECTOR cannot be BINARY.
  */
-final readonly class Vector extends Bind
+final readonly class Vector implements SendsValue
 {
     use BindsVector;
 }

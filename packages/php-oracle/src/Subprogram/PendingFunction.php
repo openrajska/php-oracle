@@ -7,8 +7,8 @@ namespace Rajska\Oracle\Subprogram;
 use Closure;
 use DateInterval;
 use DateTimeImmutable;
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Binds\ReturnsValue;
 use Rajska\Oracle\DataType\SparseVector;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Lob\Lob;
@@ -28,7 +28,7 @@ final readonly class PendingFunction
     /**
      * @internal use Connection::function()
      *
-     * @param Closure(Bind): OutValue $run runs the Call with the return value bound as given
+     * @param Closure(ReturnsValue): OutValue $run runs the Call with the return value bound as given
      */
     public function __construct(
         private Call $call,
@@ -76,7 +76,7 @@ final readonly class PendingFunction
             : throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a NUMBER.', 0, null, $this->call->name);
     }
 
-    private function temporal(Bind $bind): DateTimeImmutable | string | null
+    private function temporal(ReturnsValue $bind): DateTimeImmutable | string | null
     {
         $value = ($this->run)($bind)->value();
 
@@ -185,7 +185,7 @@ final readonly class PendingFunction
         return $this->lob(new Out\Blob());
     }
 
-    private function lob(Bind $bind): Lob | string | null
+    private function lob(ReturnsValue $bind): Lob | string | null
     {
         $value = ($this->run)($bind)->value();
 

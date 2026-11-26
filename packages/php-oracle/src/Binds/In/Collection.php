@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\SendsValue;
 use SensitiveParameter;
 
 /**
@@ -23,13 +23,12 @@ use SensitiveParameter;
  * - A VARRAY's limit is checked by the server (ORA-22165).
  * - A `null` value is a NULL of the type; `[]` is an empty Collection.
  */
-final readonly class Collection extends Bind
+final readonly class Collection implements SendsValue
 {
     /**
      * @param list<mixed>|null $value
      */
-    public function __construct(public string $typeName, #[SensitiveParameter] array | null $value)
+    public function __construct(public string $name, #[SensitiveParameter] public array | null $value)
     {
-        parent::__construct($value);
     }
 }

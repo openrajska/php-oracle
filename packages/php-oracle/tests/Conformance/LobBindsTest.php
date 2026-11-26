@@ -6,7 +6,7 @@ namespace Rajska\Oracle\Tests\Conformance\LobBindsTest;
 
 use Closure;
 use Override;
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\Bindable;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
@@ -21,7 +21,7 @@ use Stringable;
  * Each class with its PL/SQL type: the IN bind and what it reads back
  * as; the IN OUT bind, how the block changes it, and the result.
  *
- * @return iterable<string, array{string, Bind, string, Bind, string, string}>
+ * @return iterable<string, array{string, Bindable, string, Bindable, string, string}>
  */
 dataset('classes', function () {
     $text = "h\u{e9}llo \u{65e5}\u{672c} \u{1f600}";
@@ -35,7 +35,7 @@ dataset('classes', function () {
     yield 'Blob unchanged' => ['blob', new In\Blob(''), '', new InOut\Blob("\xff"), 'io', "\xff"];
 });
 
-test('each lob class binds in out and in out through its plsql type', function (string $plsql, Bind $in, string $out, Bind $inOut, string $change, string $changed): void {
+test('each lob class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, string $out, Bindable $inOut, string $change, string $changed): void {
     $outBind = match ($plsql) {
         'clob' => new Out\Clob(),
         'nclob' => new Out\NClob(),
@@ -64,7 +64,7 @@ test('each lob class binds in out and in out through its plsql type', function (
 })->with('classes');
 
 /**
- * @return iterable<string, array{string, Bind, Bind, Bind}>
+ * @return iterable<string, array{string, Bindable, Bindable, Bindable}>
  */
 dataset('nulls', function () {
     yield 'Clob' => ['clob', new In\Clob(null), new Out\Clob(), new InOut\Clob(null)];
@@ -72,7 +72,7 @@ dataset('nulls', function () {
     yield 'Blob' => ['blob', new In\Blob(null), new Out\Blob(), new InOut\Blob(null)];
 });
 
-test('each lob class binds null', function (string $plsql, Bind $in, Bind $out, Bind $inOut): void {
+test('each lob class binds null', function (string $plsql, Bindable $in, Bindable $out, Bindable $inOut): void {
     $values = $this->connect()->execute(
         "declare
                procedure p(i in $plsql, o out $plsql, io in out $plsql) is
@@ -232,14 +232,14 @@ test('text that is not utf8 fails naming blob', function (): void {
 });
 
 /**
- * @return iterable<string, array{Closure(): Bind, non-empty-string}>
+ * @return iterable<string, array{Closure(): Bindable, non-empty-string}>
  */
 dataset('wrongValues', function () {
     // @phpstan-ignore argument.type (the mistake is the point)
     yield 'an int' => [static fn (): In\Clob => new In\Clob(5), 'A LOB bind takes a string, an open stream resource or null, but was given int.'];
     // @phpstan-ignore argument.type (the mistake is the point)
     yield 'an array' => [static fn (): InOut\NClob => new InOut\NClob([]), 'A LOB bind takes a string, an open stream resource or null, but was given array.'];
-    yield 'a closed stream' => [static function (): Bind {
+    yield 'a closed stream' => [static function (): Bindable {
         $stream = stream('x');
         fclose($stream);
 

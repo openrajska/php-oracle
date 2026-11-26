@@ -19,6 +19,8 @@ use UnitEnum;
  */
 trait BindsJson
 {
+    public readonly mixed $value;
+
     /** How deep a value may nest, as `json_encode()` allows by default. */
     private const int DEPTH = 512;
 
@@ -27,7 +29,7 @@ trait BindsJson
      */
     public function __construct(#[SensitiveParameter] mixed $value)
     {
-        parent::__construct(self::encodable($value, 0));
+        $this->value = self::encodable($value, 0);
     }
 
     /**

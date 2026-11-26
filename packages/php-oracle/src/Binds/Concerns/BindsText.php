@@ -14,8 +14,10 @@ use Stringable;
  */
 trait BindsText
 {
+    public readonly string | null $value;
+
     public function __construct(#[SensitiveParameter] Stringable | string | null $value)
     {
-        parent::__construct($value instanceof Stringable ? (string) $value : $value);
+        $this->value = $value instanceof Stringable ? (string) $value : $value;
     }
 }

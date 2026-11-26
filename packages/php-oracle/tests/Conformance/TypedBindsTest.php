@@ -8,7 +8,7 @@ use Closure;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\Bindable;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
@@ -30,7 +30,7 @@ use Rajska\Oracle\Tests\Support\Temporals;
  * becomes; the OUT bind; the IN OUT bind, how the block changes it, and
  * the result.
  *
- * @return iterable<string, array{string, Bind, mixed, Bind, Bind, string, mixed}>
+ * @return iterable<string, array{string, Bindable, mixed, Bindable, Bindable, string, mixed}>
  */
 dataset('classes', function () {
     yield 'Varchar' => ['varchar2', new In\Varchar('héllo'), 'héllo', new Out\Varchar(), new InOut\Varchar('a'), "io || 'b'", 'ab'];
@@ -51,7 +51,7 @@ dataset('classes', function () {
 });
 
 /**
- * @return iterable<string, array{string, Bind, Bind, Bind}>
+ * @return iterable<string, array{string, Bindable, Bindable, Bindable}>
  */
 dataset('nulls', function () {
     yield 'Varchar' => ['varchar2', new In\Varchar(null), new Out\Varchar(), new InOut\Varchar(null)];
@@ -77,7 +77,7 @@ dataset('nulls', function () {
  * Each temporal class, as `classes()`. Values as `Temporals::shown()`
  * writes them, in PHP's zone America/Sao_Paulo.
  *
- * @return iterable<string, array{string, Bind, string, Bind, Bind, string, string}>
+ * @return iterable<string, array{string, Bindable, string, Bindable, Bindable, string, string}>
  */
 dataset('temporalClasses', function () {
     $date = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Kathmandu'));
@@ -100,7 +100,7 @@ dataset('temporalClasses', function () {
     yield 'IntervalYm negative' => ['interval year to month', new In\IntervalYm($months), '-1Y2M0DT0H0M0S.000000', new Out\IntervalYm(), new InOut\IntervalYm($months), 'io', '-1Y2M0DT0H0M0S.000000'];
 });
 
-test('each temporal class binds in out and in out through its plsql type', function (string $plsql, Bind $in, string $out, Bind $outBind, Bind $inOut, string $change, string $changed): void {
+test('each temporal class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, string $out, Bindable $outBind, Bindable $inOut, string $change, string $changed): void {
     Temporals::inZone('America/Sao_Paulo', function () use ($plsql, $in, $out, $outBind, $inOut, $change, $changed): void {
         $execution = $this->connect()->execute(
             "declare
@@ -161,7 +161,7 @@ test('wall clock types store the wall clock and zoned types the instant', functi
 });
 
 /**
- * @return iterable<string, array{Closure(): Bind, non-empty-string}>
+ * @return iterable<string, array{Closure(): Bindable, non-empty-string}>
  */
 dataset('incompatibleIntervals', function () {
     yield 'IntervalDs with years' => [static fn (): In\IntervalDs => new In\IntervalDs(new DateInterval('P1Y')), 'An INTERVAL DAY TO SECOND bind takes days and smaller units'];
@@ -183,7 +183,7 @@ test('an incompatible date interval fails when the bind is built', function (Clo
     }
 })->with('incompatibleIntervals');
 
-test('each class binds in out and in out through its plsql type', function (string $plsql, Bind $in, mixed $out, Bind $outBind, Bind $inOut, string $change, mixed $changed): void {
+test('each class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, mixed $out, Bindable $outBind, Bindable $inOut, string $change, mixed $changed): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
@@ -206,7 +206,7 @@ test('each class binds in out and in out through its plsql type', function (stri
     assertSameValue($changed, $values['io'][0]);
 })->with('classes');
 
-test('each class binds null', function (string $plsql, Bind $in, Bind $out, Bind $inOut): void {
+test('each class binds null', function (string $plsql, Bindable $in, Bindable $out, Bindable $inOut): void {
     $connection = $this->connect();
 
     $execution = $connection->execute(
@@ -527,7 +527,7 @@ function outValuesFollowTheColumnMapping(): void
 }
 
 /**
- * @return iterable<string, array{Bind, string}>
+ * @return iterable<string, array{Bindable, string}>
  */
 dataset('typedMistakes', function () {
     yield 'bytes that are not UTF-8' => [new In\Varchar("\xff"), 'bind binary data with In\Raw or In\Blob'];
@@ -536,7 +536,7 @@ dataset('typedMistakes', function () {
     // in ScopeTest.
 });
 
-test('a typed bind mistake fails before any round trip', function (Bind $bind, string $fix): void {
+test('a typed bind mistake fails before any round trip', function (Bindable $bind, string $fix): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
     $counter = RoundTripCounter::open();

@@ -5,7 +5,7 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Subprogram;
 
 use Exception;
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\ReturnsValue;
 use Rajska\Oracle\ConnectionState;
 use Rajska\Oracle\Contracts\Driver\Response;
 use Rajska\Oracle\Contracts\Driver\Session;
@@ -140,7 +140,7 @@ final readonly class Call
      * REF CURSOR return value becomes a Cursor of the Connection, and a LOB
      * a Lob.
      */
-    public function function(Session $driver, Options $options, Bind $return, ConnectionState $connection): OutValue
+    public function function(Session $driver, Options $options, ReturnsValue $return, ConnectionState $connection): OutValue
     {
         $sql = "BEGIN :b0 := {$this->name}{$this->arguments}; END;";
         $values = $this->execute($driver, $sql, ['b0' => $return] + $this->binds, $options)->outValues();

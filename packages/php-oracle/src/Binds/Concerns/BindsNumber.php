@@ -15,6 +15,8 @@ use SensitiveParameter;
  */
 trait BindsNumber
 {
+    public readonly float | int | string | null $value;
+
     /**
      * @throws UsageException if the string is not a decimal literal
      */
@@ -23,6 +25,6 @@ trait BindsNumber
         if (\is_string($value) && preg_match('/\A[+-]?(\d+(\.\d*)?|\.\d+)\z/', $value) !== 1) {
             throw new UsageException("A NUMBER bind takes a decimal literal with '.' as the separator, such as '12.30'; the string given is not one.");
         }
-        parent::__construct($value);
+        $this->value = $value;
     }
 }

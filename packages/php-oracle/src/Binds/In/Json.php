@@ -4,8 +4,8 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\Concerns\BindsJson;
+use Rajska\Oracle\Binds\SendsValue;
 
 /**
  * Native JSON, from any value `json_encode()` takes, read back like
@@ -28,7 +28,7 @@ use Rajska\Oracle\Binds\Concerns\BindsJson;
  *
  * Objects are expanded when the bind is built.
  */
-final readonly class Json extends Bind
+final readonly class Json implements SendsValue
 {
     use BindsJson;
 }

@@ -17,6 +17,9 @@ use SensitiveParameter;
  */
 trait BindsLob
 {
+    /** @var resource|string|null */
+    public readonly mixed $value;
+
     /**
      * @param resource|string|null $value
      *
@@ -27,6 +30,6 @@ trait BindsLob
         if ($value !== null && !\is_string($value) && (!\is_resource($value) || get_resource_type($value) !== 'stream')) {
             throw new UsageException(\sprintf('A LOB bind takes a string, an open stream resource or null, but was given %s.', get_debug_type($value)));
         }
-        parent::__construct($value);
+        $this->value = $value;
     }
 }

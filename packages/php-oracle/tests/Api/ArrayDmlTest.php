@@ -66,7 +66,7 @@ test('out with an unknown or an in only name fails', function (): void {
 
     $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => new Out\Varchar()]]);
 
-    foreach (['missing' => "No OUT bind is named 'missing'; they are 'label'.", 'PREFIX' => "Bind 'prefix' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back."] as $name => $message) {
+    foreach (['missing' => "No OUT bind is named 'missing'; they are 'label'.", 'PREFIX' => "Bind 'prefix' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back."] as $name => $message) {
         expect(function () use ($arrayDml, $name): void {
             $arrayDml->out($name);
             $this->fail("out('$name') did not fail.");

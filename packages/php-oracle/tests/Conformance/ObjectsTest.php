@@ -7,7 +7,7 @@ namespace Rajska\Oracle\Tests\Conformance\ObjectsTest;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\Bindable;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
@@ -408,7 +408,7 @@ test('table of a collection bind takes ten thousand ids', function (string $type
 })->with('idLists');
 
 /**
- * @return iterable<string, array{Bind, string}>
+ * @return iterable<string, array{Bindable, string}>
  */
 dataset('mistakes', function () {
     $point = ['x' => 1, 'y' => 2, 'label' => null];
@@ -444,7 +444,7 @@ dataset('mistakes', function () {
     yield 'a nested Object of the wrong shape' => [new In\Struct('fx_polygon', ['name' => 'p', 'vertices' => [1]]), "Bind 'i', attribute VERTICES, element 0: the value must be an array keyed by attribute name or null."];
 });
 
-test('a mistake fails before any round trip naming the fix', function (Bind $bind, string $message): void {
+test('a mistake fails before any round trip naming the fix', function (Bindable $bind, string $message): void {
     $echo = 'begin :o := :i; end;';
 
     $connection = $this->connect();

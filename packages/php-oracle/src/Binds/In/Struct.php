@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\SendsValue;
 use SensitiveParameter;
 
 /**
@@ -29,13 +29,12 @@ use SensitiveParameter;
  *   statement's Round trip; the type is described on its first use in a
  *   Session.
  */
-final readonly class Struct extends Bind
+final readonly class Struct implements SendsValue
 {
     /**
      * @param array<string, mixed>|null $value
      */
-    public function __construct(public string $typeName, #[SensitiveParameter] array | null $value)
+    public function __construct(public string $name, #[SensitiveParameter] public array | null $value)
     {
-        parent::__construct($value);
     }
 }

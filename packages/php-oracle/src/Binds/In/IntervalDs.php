@@ -4,8 +4,8 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\Concerns\BindsIntervalDs;
+use Rajska\Oracle\Binds\SendsValue;
 
 /**
  * INTERVAL DAY TO SECOND, from a `DateInterval` of days, hours, minutes,
@@ -14,7 +14,7 @@ use Rajska\Oracle\Binds\Concerns\BindsIntervalDs;
  * Read back, the interval is a `DateInterval` normalised to days, hours,
  * minutes and seconds.
  */
-final readonly class IntervalDs extends Bind
+final readonly class IntervalDs implements SendsValue
 {
     use BindsIntervalDs;
 }

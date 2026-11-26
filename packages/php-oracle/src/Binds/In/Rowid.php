@@ -4,16 +4,15 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\SendsValue;
 use SensitiveParameter;
 
 /**
  * ROWID, as its text (`'AAAR3sAAEAAAACXAAA'`).
  */
-final readonly class Rowid extends Bind
+final readonly class Rowid implements SendsValue
 {
-    public function __construct(#[SensitiveParameter] string | null $rowid)
+    public function __construct(#[SensitiveParameter] public string | null $value)
     {
-        parent::__construct($rowid);
     }
 }

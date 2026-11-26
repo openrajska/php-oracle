@@ -7,9 +7,9 @@ namespace Rajska\Oracle;
 use Closure;
 use Error;
 use Exception;
-use Rajska\Oracle\Binds\Bind;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Binds\ReturnsValue;
 use Rajska\Oracle\Contracts\Driver\Session;
 use Rajska\Oracle\Driver\Options as DriverOptions;
 use Rajska\Oracle\Exceptions\ArrayDmlFailedException;
@@ -134,7 +134,7 @@ final class Connection
 
         return new PendingFunction(
             $call,
-            fn (Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return, $this->state),
+            fn (ReturnsValue $return): OutValue => $call->function($this->driver, $this->resolve($options), $return, $this->state),
         );
     }
 

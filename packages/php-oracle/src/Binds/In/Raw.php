@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Binds\In;
 
-use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\SendsValue;
 use SensitiveParameter;
 
 /**
@@ -12,10 +12,9 @@ use SensitiveParameter;
  * 32767 bytes would take a LONG bind, which is not supported yet
  * (UnsupportedException). Bind a BLOB's longer bytes with `In\Blob`.
  */
-final readonly class Raw extends Bind
+final readonly class Raw implements SendsValue
 {
-    public function __construct(#[SensitiveParameter] string | null $bytes)
+    public function __construct(#[SensitiveParameter] public string | null $value)
     {
-        parent::__construct($bytes);
     }
 }

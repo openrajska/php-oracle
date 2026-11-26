@@ -13,8 +13,10 @@ use SensitiveParameter;
  */
 trait BindsFloat
 {
+    public readonly float | null $value;
+
     public function __construct(#[SensitiveParameter] float | int | null $value)
     {
-        parent::__construct($value === null ? null : (float) $value);
+        $this->value = $value === null ? null : (float) $value;
     }
 }

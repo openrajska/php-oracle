@@ -15,6 +15,8 @@ use SensitiveParameter;
  */
 trait BindsIntervalDs
 {
+    public readonly DateInterval | null $value;
+
     /**
      * @throws UsageException if the interval has years or months
      */
@@ -23,6 +25,6 @@ trait BindsIntervalDs
         if ($value instanceof DateInterval && ($value->y !== 0 || $value->m !== 0)) {
             throw new UsageException('An INTERVAL DAY TO SECOND bind takes days and smaller units, but the DateInterval has years or months; bind those with In\\IntervalYm.');
         }
-        parent::__construct($value instanceof DateInterval ? clone $value : null);
+        $this->value = $value instanceof DateInterval ? clone $value : null;
     }
 }

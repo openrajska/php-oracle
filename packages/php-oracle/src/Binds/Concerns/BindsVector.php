@@ -15,6 +15,9 @@ use SensitiveParameter;
  */
 trait BindsVector
 {
+    /** @var SparseVector|list<float|int>|null */
+    public readonly SparseVector | array | null $value;
+
     /**
      * @param SparseVector|list<float|int>|null $values
      */
@@ -23,6 +26,6 @@ trait BindsVector
         SparseVector | array | null $values,
         public readonly VectorFormat $format = VectorFormat::Float64,
     ) {
-        parent::__construct($values);
+        $this->value = $values;
     }
 }

@@ -181,7 +181,7 @@ test('out with an unknown or in only name fails', function (): void {
     $execution = $this->connection->run($sql, ['a' => 1, 'total' => new Out\Number(), 'Label' => new InOut\Varchar(null)]);
 
     assertFails(fn (): OutValue => $execution->out('missing'), "No OUT bind is named 'missing'; they are 'total', 'Label'.", $sql);
-    assertFails(fn (): OutValue => $execution->out('a'), "Bind 'a' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", $sql);
+    assertFails(fn (): OutValue => $execution->out('a'), "Bind 'a' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back.", $sql);
     assertFails(fn (): OutValue => $this->connection->run('begin null; end;')->out('x'), "No OUT bind is named 'x'; the statement has none.");
     assertFails(fn (): OutValue => $this->connection->run('select :v from dual', ['v' => new In\Varchar('y')])->out('v'), "Bind 'v' is IN only");
 });

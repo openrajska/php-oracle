@@ -1,6 +1,6 @@
-//! Typed binds: `Rajska\Oracle\Binds\Bind` objects. The class names the
+//! Typed binds: `Rajska\Oracle\Binds\Bindable` objects. The class names the
 //! Oracle type, and the properties carry the rest (`direction`, `value`, plus
-//! `typeName` or `format`; spec #32 §7, §14).
+//! `name` or `format`; spec #32 §7, §14).
 //!
 //! An OUT or IN OUT text or RAW bind declares the largest buffer, 32767
 //! bytes. The size travels in the bind metadata only (C5 / C6), and an OUT
@@ -21,8 +21,8 @@ use crate::temporal::{self, Temporal};
 use crate::type_name;
 use crate::vector;
 
-/// The base class every typed bind extends.
-pub const BIND_CLASS: &str = "Rajska\\Oracle\\Binds\\Bind";
+/// The interface every typed bind implements.
+pub const BIND_CLASS: &str = "Rajska\\Oracle\\Binds\\Bindable";
 
 /// The namespace every bind class lives in.
 const BIND_NAMESPACE: &str = "Rajska\\Oracle\\Binds\\";
@@ -172,9 +172,9 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
             let kind =
                 object::Kind::of_bind(type_name).unwrap_or_else(|| unreachable!("matched above"));
             let type_name = properties
-                .get("typeName")
+                .get("name")
                 .and_then(Zval::str)
-                .ok_or_else(|| Error::usage(format!("Bind '{name}': its typeName is not set.")))?;
+                .ok_or_else(|| Error::usage(format!("Bind '{name}': its type name is not set.")))?;
             object_type = Some(type_name.to_string());
             object::bind(name, kind, type_name, value, describe)?
         }

@@ -17,8 +17,10 @@ use SensitiveParameter;
  */
 trait BindsTemporal
 {
+    public readonly DateTimeImmutable | null $value;
+
     public function __construct(#[SensitiveParameter] DateTimeInterface | null $value)
     {
-        parent::__construct($value instanceof DateTimeInterface ? DateTimeImmutable::createFromInterface($value) : null);
+        $this->value = $value instanceof DateTimeInterface ? DateTimeImmutable::createFromInterface($value) : null;
     }
 }

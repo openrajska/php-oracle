@@ -42,8 +42,8 @@ Look at the code through each letter:
 ## Naming
 
 Read the declaration aloud, and if it is not a sentence, rename:
-`final readonly class Varchar extends Bind { use BindsText; }` reads "a varchar
-binds text".
+`final readonly class Varchar implements SendsValue { use BindsText; }` reads
+"a varchar sends a value and binds text".
 
 ### Classes
 

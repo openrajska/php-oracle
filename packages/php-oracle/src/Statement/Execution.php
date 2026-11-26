@@ -68,7 +68,7 @@ final class Execution
 
         $in = $this->find($name, $this->bindNames);
         if ($in !== null) {
-            throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back.", 0, $this->sql, $this->call);
+            throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back.", 0, $this->sql, $this->call);
         }
         $names = $values === [] ? 'the statement has none' : "they are '" . implode("', '", array_keys($values)) . "'";
 
