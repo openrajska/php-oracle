@@ -1,6 +1,6 @@
-//! Typed binds: `Rajska\Oracle\Bind\Bind` objects, read through the base's
-//! properties only (`type`, `direction`, `value`, `typeName`; spec #32 §7,
-//! §14).
+//! Typed binds: `Rajska\Oracle\Binds\Bind` objects. The class names the
+//! Oracle type, and the properties carry the rest (`direction`, `value`, plus
+//! `typeName` or `format`; spec #32 §7, §14).
 //!
 //! An OUT or IN OUT text or RAW bind declares the largest buffer, 32767
 //! bytes. The size travels in the bind metadata only (C5 / C6), and an OUT
@@ -22,7 +22,10 @@ use crate::type_name;
 use crate::vector;
 
 /// The base class every typed bind extends.
-pub const BIND_CLASS: &str = "Rajska\\Oracle\\Bind\\Bind";
+pub const BIND_CLASS: &str = "Rajska\\Oracle\\Binds\\Bind";
+
+/// The namespace every bind class lives in.
+const BIND_NAMESPACE: &str = "Rajska\\Oracle\\Binds\\";
 
 /// The buffer an OUT or IN OUT text or RAW bind declares: PL/SQL's largest.
 const OUT_SIZE: usize = MAX_VARCHAR2;
@@ -73,24 +76,24 @@ impl Typed {
         self.reads_as
     }
 
-    /// Whether it is a REF CURSOR (`Cursor::out()`, `Cursor::inOut()`).
+    /// Whether it is a REF CURSOR (`Out\Cursor`, `InOut\Cursor`).
     pub fn is_cursor(&self) -> bool {
         self.value.db_type() == DB_TYPE_CURSOR
     }
 
     /// The bind as the user wrote it, without its value:
-    /// `Varchar::in()`, `Struct::out('HR.POINT')`. Two binds of the same
+    /// `In\Varchar`, `Out\Struct('HR.POINT')`. Two binds of the same
     /// signature bind as the same type.
     pub fn signature(&self) -> String {
-        let method = match self.direction {
-            Direction::In => "in",
-            Direction::Out => "out",
-            Direction::InOut => "inOut",
+        let direction = match self.direction {
+            Direction::In => "In",
+            Direction::Out => "Out",
+            Direction::InOut => "InOut",
         };
         let class = class_name(&self.type_name);
         match &self.object_type {
-            Some(object_type) => format!("{class}::{method}('{object_type}')"),
-            None => format!("{class}::{method}()"),
+            Some(object_type) => format!("{direction}\\{class}('{object_type}')"),
+            None => format!("{direction}\\{class}"),
         }
     }
 }
@@ -101,17 +104,13 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     let properties = object
         .get_properties()
         .map_err(|e| Error::unsupported(format!("Bind '{name}': {e}.")))?;
-    let type_name = backing(name, properties, "type")?;
-    let direction = match backing(name, properties, "direction")? {
-        "in" => Direction::In,
-        "out" => Direction::Out,
-        "inOut" => Direction::InOut,
-        other => {
-            return Err(Error::usage(format!(
-                "Bind '{name}': unknown direction '{other}'."
-            )));
-        }
-    };
+    let class = object
+        .get_class_name()
+        .map_err(|e| Error::unsupported(format!("Bind '{name}': {e}.")))?;
+    let (direction, type_name) = of_class(&class).ok_or_else(|| {
+        Error::unsupported(format!("Bind '{name}': {class} is not a bind class of Core."))
+    })?;
+    let type_name = type_name.as_str();
     let null = Zval::null();
     let value = properties.get("value").unwrap_or(&null).dereference();
     // OUT sends NULL: the value is not read.
@@ -168,8 +167,7 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         "intervalDs" => temporal::interval_ds_bind(name, value)?,
         "intervalYm" => temporal::interval_ym_bind(name, value)?,
         "json" => json::bind(name, value)?,
-        // The VectorFormat's backing value travels as typeName.
-        "vector" => vector::bind(name, value, properties.get("typeName").and_then(Zval::str))?,
+        "vector" => vector::bind(name, value, optional_backing(properties, "format"))?,
         "object" | "collection" | "associativeArray" => {
             let kind =
                 object::Kind::of_bind(type_name).unwrap_or_else(|| unreachable!("matched above"));
@@ -203,19 +201,14 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
     })
 }
 
-/// The backing value of an enum property (`type`, `direction`).
-fn backing<'a>(
-    name: &str,
-    properties: &'a ZendHashTable,
-    property: &str,
-) -> Result<&'a str, Error> {
+/// The backing value of an enum property that may be null (`format`).
+fn optional_backing<'a>(properties: &'a ZendHashTable, property: &str) -> Option<&'a str> {
     properties
         .get(property)
         .and_then(Zval::object)
         .and_then(|e| e.get_properties().ok())
         .and_then(|p| p.get("value"))
         .and_then(Zval::str)
-        .ok_or_else(|| Error::usage(format!("Bind '{name}': its {property} is not set.")))
 }
 
 /// VARCHAR2, CHAR, NVARCHAR2, NCHAR (and ROWID, sent as VARCHAR2): UTF-8
@@ -238,13 +231,13 @@ fn text_value(name: &str, value: &Zval) -> Result<Option<String>, Error> {
     }
     let Some(text) = value.str() else {
         return Err(Error::usage(format!(
-            "Bind '{name}': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in()."
+            "Bind '{name}': the string is not valid UTF-8; bind binary data with In\\Raw or In\\Blob."
         )));
     };
     // Only a LONG column takes more: a LONG bind, which is later.
     if text.len() > MAX_VARCHAR2 {
         return Err(Error::unsupported(format!(
-            "Bind '{name}': the string is over {MAX_VARCHAR2} bytes; bind it with Clob::in(). \
+            "Bind '{name}': the string is over {MAX_VARCHAR2} bytes; bind it with In\\Clob. \
              Writing more than {MAX_VARCHAR2} bytes to a LONG column is not supported yet."
         )));
     }
@@ -280,7 +273,7 @@ fn raw(name: &str, value: &Zval, direction: Direction) -> Result<Box<dyn ToDbVal
         // Only a LONG RAW column takes more: a LONG bind, which is later.
         if bytes.len() > MAX_VARCHAR2 {
             return Err(Error::unsupported(format!(
-                "Bind '{name}': the bytes are over {MAX_VARCHAR2}; bind them with Blob::in(). \
+                "Bind '{name}': the bytes are over {MAX_VARCHAR2}; bind them with In\\Blob. \
                  Writing more than {MAX_VARCHAR2} bytes to a LONG RAW column is not supported yet."
             )));
         }
@@ -302,7 +295,7 @@ fn number(name: &str, value: &Zval) -> Result<Option<OracleNumber>, Error> {
     } else if let Some(text) = value.str() {
         text.parse().map(Some).map_err(|_| {
             Error::usage(format!(
-                "Bind '{name}': Number::in() takes a decimal literal with '.', such as '12.30'."
+                "Bind '{name}': In\\Number takes a decimal literal with '.', such as '12.30'."
             ))
         })
     } else {
@@ -340,7 +333,7 @@ fn size(direction: Direction) -> usize {
 /// A Cursor passed back to the server: later (spec #32 §1).
 pub fn cursor_in(name: &str) -> Error {
     Error::unsupported(format!(
-        "Bind '{name}': passing a Cursor back to the server is not supported yet; bind a REF CURSOR with Cursor::out() or Cursor::inOut() and let the server open it."
+        "Bind '{name}': passing a Cursor back to the server is not supported yet; bind a REF CURSOR with Out\\Cursor or InOut\\Cursor and let the server open it."
     ))
 }
 
@@ -348,6 +341,28 @@ fn wrong(name: &str, expected: &str) -> Error {
     Error::usage(format!(
         "Bind '{name}': the value must be {expected} or null."
     ))
+}
+
+/// The direction and the `Type` backing value a bind class stands for: the
+/// namespace is the direction and the class the type, so `Binds\In\Varchar`
+/// is an IN `varchar`. None for a class outside those namespaces.
+fn of_class(class: &str) -> Option<(Direction, String)> {
+    let (direction, short) = class.strip_prefix(BIND_NAMESPACE)?.split_once('\\')?;
+    let direction = match direction {
+        "In" => Direction::In,
+        "Out" => Direction::Out,
+        "InOut" => Direction::InOut,
+        _ => return None,
+    };
+    let type_name = match short {
+        "Struct" => "object".to_string(),
+        "Indexed" => "associativeArray".to_string(),
+        short => {
+            let mut chars = short.chars();
+            chars.next()?.to_lowercase().chain(chars).collect()
+        }
+    };
+    Some((direction, type_name))
 }
 
 /// The bind class of a `Type` backing value, for messages.

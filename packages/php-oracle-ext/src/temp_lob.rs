@@ -1,5 +1,5 @@
-//! LOB writes: the value of a CLOB, NCLOB or BLOB bind (`Clob::in()`,
-//! `NClob::in()`, `Blob::in()`, their `inOut()`, and a plain string over
+//! LOB writes: the value of a CLOB, NCLOB or BLOB bind (`In\Clob`,
+//! `In\NClob`, `In\Blob`, their `InOut\` twins, and a plain string over
 //! 32767 bytes), written into a temporary LOB on the Session just before
 //! the execute, which binds its locator (spec #32 §7, C11).
 //!
@@ -48,7 +48,7 @@ impl TempLob {
         if value.is_string() {
             if character && value.str().is_none() {
                 return Err(Error::usage(format!(
-                    "Bind '{name}': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in()."
+                    "Bind '{name}': the string is not valid UTF-8; bind binary data with In\\Raw or In\\Blob."
                 )));
             }
         } else if !is_stream(value) {
@@ -164,7 +164,7 @@ fn whole_utf8(name: &str, buffer: &[u8], sent: usize, ended: bool) -> Result<usi
         Ok(_) => Ok(buffer.len()),
         Err(e) if e.error_len().is_none() && !ended => Ok(e.valid_up_to()),
         Err(e) => Err(Error::usage(format!(
-            "Bind '{name}': the stream is not valid UTF-8 at byte {}; bind binary data with Blob::in().",
+            "Bind '{name}': the stream is not valid UTF-8 at byte {}; bind binary data with In\\Blob.",
             sent + e.valid_up_to()
         ))),
     }

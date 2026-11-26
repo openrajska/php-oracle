@@ -1,4 +1,4 @@
-//! `Type`'s backing values (Core's `Rajska\Oracle\Type`): the name of each
+//! `Type`'s backing values (Core's `Rajska\Oracle\DataType\Type`): the name of each
 //! Oracle type in a Column's `type` and a typed bind's `type`. The one table
 //! every module reads them from. Objects, Collections and Associative arrays
 //! share one crate type and are named apart by their Object type.

@@ -18,7 +18,7 @@
 
 declare(strict_types = 1);
 
-namespace Rajska\Oracle\Driver\Extension {
+namespace Rajska\Oracle\Driver {
     function phpversion(string | null $extension = null): false | string
     {
         \DetectRecord::$phpversion[] = $extension;

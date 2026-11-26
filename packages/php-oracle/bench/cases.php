@@ -13,21 +13,19 @@ declare(strict_types = 1);
 // oci8 never sees Core's classes and Core never calls oci8: each case runs
 // in a process that loads only its own extension (see run.php).
 use Rajska\Oracle\Bench\Oci8Values;
-use Rajska\Oracle\Bind\Cursor as CursorBind;
-use Rajska\Oracle\Bind\Date;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\ConnectionConfig;
-use Rajska\Oracle\Cursor;
-use Rajska\Oracle\ExecuteOptions;
-use Rajska\Oracle\Execution;
-use Rajska\Oracle\LobMode;
-use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\RowShape;
-use Rajska\Oracle\TemporalMode;
-use Rajska\Oracle\ValueMapping;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\Execution;
+use Rajska\Oracle\Statement\LobMode;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\TemporalMode;
+use Rajska\Oracle\Statement\ValueMapping;
 
 const SQL_SCALAR = "begin fx_scalar.echo_out(:p_num, :p_str, to_date(:p_date, 'YYYY-MM-DD HH24:MI:SS'), :o_num, :o_str, :o_date); end;";
 const SQL_FETCH = 'select id, qty, amount, ratio, code, label, note, created_at, updated_at from fx_bench_rows';
@@ -151,8 +149,8 @@ function core_each(Cursor $cursor): int
 function oci8_converters($statement, string $mapping): array
 {
     $converters = [];
-    $int = static fn(string $v): int => (int) $v;
-    $float = static fn(string $v): float => (float) $v;
+    $int = static fn (string $v): int => (int) $v;
+    $float = static fn (string $v): float => (float) $v;
     $number = $mapping === 'exact' ? Oci8Values::exact(...) : Oci8Values::float(...);
     $date = Oci8Values::dateTime(...);
     for ($i = 1, $n = oci_num_fields($statement); $i <= $n; $i++) {
@@ -282,7 +280,7 @@ function oci8_lobs($connection, bool $inline): array
 function core_lobs(Connection $connection, bool $inline): array
 {
     if ($inline) {
-        return $connection->select(SQL_LOBS, options: new ExecuteOptions(values: new ValueMapping(lobs: LobMode::Inline)))->all();
+        return $connection->select(SQL_LOBS, options: new Options(values: new ValueMapping(lobs: LobMode::Inline)))->all();
     }
     $rows = [];
     foreach ($connection->select(SQL_LOBS) as $row) {
@@ -307,15 +305,15 @@ function bench_cases(): array
     // (a) A Call with 3 scalar IN and 3 OUT binds: fx_scalar.echo_out.
     $add('call.core.procedure', 'core', 1000, 10_000, 3, static function (BenchContext $x): Closure {
         $c = $x->core();
-        $date = Date::in(new DateTimeImmutable(SCALAR_DATE));
+        $date = new In\Date(new DateTimeImmutable(SCALAR_DATE));
 
         return static function (int $i) use ($c, $date): array {
             $e = $c->procedure('fx_scalar.echo_out', [
                 ...scalar_in($i),
                 'p_date' => $date,
-                'o_num' => Number::out(),
-                'o_str' => Varchar::out(),
-                'o_date' => Date::out(),
+                'o_num' => new Out\Number(),
+                'o_str' => new Out\Varchar(),
+                'o_date' => new Out\Date(),
             ]);
 
             return ['o_num' => $e->out('o_num')->int(), 'o_str' => $e->out('o_str')->string(), 'o_date' => $e->out('o_date')->dateTime()];
@@ -328,89 +326,89 @@ function bench_cases(): array
             $e = $c->run(SQL_SCALAR, [
                 ...scalar_in($i),
                 'p_date' => SCALAR_DATE,
-                'o_num' => Number::out(),
-                'o_str' => Varchar::out(),
-                'o_date' => Date::out(),
+                'o_num' => new Out\Number(),
+                'o_str' => new Out\Varchar(),
+                'o_date' => new Out\Date(),
             ]);
 
             return ['o_num' => $e->out('o_num')->int(), 'o_str' => $e->out('o_str')->string(), 'o_date' => $e->out('o_date')->dateTime()];
         };
     });
-    $add('call.oci8.typed', 'oci8', 1000, 10_000, 3, static fn(BenchContext $x): Closure => static fn(int $i): array => oci8_scalar($x->oci8(), $i, true));
-    $add('call.oci8.raw', 'oci8', 1000, 10_000, 3, static fn(BenchContext $x): Closure => static fn(int $i): array => oci8_scalar($x->oci8(), $i, false));
+    $add('call.oci8.typed', 'oci8', 1000, 10_000, 3, static fn (BenchContext $x): Closure => static fn (int $i): array => oci8_scalar($x->oci8(), $i, true));
+    $add('call.oci8.raw', 'oci8', 1000, 10_000, 3, static fn (BenchContext $x): Closure => static fn (int $i): array => oci8_scalar($x->oci8(), $i, false));
 
     // (b) A query of 10k rows x 9 mixed columns: fx_bench_rows.
     foreach (['all', 'row'] as $mode) {
-        $add("fetch.core.$mode", 'core', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => $mode === 'all'
-            ? static fn(): array => $x->core()->select(SQL_FETCH)->all()
-            : static fn(): int => core_each($x->core()->select(SQL_FETCH)));
+        $add("fetch.core.$mode", 'core', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => $mode === 'all'
+            ? static fn (): array => $x->core()->select(SQL_FETCH)->all()
+            : static fn (): int => core_each($x->core()->select(SQL_FETCH)));
         $add("fetch.core.fast-$mode", 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x) use ($mode): Closure {
-            $options = new ExecuteOptions(values: fast());
+            $options = new Options(values: fast());
 
             return $mode === 'all'
-                ? static fn(): array => $x->core()->select(SQL_FETCH, options: $options)->all()
-                : static fn(): int => core_each($x->core()->select(SQL_FETCH, options: $options));
+                ? static fn (): array => $x->core()->select(SQL_FETCH, options: $options)->all()
+                : static fn (): int => core_each($x->core()->select(SQL_FETCH, options: $options));
         });
         foreach ($mode === 'all' ? ['raw', 'exact', 'float'] : ['raw', 'exact'] as $mapping) {
-            $add("fetch.oci8.$mapping-$mode", 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array | int => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), $mode, $mapping));
+            $add("fetch.oci8.$mapping-$mode", 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array | int => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), $mode, $mapping));
         }
     }
     $add('fetch.core.list-all', 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x): Closure {
-        $options = new ExecuteOptions(rowShape: RowShape::List);
+        $options = new Options(rowShape: RowShape::List);
 
-        return static fn(): array => $x->core()->select(SQL_FETCH, options: $options)->all();
+        return static fn (): array => $x->core()->select(SQL_FETCH, options: $options)->all();
     });
-    $add('fetch.oci8.raw-num-all', 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), 'all', 'raw', OCI_NUM));
+    $add('fetch.oci8.raw-num-all', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_FETCH), 'all', 'raw', OCI_NUM));
     $add('fetch.core.size1000-all', 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x): Closure {
-        $options = new ExecuteOptions(fetchSize: 1000);
+        $options = new Options(fetchSize: 1000);
 
-        return static fn(): array => $x->core()->select(SQL_FETCH, options: $options)->all();
+        return static fn (): array => $x->core()->select(SQL_FETCH, options: $options)->all();
     });
-    $add('fetch.oci8.exact-prefetch1000-all', 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_drain(oci8_query($x->oci8(), SQL_FETCH, 1000), 'all', 'exact'));
+    $add('fetch.oci8.exact-prefetch1000-all', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_FETCH, 1000), 'all', 'exact'));
 
     // Numbers only (10k x 4: two NUMBER(10), a NUMBER(12,2), a BINARY_DOUBLE).
-    $add('numbers.core.exact', 'core', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => $x->core()->select(SQL_NUMBERS)->all());
+    $add('numbers.core.exact', 'core', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->select(SQL_NUMBERS)->all());
     $add('numbers.core.float', 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x): Closure {
-        $options = new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float));
+        $options = new Options(values: new ValueMapping(numbers: NumberMode::Float));
 
-        return static fn(): array => $x->core()->select(SQL_NUMBERS, options: $options)->all();
+        return static fn (): array => $x->core()->select(SQL_NUMBERS, options: $options)->all();
     });
     foreach (['raw', 'exact', 'float'] as $mapping) {
-        $add("numbers.oci8.$mapping", 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_drain(oci8_query($x->oci8(), SQL_NUMBERS), 'all', $mapping));
+        $add("numbers.oci8.$mapping", 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_NUMBERS), 'all', $mapping));
     }
 
     // Dates only (10k x 2: a DATE, a TIMESTAMP(6)).
-    $add('dates.core.object', 'core', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => $x->core()->select(SQL_DATES)->all());
+    $add('dates.core.object', 'core', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->select(SQL_DATES)->all());
     $add('dates.core.string', 'core', 5, 50, FETCH_ROWS, static function (BenchContext $x): Closure {
-        $options = new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String));
+        $options = new Options(values: new ValueMapping(temporals: TemporalMode::String));
 
-        return static fn(): array => $x->core()->select(SQL_DATES, options: $options)->all();
+        return static fn (): array => $x->core()->select(SQL_DATES, options: $options)->all();
     });
-    $add('dates.oci8.raw', 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'raw'));
-    $add('dates.oci8.exact', 'oci8', 5, 50, FETCH_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'exact'));
+    $add('dates.oci8.raw', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'raw'));
+    $add('dates.oci8.exact', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'exact'));
 
     // (c) A Call returning a REF CURSOR of 1k rows x 5 columns: fx_cursor.items.
-    $add('cursor.core.function-all', 'core', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()->all());
-    $add('cursor.core.function-row', 'core', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): int => core_each($x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()));
-    $add('cursor.core.run-all', 'core', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): array => $x->core()->run(SQL_CURSOR, ['rc' => CursorBind::out(), 'n' => CURSOR_ROWS])->out('rc')->cursor()->all());
+    $add('cursor.core.function-all', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()->all());
+    $add('cursor.core.function-row', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): int => core_each($x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()));
+    $add('cursor.core.run-all', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->run(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS])->out('rc')->cursor()->all());
     $add('cursor.core.fast-all', 'core', 50, 300, CURSOR_ROWS, static function (BenchContext $x): Closure {
-        $options = new ExecuteOptions(values: fast());
+        $options = new Options(values: fast());
 
-        return static fn(): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS], $options)->cursor()->all();
+        return static fn (): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS], $options)->cursor()->all();
     });
     foreach (['raw-all', 'exact-all', 'float-all', 'raw-row', 'exact-row'] as $variant) {
         [$mapping, $mode] = explode('-', $variant);
-        $add("cursor.oci8.$variant", 'oci8', 50, 300, CURSOR_ROWS, static fn(BenchContext $x): Closure => static fn(): array | int => oci8_cursor($x->oci8(), $mode, $mapping));
+        $add("cursor.oci8.$variant", 'oci8', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array | int => oci8_cursor($x->oci8(), $mode, $mapping));
     }
 
     // LOBs: 1k rows with a 1,000-character CLOB and a 1,000-byte BLOB each, read whole.
-    $add('lobs.core.inline', 'core', 5, 50, LOB_ROWS, static fn(BenchContext $x): Closure => static fn(): array => core_lobs($x->core(), true));
-    $add('lobs.core.locator', 'core', 5, 50, LOB_ROWS, static fn(BenchContext $x): Closure => static fn(): array => core_lobs($x->core(), false));
-    $add('lobs.oci8.inline', 'oci8', 5, 50, LOB_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_lobs($x->oci8(), true));
-    $add('lobs.oci8.locator', 'oci8', 5, 50, LOB_ROWS, static fn(BenchContext $x): Closure => static fn(): array => oci8_lobs($x->oci8(), false));
+    $add('lobs.core.inline', 'core', 5, 50, LOB_ROWS, static fn (BenchContext $x): Closure => static fn (): array => core_lobs($x->core(), true));
+    $add('lobs.core.locator', 'core', 5, 50, LOB_ROWS, static fn (BenchContext $x): Closure => static fn (): array => core_lobs($x->core(), false));
+    $add('lobs.oci8.inline', 'oci8', 5, 50, LOB_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_lobs($x->oci8(), true));
+    $add('lobs.oci8.locator', 'oci8', 5, 50, LOB_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_lobs($x->oci8(), false));
     // One 16 MiB BLOB, read whole.
-    $add('largelob.core.contents', 'core', 3, 30, 1, static fn(BenchContext $x): Closure => static fn(): array => [$x->core()->select(SQL_LARGE_LOB)->value()->contents()]);
-    $add('largelob.oci8.load', 'oci8', 3, 30, 1, static fn(BenchContext $x): Closure => static function () use ($x): array {
+    $add('largelob.core.contents', 'core', 3, 30, 1, static fn (BenchContext $x): Closure => static fn (): array => [$x->core()->select(SQL_LARGE_LOB)->value()->contents()]);
+    $add('largelob.oci8.load', 'oci8', 3, 30, 1, static fn (BenchContext $x): Closure => static function () use ($x): array {
         $row = oci_fetch_array(oci8_query($x->oci8(), SQL_LARGE_LOB), OCI_NUM);
         $bytes = $row[0]->load();
         $row[0]->free();
@@ -422,8 +420,8 @@ function bench_cases(): array
     $add('insert.core.runmany', 'core', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 
-        return static fn(): int => $x->core()->runMany(SQL_INSERT, $rows)->affected();
-    }, static fn(BenchContext $x): Execution => $x->core()->run(SQL_CLEANUP));
+        return static fn (): int => $x->core()->runMany(SQL_INSERT, $rows)->affected();
+    }, static fn (BenchContext $x): Execution => $x->core()->run(SQL_CLEANUP));
     $add('insert.oci8.loop', 'oci8', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 
@@ -440,7 +438,7 @@ function bench_cases(): array
 
             return \count($rows);
         };
-    }, static fn(BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
+    }, static fn (BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
     $add('insert.oci8.forall', 'oci8', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 
@@ -456,7 +454,7 @@ function bench_cases(): array
 
             return \count($rows);
         };
-    }, static fn(BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
+    }, static fn (BenchContext $x): bool => oci_execute(oci_parse($x->oci8(), SQL_CLEANUP)));
 
     // Connecting: a Session from the Pool and back, against oci_pconnect.
     $add('connect.core.pool', 'core', 200, 5000, 1, static function (BenchContext $x): Closure {
@@ -468,7 +466,7 @@ function bench_cases(): array
             return 1;
         };
     });
-    $add('connect.oci8.pconnect', 'oci8', 200, 5000, 1, static fn(BenchContext $x): Closure => static function () use ($x): int {
+    $add('connect.oci8.pconnect', 'oci8', 200, 5000, 1, static fn (BenchContext $x): Closure => static function () use ($x): int {
         $connection = oci_pconnect($x->user, $x->password, $x->dsn, 'AL32UTF8');
         oci_close($connection);
 
@@ -486,7 +484,7 @@ function bench_cases(): array
             return $one;
         };
     });
-    $add('request.oci8.pconnect', 'oci8', 200, 5000, 1, static fn(BenchContext $x): Closure => static function () use ($x): int {
+    $add('request.oci8.pconnect', 'oci8', 200, 5000, 1, static fn (BenchContext $x): Closure => static function () use ($x): int {
         $connection = oci_pconnect($x->user, $x->password, $x->dsn, 'AL32UTF8');
         $row = oci_fetch_array(oci8_query($connection, SQL_DUAL), OCI_NUM);
         oci_close($connection);
@@ -495,7 +493,7 @@ function bench_cases(): array
     });
     // A new Session every time: logon and logoff. 20 ms apart, untimed: the
     // listener refuses logons that come faster for long (ORA-12516).
-    $pause = static fn(): null => usleep(20_000);
+    $pause = static fn (): null => usleep(20_000);
     $add('logon.core.standalone', 'core', 3, 30, 1, static function (BenchContext $x): Closure {
         $config = $x->config(standalone: true);
 
@@ -505,7 +503,7 @@ function bench_cases(): array
             return 1;
         };
     }, $pause);
-    $add('logon.oci8.new', 'oci8', 3, 30, 1, static fn(BenchContext $x): Closure => static function () use ($x): int {
+    $add('logon.oci8.new', 'oci8', 3, 30, 1, static fn (BenchContext $x): Closure => static function () use ($x): int {
         oci_close(oci_new_connect($x->user, $x->password, $x->dsn, 'AL32UTF8'));
 
         return 1;
@@ -523,7 +521,7 @@ function bench_cases(): array
  */
 function bench_comparisons(): array
 {
-    $c = static fn(string $label, string $core, string $oci8, bool $same, string | null $spike = null): array => ['label' => $label, 'core' => $core, 'oci8' => $oci8, 'same' => $same, 'spike' => $spike];
+    $c = static fn (string $label, string $core, string $oci8, bool $same, string | null $spike = null): array => ['label' => $label, 'core' => $core, 'oci8' => $oci8, 'same' => $same, 'spike' => $spike];
 
     return [
         $c('Call 3 IN + 3 OUT, `procedure()`', 'call.core.procedure', 'call.oci8.typed', true, '1.28× (typed)'),

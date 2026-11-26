@@ -38,7 +38,7 @@ differ from oci8's: `'0.5'`, not `'.5'`.
 ## Faster opt-ins
 
 `ValueMapping` trades exactness or objects for speed, per Connection (in
-`ConnectionConfig`) or per Execution (in `ExecuteOptions`, which also covers
+`ConnectionConfig`) or per Execution (in `Options`, which also covers
 every Cursor and OUT value of that Execution):
 
 | Option | Effect |
@@ -50,7 +50,7 @@ every Cursor and OUT value of that Execution):
 ```php
 $totals = $connection->select(
     'select id, total from orders',
-    options: new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float)),
+    options: new Options(values: new ValueMapping(numbers: NumberMode::Float)),
 )->all();
 // [['ID' => 1, 'TOTAL' => 120.5], ...]
 ```
@@ -98,7 +98,7 @@ $connection->run(
 
 $body = $connection->select("select body from documents where title = 'Terms'")->value();
 
-$body->type();     // LobType::Clob
+$body->type();     // Lob\Type::Clob
 $body->size();     // 130000: UCS-2 code units for CLOB and NCLOB, bytes for BLOB
 $text = $body->contents();
 ```
@@ -122,7 +122,7 @@ A native JSON column decodes to arrays, with exact numbers:
 ```php
 $connection->run(
     'insert into events (happened_at, payload) values (systimestamp, :payload)',
-    ['payload' => Json::in(['type' => 'order.paid', 'amount' => 120.5, 'tags' => ['web']])],
+    ['payload' => new In\Json(['type' => 'order.paid', 'amount' => 120.5, 'tags' => ['web']])],
 );
 
 $payload = $connection->select('select payload from events order by id desc')->value();
@@ -133,7 +133,7 @@ $payload = $connection->select('select payload from events order by id desc')->v
   (dates, binary, intervals) map like their columns; a DATE inside JSON comes
   back as a TIMESTAMP.
 - Key order is not kept, and `{}` and `[]` both decode to `[]`.
-- `Json::in()` takes anything `json_encode()` would: an associative array
+- `In\Json` takes anything `json_encode()` would: an associative array
   becomes an object, a `list` an array, a `JsonSerializable` is expanded, a
   `float` becomes an exact NUMBER and a `DateTimeInterface` a TIMESTAMP.
 
@@ -145,10 +145,10 @@ $vector = $connection->select("select to_vector('[1.5, 2, 3]', 3, float32) from 
 
 $dimensions = $connection->select(
     'select vector_dimension_count(:embedding) from dual',
-    ['embedding' => Vector::in([0.12, -0.5, 0.33], VectorFormat::Float32)],
+    ['embedding' => new In\Vector([0.12, -0.5, 0.33], VectorFormat::Float32)],
 )->value();
 // 3
 ```
 
 A sparse VECTOR comes back as a `SparseVector` (`dimensions`, and `values`
-keyed by position), and binds with `Vector::in(new SparseVector($dimensions, $values))`.
+keyed by position), and binds with `new In\Vector(new SparseVector($dimensions, $values))`.

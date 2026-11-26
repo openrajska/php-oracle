@@ -7,5 +7,6 @@ parameters:
     excludePaths:
         - tests/Harness/Probes
     tmpDir: .phpstan.cache
+    checkMissingOverrideMethodAttribute: true
     scanFiles:
         - stubs/oracledb.stub.php

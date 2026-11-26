@@ -793,7 +793,7 @@ pub fn interval_ds_of(what: &str, value: &Zval) -> Result<Option<OracleIntervalD
     };
     if interval.years != 0 || interval.months != 0 {
         return Err(Error::usage(format!(
-            "{what}: an IntervalDs holds days and smaller units, but the DateInterval has years or months; bind those with IntervalYm::in()."
+            "{what}: an IntervalDs holds days and smaller units, but the DateInterval has years or months; bind those with In\\IntervalYm."
         )));
     }
     let seconds =
@@ -840,7 +840,7 @@ pub fn interval_ym_of(what: &str, value: &Zval) -> Result<Option<OracleIntervalY
         || interval.microseconds != 0
     {
         return Err(Error::usage(format!(
-            "{what}: an IntervalYm holds years and months only, but the DateInterval has days or smaller units; bind those with IntervalDs::in()."
+            "{what}: an IntervalYm holds years and months only, but the DateInterval has days or smaller units; bind those with In\\IntervalDs."
         )));
     }
     let months = interval.years * 12 + interval.months;

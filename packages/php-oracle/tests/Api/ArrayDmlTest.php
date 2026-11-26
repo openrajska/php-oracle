@@ -4,15 +4,14 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api\ArrayDmlTest;
 
-use Rajska\Oracle\ArrayDml;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
-use Rajska\Oracle\Exceptions\ArrayDmlException;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Exceptions\ArrayDmlFailedException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\RowFailure;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\OutValue;
+use Rajska\Oracle\Statement\ArrayDml;
+use Rajska\Oracle\Statement\OutValue;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
@@ -48,24 +47,24 @@ test('out gives one out value per row in order', function (): void {
     $this->connection->runMany($insert, valid(3));
 
     $returning = $this->connection->runMany('update fx_batch_rows set qty = qty + 1 where id >= :low returning id into :ids', [
-        ['low' => 3, 'ids' => Number::out()],
-        ['low' => 9, 'ids' => Number::out()],
+        ['low' => 3, 'ids' => new Out\Number()],
+        ['low' => 9, 'ids' => new Out\Number()],
     ]);
     $block = $this->connection->runMany('begin :label := :prefix || :n; end;', [
-        ['n' => 1, 'prefix' => 'a', 'label' => Varchar::out()],
-        ['n' => 2, 'prefix' => 'b', 'label' => Varchar::out()],
+        ['n' => 1, 'prefix' => 'a', 'label' => new Out\Varchar()],
+        ['n' => 2, 'prefix' => 'b', 'label' => new Out\Varchar()],
     ]);
 
     $ids = $returning->out('IDS');
-    expect(array_map(static fn(OutValue $value): array => $value->list(), $ids))->toBe([[3], []])
+    expect(array_map(static fn (OutValue $value): array => $value->list(), $ids))->toBe([[3], []])
         ->and($ids[0]->int())->toBe(3)
-        ->and(array_map(static fn(OutValue $value): string | null => $value->string(), $block->out('label')))->toBe(['a1', 'b2']);
+        ->and(array_map(static fn (OutValue $value): string | null => $value->string(), $block->out('label')))->toBe(['a1', 'b2']);
 });
 
 test('out with an unknown or an in only name fails', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
-    $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => Varchar::out()]]);
+    $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => new Out\Varchar()]]);
 
     foreach (['missing' => "No OUT bind is named 'missing'; they are 'label'.", 'PREFIX' => "Bind 'prefix' is IN only, so it has no OUT value; bind it with out() or inOut() of a typed bind to read it back."] as $name => $message) {
         expect(function () use ($arrayDml, $name): void {
@@ -77,7 +76,7 @@ test('out with an unknown or an in only name fails', function (): void {
     $empty = $this->connection->runMany($insert, []);
     expect($empty)->toBeEmpty()
         ->and($empty->affected())->toBe(0)
-        ->and(fn() => $empty->out('anything'))->toThrow(UsageException::class, "No OUT bind is named 'anything'; the statement has none.");
+        ->and(fn () => $empty->out('anything'))->toThrow(UsageException::class, "No OUT bind is named 'anything'; the statement has none.");
 });
 
 test('failing rows inside begin undo only that call', function (): void {
@@ -94,11 +93,11 @@ test('failing rows inside begin undo only that call', function (): void {
     try {
         $this->connection->runMany($insert, $rows);
         $this->fail('The bad rows were inserted.');
-    } catch (ArrayDmlException $arrayDmlException) {
-        expect($arrayDmlException->getCode())->toBe(1)
-            ->and($arrayDmlException->sql())->toBe($insert)
-            ->and($arrayDmlException->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
-            ->and(array_map(static fn(RowFailure $row): array => [$row->index, $row->code], $arrayDmlException->rows()))->toBe([[3, 1], [5, 1400], [7, 2290]]);
+    } catch (ArrayDmlFailedException $arrayDmlFailedException) {
+        expect($arrayDmlFailedException->getCode())->toBe(1)
+            ->and($arrayDmlFailedException->sql())->toBe($insert)
+            ->and($arrayDmlFailedException->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
+            ->and(array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $arrayDmlFailedException->rows()))->toBe([[3, 1], [5, 1400], [7, 2290]]);
     }
     $this->connection->runMany($insert, valid(2));
     expect(committed($this->observer))->toBe(0);
@@ -113,8 +112,8 @@ test('a bound value never appears in a run many error', function (): void {
 
     $secret = 'zq60secret';
     $calls = [
-        'row errors' => fn(): ArrayDml => $this->connection->runMany($insert, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
-        'refused row' => fn(): ArrayDml => $this->connection->runMany($insert, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
+        'row errors' => fn (): ArrayDml => $this->connection->runMany($insert, [['id' => 1, 'code' => $secret, 'qty' => 1], ['id' => 2, 'code' => $secret, 'qty' => 1]]),
+        'refused row' => fn (): ArrayDml => $this->connection->runMany($insert, [['id' => 1, 'code' => 'a', 'qty' => 1], ['id' => 2, 'code' => 'b', 'qty' => $secret]]),
     ];
     foreach ($calls as $kind => $call) {
         try {
@@ -124,7 +123,7 @@ test('a bound value never appears in a run many error', function (): void {
             expect($e->getMessage())->not->toContain($secret)
                 ->and($e->getTraceAsString())->not->toContain($secret)
                 ->and((string) $e)->not->toContain($secret);
-            if ($e instanceof ArrayDmlException) {
+            if ($e instanceof ArrayDmlFailedException) {
                 foreach ($e->rows() as $row) {
                     expect($row->message)->not->toContain($secret);
                 }
@@ -137,7 +136,7 @@ test('run many after close fails', function (): void {
     $insert = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
 
     $this->connection->close();
-    expect(fn() => $this->connection->runMany($insert, []))->toThrow(UsageException::class, 'The Connection is closed.');
+    expect(fn () => $this->connection->runMany($insert, []))->toThrow(UsageException::class, 'The Connection is closed.');
 });
 
 /**
@@ -145,7 +144,7 @@ test('run many after close fails', function (): void {
  */
 function valid(int $count): array
 {
-    return array_map(static fn(int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
+    return array_map(static fn (int $id): array => ['id' => $id, 'code' => "c$id", 'qty' => $id], range(1, $count));
 }
 
 function committed(IndependentSession $observer): int

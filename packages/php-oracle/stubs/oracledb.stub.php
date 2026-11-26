@@ -12,7 +12,7 @@
  *
  * The one Core call the Extension makes: every sparse VECTOR it reads (a
  * column, an OUT value, inside JSON) becomes
- * `\Rajska\Oracle\SparseVector::fromDriver(int $dimensions, array $values)`,
+ * `\Rajska\Oracle\DataType\SparseVector::fromDriver(int $dimensions, array $values)`,
  * values keyed by 0-based position. That name and signature are part of the
  * Extension's semver contract.
  */

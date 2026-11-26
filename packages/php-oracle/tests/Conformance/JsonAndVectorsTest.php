@@ -8,17 +8,19 @@ use ArrayObject;
 use DateTimeImmutable;
 use DateTimeZone;
 use JsonSerializable;
-use Rajska\Oracle\Bind\Direction;
-use Rajska\Oracle\Bind\Json;
-use Rajska\Oracle\Bind\Vector;
+use Override;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\DataType\SparseVector;
+use Rajska\Oracle\DataType\VectorFormat;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\NumberMode;
-use Rajska\Oracle\SparseVector;
-use Rajska\Oracle\TemporalMode;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\TemporalMode;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\Temporals;
-use Rajska\Oracle\ValueMapping;
-use Rajska\Oracle\VectorFormat;
 
 test('json decodes like json decode with exact numbers', function (): void {
     $sql = <<<'SQL'
@@ -120,7 +122,7 @@ test('vector columns give lists or sparse vectors', function (): void {
 test('vector columns describe dimensions format and sparseness', function (): void {
     $cursor = $this->connect()->execute('select v32, v64, v8, vbin, s32, s8, flex from fx_vectors', [], $this->options())->cursor();
     assert($cursor !== null);
-    expect(array_map(static fn(array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']], $cursor->columns()))->toBe([
+    expect(array_map(static fn (array $column): array => [$column['name'], $column['type'], $column['vectorDimensions'], $column['vectorFormat'], $column['sparse']], $cursor->columns()))->toBe([
         ['V32', 'vector', 3, 'float32', false],
         ['V64', 'vector', 3, 'float64', false],
         ['V8', 'vector', 3, 'int8', false],
@@ -152,6 +154,7 @@ dataset('jsonInputs', function () {
     yield 'empty list' => [[], []];
     yield 'stdClass' => [(object) ['a' => 1, 'b' => (object) []], ['a' => 1, 'b' => []]];
     yield 'JsonSerializable' => [new class implements JsonSerializable {
+        #[Override]
         public function jsonSerialize(): mixed
         {
             return ['kind' => 'serialized', 'nested' => new ArrayObject()];
@@ -162,7 +165,7 @@ dataset('jsonInputs', function () {
 
         protected int $hidden = 2;
     }, ['visible' => 1]];
-    yield 'backed enum' => [[Direction::In], ['in']];
+    yield 'backed enum' => [[RowShape::Assoc], ['assoc']];
     yield 'float' => [0.1, '0.1'];
     yield 'floats inside' => [['x' => 0.1, 'y' => -2.5e-7], ['x' => '0.1', 'y' => '-0.00000025']];
     yield 'int' => [PHP_INT_MAX, PHP_INT_MAX];
@@ -179,7 +182,7 @@ test('json in round trips each input kind', function (mixed $input, mixed $expec
         $connection = $this->connect();
         $options = $this->options(autocommit: false);
         try {
-            $connection->execute('insert into fx_vector_rows (id, doc) values (1, :doc)', ['doc' => Json::in($input)], $options);
+            $connection->execute('insert into fx_vector_rows (id, doc) values (1, :doc)', ['doc' => new In\Json($input)], $options);
             $read = $this->rows($connection, 'select doc from fx_vector_rows', options: $options)[0]['DOC'];
         } finally {
             $connection->rollback();
@@ -192,13 +195,13 @@ test('json in round trips each input kind', function (mixed $input, mixed $expec
 test('json in refuses what json cannot hold', function (): void {
     foreach ([NAN, [INF], fopen('php://memory', 'r')] as $value) {
         try {
-            Json::in($value);
-            $this->fail('Json::in() took ' . get_debug_type($value));
+            new In\Json($value);
+            $this->fail('In\Json took ' . get_debug_type($value));
         } catch (UsageException $e) {
-            expect($e->getMessage())->toStartWith('Json::in()');
+            expect($e->getMessage())->toStartWith('A JSON bind');
         }
     }
-    expect(fn() => $this->connect()->execute('select :doc from dual', ['doc' => Json::in(['bytes' => "\xff"])], $this->options()))->toThrow(UsageException::class, "Bind 'doc': JSON text must be valid UTF-8");
+    expect(fn () => $this->connect()->execute('select :doc from dual', ['doc' => new In\Json(['bytes' => "\xff"])], $this->options()))->toThrow(UsageException::class, "Bind 'doc': JSON text must be valid UTF-8");
 });
 
 test('a float64 vector bind fills a float32 column', function (): void {
@@ -207,7 +210,7 @@ test('a float64 vector bind fills a float32 column', function (): void {
     try {
         $connection->execute(
             'insert into fx_vector_rows (id, v32, s32) values (1, :dense, :sparse)',
-            ['dense' => Vector::in([1.5, -2, 0.1]), 'sparse' => Vector::in(new SparseVector(10, [5 => 0.1, 1 => 1.5]))],
+            ['dense' => new In\Vector([1.5, -2, 0.1]), 'sparse' => new In\Vector(new SparseVector(10, [5 => 0.1, 1 => 1.5]))],
             $options,
         );
         [$row] = $this->rows($connection, 'select v32, s32 from fx_vector_rows', options: $options);
@@ -221,20 +224,20 @@ test('a float64 vector bind fills a float32 column', function (): void {
 });
 
 /**
- * @return iterable<string, array{Vector, mixed}>
+ * @return iterable<string, array{In\Vector, mixed}>
  */
 dataset('vectorBinds', function () {
-    yield 'Float64' => [Vector::in([1.5, -2, 0.1]), [1.5, -2.0, 0.1]];
-    yield 'Float32' => [Vector::in([1.5, -2, 0.1], VectorFormat::Float32), [1.5, -2.0, 0.1]];
-    yield 'Int8' => [Vector::in([1, -128, 127], VectorFormat::Int8), [1, -128, 127]];
-    yield 'Binary' => [Vector::in([0b10110100, 0, 255], VectorFormat::Binary), [0b10110100, 0, 255]];
-    yield 'sparse Float64' => [Vector::in(new SparseVector(10, [9 => -0.5, 0 => 2])), new SparseVector(10, [0 => 2.0, 9 => -0.5])];
-    yield 'sparse Float32' => [Vector::in(new SparseVector(3, [1 => 0.1]), VectorFormat::Float32), new SparseVector(3, [1 => 0.1])];
-    yield 'sparse Int8' => [Vector::in(new SparseVector(4, [3 => -7]), VectorFormat::Int8), new SparseVector(4, [3 => -7])];
-    yield 'NULL' => [Vector::in(null), null];
+    yield 'Float64' => [new In\Vector([1.5, -2, 0.1]), [1.5, -2.0, 0.1]];
+    yield 'Float32' => [new In\Vector([1.5, -2, 0.1], VectorFormat::Float32), [1.5, -2.0, 0.1]];
+    yield 'Int8' => [new In\Vector([1, -128, 127], VectorFormat::Int8), [1, -128, 127]];
+    yield 'Binary' => [new In\Vector([0b10110100, 0, 255], VectorFormat::Binary), [0b10110100, 0, 255]];
+    yield 'sparse Float64' => [new In\Vector(new SparseVector(10, [9 => -0.5, 0 => 2])), new SparseVector(10, [0 => 2.0, 9 => -0.5])];
+    yield 'sparse Float32' => [new In\Vector(new SparseVector(3, [1 => 0.1]), VectorFormat::Float32), new SparseVector(3, [1 => 0.1])];
+    yield 'sparse Int8' => [new In\Vector(new SparseVector(4, [3 => -7]), VectorFormat::Int8), new SparseVector(4, [3 => -7])];
+    yield 'NULL' => [new In\Vector(null), null];
 });
 
-test('vector in round trips each format', function (Vector $bind, mixed $expected): void {
+test('vector in round trips each format', function (In\Vector $bind, mixed $expected): void {
     $read = $this->rows($this->connect(), 'select :v v from dual', ['v' => $bind])[0]['V'];
 
     if ($expected instanceof SparseVector) {
@@ -246,26 +249,26 @@ test('vector in round trips each format', function (Vector $bind, mixed $expecte
 })->with('vectorBinds');
 
 /**
- * @return iterable<string, array{Vector, string}>
+ * @return iterable<string, array{In\Vector, string}>
  */
 dataset('vectorMistakes', function () {
-    yield 'empty list' => [Vector::in([]), 'a dense VECTOR is a non-empty list of numbers'];
+    yield 'empty list' => [new In\Vector([]), 'a dense VECTOR is a non-empty list of numbers'];
 
     // @phpstan-ignore argument.type (the mistake is the point)
-    yield 'not a list' => [Vector::in([1 => 1.0]), 'a dense VECTOR is a non-empty list of numbers'];
+    yield 'not a list' => [new In\Vector([1 => 1.0]), 'a dense VECTOR is a non-empty list of numbers'];
 
     // @phpstan-ignore argument.type (the mistake is the point)
-    yield 'not a number' => [Vector::in(['1']), 'a FLOAT64 VECTOR holds finite ints and floats'];
-    yield 'NaN' => [Vector::in([NAN]), 'a FLOAT64 VECTOR holds finite ints and floats'];
-    yield 'beyond FLOAT32' => [Vector::in([1e39], VectorFormat::Float32), 'a FLOAT32 VECTOR holds ints and floats within FLOAT32'];
-    yield 'beyond INT8' => [Vector::in([128], VectorFormat::Int8), 'an INT8 VECTOR holds ints from -128 to 127'];
-    yield 'float in INT8' => [Vector::in([1.5], VectorFormat::Int8), 'an INT8 VECTOR holds ints from -128 to 127'];
-    yield 'beyond a byte' => [Vector::in([256], VectorFormat::Binary), 'a BINARY VECTOR holds bytes'];
-    yield 'sparse BINARY' => [Vector::in(new SparseVector(8, [0 => 1]), VectorFormat::Binary), 'a sparse VECTOR cannot be BINARY'];
+    yield 'not a number' => [new In\Vector(['1']), 'a FLOAT64 VECTOR holds finite ints and floats'];
+    yield 'NaN' => [new In\Vector([NAN]), 'a FLOAT64 VECTOR holds finite ints and floats'];
+    yield 'beyond FLOAT32' => [new In\Vector([1e39], VectorFormat::Float32), 'a FLOAT32 VECTOR holds ints and floats within FLOAT32'];
+    yield 'beyond INT8' => [new In\Vector([128], VectorFormat::Int8), 'an INT8 VECTOR holds ints from -128 to 127'];
+    yield 'float in INT8' => [new In\Vector([1.5], VectorFormat::Int8), 'an INT8 VECTOR holds ints from -128 to 127'];
+    yield 'beyond a byte' => [new In\Vector([256], VectorFormat::Binary), 'a BINARY VECTOR holds bytes'];
+    yield 'sparse BINARY' => [new In\Vector(new SparseVector(8, [0 => 1]), VectorFormat::Binary), 'a sparse VECTOR cannot be BINARY'];
 });
 
-test('vector in checks its values before any round trip', function (Vector $bind, string $message): void {
-    expect(fn() => $this->connect()->execute('select :v from dual', ['v' => $bind], $this->options()))->toThrow(UsageException::class, "Bind 'v': $message");
+test('vector in checks its values before any round trip', function (In\Vector $bind, string $message): void {
+    expect(fn () => $this->connect()->execute('select :v from dual', ['v' => $bind], $this->options()))->toThrow(UsageException::class, "Bind 'v': $message");
 })->with('vectorMistakes');
 
 test('a sparse vector checks its dimensions and positions', function (): void {
@@ -302,10 +305,10 @@ test('json and vector bind in out and in out through plsql', function (): void {
                v(null, :vnull, :vionull);
              end;",
         [
-            'ji' => Json::in(['a' => [1, 2]]), 'jo' => Json::out(), 'jio' => Json::inOut(['b' => true]),
-            'jnull' => Json::out(), 'jionull' => Json::inOut(null),
-            'vi' => Vector::in([1, 2], VectorFormat::Int8), 'vo' => Vector::out(), 'vio' => Vector::inOut([0.5]),
-            'vnull' => Vector::out(), 'vionull' => Vector::inOut(null),
+            'ji' => new In\Json(['a' => [1, 2]]), 'jo' => new Out\Json(), 'jio' => new InOut\Json(['b' => true]),
+            'jnull' => new Out\Json(), 'jionull' => new InOut\Json(null),
+            'vi' => new In\Vector([1, 2], VectorFormat::Int8), 'vo' => new Out\Vector(), 'vio' => new InOut\Vector([0.5]),
+            'vnull' => new Out\Vector(), 'vionull' => new InOut\Vector(null),
         ],
         $this->options(),
     );
@@ -313,7 +316,7 @@ test('json and vector bind in out and in out through plsql', function (): void {
     $values = $execution->outValues();
     $sparse = $values['vio'][0];
     unset($values['vio']);
-    expect(array_map(static fn(array $list): array => array_map(sorted(...), $list), $values))->toBe([
+    expect(array_map(static fn (array $list): array => array_map(sorted(...), $list), $values))->toBe([
         'jo' => [['a' => [1, 2]]],
         'jio' => [['added' => 1, 'b' => true]],
         'jnull' => [null],
@@ -333,8 +336,8 @@ test('json and vector come back from returning into', function (): void {
         $execution = $connection->execute(
             'insert into fx_vector_rows (id, v32, s32, doc) values (1, :v, :s, :d) returning v32, s32, doc into :rv, :rs, :rd',
             [
-                'v' => Vector::in([1, 2, 3]), 's' => Vector::in(new SparseVector(10, [4 => 0.5])), 'd' => Json::in(['a' => 1]),
-                'rv' => Vector::out(), 'rs' => Vector::out(), 'rd' => Json::out(),
+                'v' => new In\Vector([1, 2, 3]), 's' => new In\Vector(new SparseVector(10, [4 => 0.5])), 'd' => new In\Json(['a' => 1]),
+                'rv' => new Out\Vector(), 'rs' => new Out\Vector(), 'rd' => new Out\Json(),
             ],
             $options,
         );
@@ -362,14 +365,14 @@ test('json out values follow the value mapping', function (): void {
     $connection = $this->connect();
 
     Temporals::inZone('UTC', function () use ($connection, $sql): void {
-        $default = $connection->execute($sql, ['doc' => Json::out()], $this->options())->outValues()['doc'][0];
+        $default = $connection->execute($sql, ['doc' => new Out\Json()], $this->options())->outValues()['doc'][0];
         $default = sorted($default);
 
         assert(\is_array($default));
         expect(array_map(Temporals::shown(...), $default))->toBe(['half' => '0.5', 'ts' => '+2026-03-01 10:00:00.123456 UTC']);
     });
 
-    $mapped = $connection->execute($sql, ['doc' => Json::out()], $this->options(values: new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)))->outValues()['doc'][0];
+    $mapped = $connection->execute($sql, ['doc' => new Out\Json()], $this->options(values: new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)))->outValues()['doc'][0];
     expect(sorted($mapped))->toBe(['half' => 0.5, 'ts' => '2026-03-01 10:00:00.123456789']);
 });
 

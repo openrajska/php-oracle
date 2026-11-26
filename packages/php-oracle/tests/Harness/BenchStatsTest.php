@@ -28,5 +28,5 @@ test('the spread is the lowest and highest per round median', function (): void 
 });
 
 test('an empty sample set has no median', function (): void {
-    expect(fn(): float => Stats::median([]))->toThrow(InvalidArgumentException::class);
+    expect(fn (): float => Stats::median([]))->toThrow(InvalidArgumentException::class);
 });

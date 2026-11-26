@@ -7,8 +7,8 @@ namespace Rajska\Oracle\Tests\Api\SessionFeaturesTest;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Exceptions\TimeoutException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\Statement\Options;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tracing;
 
@@ -37,14 +37,14 @@ test('trace after close fails', function (): void {
     $connection = connect();
     $connection->close();
 
-    expect(fn() => $connection->trace(new Tracing(module: 'late')))->toThrow(UsageException::class, 'The Connection is closed.');
+    expect(fn () => $connection->trace(new Tracing(module: 'late')))->toThrow(UsageException::class, 'The Connection is closed.');
 });
 
 test('the config call timeout throws timeout exception', function (): void {
     $cpuBound = 'select count(*) from fx_bench_rows a, fx_bench_rows b';
 
     $connection = connect(callTimeout: 0.5);
-    expect(fn(): mixed => $connection->select($cpuBound)->value())->toThrow(function (TimeoutException $timeoutException) use ($cpuBound): void {
+    expect(fn (): mixed => $connection->select($cpuBound)->value())->toThrow(function (TimeoutException $timeoutException) use ($cpuBound): void {
         expect($timeoutException->getMessage())->toBe('Call timeout of 500 ms exceeded.')
             ->and($timeoutException->sql())->toBe($cpuBound);
     })
@@ -57,9 +57,9 @@ test('the execute options timeout applies to one execution only', function (): v
 
     $connection = connect(callTimeout: 0.5);
 
-    $connection->run($oneSecond, [], new ExecuteOptions(timeout: 5));
+    $connection->run($oneSecond, [], new Options(timeout: 5));
 
-    expect(fn(): mixed => $connection->select($cpuBound)->value())->toThrow(TimeoutException::class);
+    expect(fn (): mixed => $connection->select($cpuBound)->value())->toThrow(TimeoutException::class);
 });
 
 test('a new acquire uses its own configs call timeout', function (): void {
@@ -72,7 +72,7 @@ test('a new acquire uses its own configs call timeout', function (): void {
     $first->close();
 
     $second = connect(...$pool, callTimeout: 0.5);
-    expect(fn(): mixed => $second->select($cpuBound)->value())->toThrow(TimeoutException::class);
+    expect(fn (): mixed => $second->select($cpuBound)->value())->toThrow(TimeoutException::class);
 });
 
 function connect(mixed ...$fields): Connection

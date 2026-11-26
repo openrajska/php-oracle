@@ -31,7 +31,7 @@ server error, unless this page says otherwise.
 - The Call timeout bounds each wait for the server on the network (a socket
   read or write), not a whole Round trip: a response that arrives in many
   packets, each within the limit, can take longer in total.
-- `ExecuteOptions`' `timeout` covers the statement and its fetches. Describing
+- `Options`' `timeout` covers the statement and its fetches. Describing
   an Object type on its first use in a Session and the `commit()` /
   `rollback()` Round trips run under the Connection's `callTimeout` instead.
 
@@ -61,24 +61,24 @@ server error, unless this page says otherwise.
 
 ## Binds
 
-- `Char::out()` and `NChar::out()` behave like `Varchar::out()`. A PL/SQL
+- `Out\Char` and `Out\NChar` behave like `Out\Varchar`. A PL/SQL
   `CHAR` or `NCHAR` parameter declared without a length takes its length from
   the bind, so its OUT value comes back blank-padded to 32767 bytes (16383
   characters for NCHAR).
-- `Date::in()` with a value travels as a TIMESTAMP: compared with an indexed
+- `In\Date` with a value travels as a TIMESTAMP: compared with an indexed
   DATE column, it can keep the index from being used. Write
-  `cast(:value as date)`. Likewise `TimestampLtz::in()` travels as a
+  `cast(:value as date)`. Likewise `In\TimestampLtz` travels as a
   TIMESTAMP WITH TIME ZONE in UTC. Sending their own types is planned for
   later.
 - `Varchar`, `Char`, `NVarchar`, `NChar` and `Raw` binds over 32767 bytes
-  throw `UnsupportedException`: use `Clob::in()` or `Blob::in()`. Writing
+  throw `UnsupportedException`: use `In\Clob` or `In\Blob`. Writing
   more than 32767 bytes into a LONG or LONG RAW column is not supported yet,
   and a plain string over 32767 bytes into a LONG column fails with the
   server's ORA-22835.
-- `TimestampTz::in()` refuses a `DateTimeInterface` whose offset has seconds
+- `In\TimestampTz` refuses a `DateTimeInterface` whose offset has seconds
   (a historical LMT zone) or exceeds ±15:59.
-- A stream bound with `Clob::in()`, `NClob::in()` or `Blob::in()` is read to
-  its end, never rewound or closed. `Clob::in('')` is an empty LOB, not NULL.
+- A stream bound with `In\Clob`, `In\NClob` or `In\Blob` is read to
+  its end, never rewound or closed. `new In\Clob('')` is an empty LOB, not NULL.
 - A LOB bind, or a string over 32767 bytes, costs one Round trip plus one per
   MiB before the statement's own. Its temporary LOB lives while any Cursor or
   `Lob` born of that Execution does.
@@ -134,7 +134,7 @@ server error, unless this page says otherwise.
 
 - JSON key order is not kept, and `{}` and `[]` both decode to `[]`.
 - A DATE inside JSON comes back as a TIMESTAMP.
-- `Json::in()` cannot produce JSON's extended RAW, INTERVAL, BINARY_DOUBLE or
+- `In\Json` cannot produce JSON's extended RAW, INTERVAL, BINARY_DOUBLE or
   VECTOR scalars, so a fetched JSON value holding them may not bind back
   unchanged. Text must be valid UTF-8.
 - A JSON column holding an OSON id fails with `UnsupportedException`.
@@ -156,7 +156,7 @@ server error, unless this page says otherwise.
   afterwards.
 - Types reached through a public synonym do not resolve: write the owner,
   `SYS.ODCINUMBERLIST`.
-- An Associative array is never NULL in PL/SQL: `Indexed::in($type, null)`
+- An Associative array is never NULL in PL/SQL: `new In\Indexed($type, null)`
   arrives as an empty one.
 - CHAR and NCHAR attributes bound in an Object are stored unpadded.
 - Attribute lengths are checked in bytes from the type's description: a

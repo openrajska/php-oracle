@@ -4,7 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle;
 
-use Rajska\Oracle\Driver\Extension\ExtensionDriver;
+use Rajska\Oracle\Driver\ExtensionManager;
 
 /**
  * The entry point.
@@ -16,6 +16,6 @@ final class Oracle
      */
     public static function connect(ConnectionConfig $config): Connection
     {
-        return new Connection(new ExtensionDriver()->connect($config), $config);
+        return new Connection(new ExtensionManager()->connect($config), $config);
     }
 }

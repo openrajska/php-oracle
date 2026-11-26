@@ -85,7 +85,7 @@ with `transaction()`:
 $orderId = $connection->transaction(function (Connection $connection): int {
     $insert = $connection->run(
         'insert into orders (customer_id, total) values (:customer, :total) returning id into :id',
-        ['customer' => 1, 'total' => Number::in('42.00'), 'id' => Number::out()],
+        ['customer' => 1, 'total' => new In\Number('42.00'), 'id' => new Out\Number()],
     );
 
     return $insert->out('id')->int();
@@ -98,9 +98,9 @@ Call a stored procedure or function by name:
 $total = $connection->function('billing.order_total', ['order_id' => 1])->number();
 
 $execution = $connection->procedure('billing.close_month', [
-    'month_start' => Date::in(new DateTimeImmutable('first day of this month')),
-    'closed' => Number::out(),
-    'orders' => Cursor::out(),
+    'month_start' => new In\Date(new DateTimeImmutable('first day of this month')),
+    'closed' => new Out\Number(),
+    'orders' => new Out\Cursor(),
 ]);
 $closed = $execution->out('closed')->int();
 $closedOrders = $execution->out('orders')->cursor()->all();
@@ -128,9 +128,9 @@ way its Session goes back to the Pool, and an open transaction rolls back.
 - [Known limitations](docs/known-limitations.md)
 
 Every PHP example in these docs runs in Core's test suite. Examples assume
-`use` imports of the classes they name: `Rajska\Oracle\*`, the bind classes
-in `Rajska\Oracle\Bind\*` (so `Cursor` there is `Bind\Cursor`) and the
-exceptions in `Rajska\Oracle\Exceptions\*`.
+`use` imports of the classes they name: `Rajska\Oracle\*`, the bind
+namespaces `Rajska\Oracle\Binds\In`, `Out` and `InOut`, and the exceptions in
+`Rajska\Oracle\Exceptions\*`.
 
 The vocabulary (Session, Release, Round trip, Call, Implicit result…) is
 defined in the [glossary](GLOSSARY.md).

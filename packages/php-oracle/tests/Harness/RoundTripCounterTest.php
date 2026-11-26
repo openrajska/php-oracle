@@ -34,7 +34,7 @@ test('reading the count costs the observed session nothing', function (): void {
 test('one anonymous block is one round trip', function (): void {
     expect($this->counter->during(
         $this->observed->sid(),
-        fn() => $this->observed->execute('begin null; end;'),
+        fn () => $this->observed->execute('begin null; end;'),
     ))->toBe(1);
 });
 

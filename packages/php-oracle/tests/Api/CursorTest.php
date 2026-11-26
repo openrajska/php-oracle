@@ -5,21 +5,21 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Api\CursorTest;
 
 use Fiber;
-use Rajska\Oracle\Column;
-use Rajska\Oracle\Cursor;
+use Rajska\Oracle\DataType\SparseVector;
+use Rajska\Oracle\DataType\Type;
+use Rajska\Oracle\DataType\VectorFormat;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\RowShape;
-use Rajska\Oracle\SparseVector;
+use Rajska\Oracle\Statement\Column;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
-use Rajska\Oracle\Type;
-use Rajska\Oracle\ValueMapping;
-use Rajska\Oracle\VectorFormat;
 use RuntimeException;
 
 beforeEach(function (): void {
@@ -40,7 +40,7 @@ test('select equals run rows', function (): void {
 test('select is lazy', function (): void {
     $sid = sid();
     $counter = RoundTripCounter::open();
-    $options = new ExecuteOptions(fetchSize: 10);
+    $options = new Options(fetchSize: 10);
 
     try {
         $cursor = null;
@@ -67,12 +67,12 @@ test('select of an update runs it then fails in rows', function (): void {
     $this->connection->run("create table $table (id number)");
 
     try {
-        expect(fn() => $this->connection->select("insert into $table values (1)"))->toThrow(function (UsageException $usageException) use ($table): void {
+        expect(fn () => $this->connection->select("insert into $table values (1)"))->toThrow(function (UsageException $usageException) use ($table): void {
             expect($usageException->getMessage())->toContain('results()', 'out()')
                 ->and($usageException->sql())->toBe("insert into $table values (1)");
         })
             ->and($this->connection->select("select count(*) from $table")->value())->toBe(1)
-            ->and(fn() => $this->connection->run('begin null; end;')->rows())->toThrow(UsageException::class);
+            ->and(fn () => $this->connection->run('begin null; end;')->rows())->toThrow(UsageException::class);
     } finally {
         $this->connection->run("drop table $table purge");
     }
@@ -81,7 +81,7 @@ test('select of an update runs it then fails in rows', function (): void {
 test('foreach is single pass and continues where it stopped', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
-    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
+    $cursor = $this->connection->select($fiveRows, [], new Options(fetchSize: 2));
 
     $seen = [];
     foreach ($cursor as $position => $row) {
@@ -102,7 +102,7 @@ test('foreach is single pass and continues where it stopped', function (): void 
 test('all returns the remaining rows', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
-    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
+    $cursor = $this->connection->select($fiveRows, [], new Options(fetchSize: 2));
 
     foreach ($cursor as $row) {
         break;
@@ -125,7 +125,7 @@ test('first and value return the next row then close', function (): void {
     expect($this->connection->select($fiveRows)->value())->toBe(1)
         ->and($this->connection->select('select 1 from dual where 1 = 0')->value())->toBeNull()
         ->and($this->connection->select('select 1 from dual where 1 = 0')->first())->toBeNull()
-        ->and($this->connection->select($fiveRows, [], new ExecuteOptions(rowShape: RowShape::List))->value())->toBe(1);
+        ->and($this->connection->select($fiveRows, [], new Options(rowShape: RowShape::List))->value())->toBe(1);
 
     $cursor = $this->connection->select($fiveRows);
     $cursor->value();
@@ -135,7 +135,7 @@ test('first and value return the next row then close', function (): void {
 test('reading after close fails and a double close is fine', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
-    $cursor = $this->connection->select($fiveRows, [], new ExecuteOptions(fetchSize: 2));
+    $cursor = $this->connection->select($fiveRows, [], new Options(fetchSize: 2));
     foreach ($cursor as $row) {
         break;
     }
@@ -147,7 +147,7 @@ test('reading after close fails and a double close is fine', function (): void {
 });
 
 test('two cursors read interleaved with dml and commit between batches', function (): void {
-    $options = new ExecuteOptions(fetchSize: 3);
+    $options = new Options(fetchSize: 3);
     $sql = 'select id from fx_items where id <= :last order by id';
     $iterators = [
         $this->connection->select($sql, ['last' => 10], $options)->getIterator(),
@@ -182,7 +182,7 @@ test('two cursors read interleaved with dml and commit between batches', functio
     foreach ($fibers as $fiber) {
         $fiber->start();
     }
-    while (array_filter($fibers, static fn(Fiber $f): bool => !$f->isTerminated()) !== []) {
+    while (array_filter($fibers, static fn (Fiber $f): bool => !$f->isTerminated()) !== []) {
         foreach ($fibers as $fiber) {
             if (!$fiber->isTerminated()) {
                 $fiber->resume();
@@ -196,7 +196,7 @@ test('two cursors read interleaved with dml and commit between batches', functio
 test('two thousand cursors dropped half read raise no ora 01000', function (): void {
     $fiveRows = 'select level n from dual connect by level <= 5';
 
-    $options = new ExecuteOptions(fetchSize: 2);
+    $options = new Options(fetchSize: 2);
     for ($i = 0; $i < 2000; ++$i) {
         $cursor = $this->connection->select($fiveRows, [], $options);
         foreach ($cursor as $row) {
@@ -212,7 +212,7 @@ test('columns are column objects before the first row', function (): void {
     $cursor = $this->connection->select(
         "select id, price, to_vector('[1,2,3]', 3, float32) embedding from fx_items where id = 1",
         [],
-        new ExecuteOptions(keyCase: KeyCase::Lower),
+        new Options(keyCase: KeyCase::Lower),
     );
 
     $columns = $cursor->columns();
@@ -279,7 +279,7 @@ test('json and vector columns arrive decoded', function (): void {
     $row = $this->connection->select(
         "select json('{\"a\": [1, 0.5]}') doc, v8, s8 from fx_vectors where id = 1",
         [],
-        new ExecuteOptions(keyCase: KeyCase::Lower),
+        new Options(keyCase: KeyCase::Lower),
     )->first();
 
     assert($row !== null);
@@ -294,8 +294,8 @@ test('row shape and key case come from the config and execute options override t
 
     try {
         expect($connection->select($sql)->first())->toBe(['id' => 1, 'name' => 'Item 0001'])
-            ->and($connection->select($sql, [], new ExecuteOptions(rowShape: RowShape::List))->first())->toBe([1, 'Item 0001'])
-            ->and($connection->select($sql, [], new ExecuteOptions(keyCase: KeyCase::Native))->first())->toBe(['ID' => 1, 'NAME' => 'Item 0001'])
+            ->and($connection->select($sql, [], new Options(rowShape: RowShape::List))->first())->toBe([1, 'Item 0001'])
+            ->and($connection->select($sql, [], new Options(keyCase: KeyCase::Native))->first())->toBe(['ID' => 1, 'NAME' => 'Item 0001'])
             ->and($connection->select($sql)->first())->toBe(['id' => 1, 'name' => 'Item 0001']);
     } finally {
         $connection->close();
@@ -306,13 +306,13 @@ test('numbers float works per connection and per execution', function (): void {
     $float = new ValueMapping(numbers: NumberMode::Float);
     $sql = 'select 12.5 half, 5 five from dual';
 
-    expect($this->connection->select($sql, [], new ExecuteOptions(values: $float))->first())->toBe(['HALF' => 12.5, 'FIVE' => 5])
+    expect($this->connection->select($sql, [], new Options(values: $float))->first())->toBe(['HALF' => 12.5, 'FIVE' => 5])
         ->and($this->connection->select($sql)->first())->toBe(['HALF' => '12.5', 'FIVE' => 5]);
 
     $connection = Oracle::connect(TestDatabase::fromEnvironment()->config(values: $float));
     try {
         expect($connection->select($sql)->first())->toBe(['HALF' => 12.5, 'FIVE' => 5])
-            ->and($connection->select($sql, [], new ExecuteOptions(values: new ValueMapping()))->first())->toBe(['HALF' => '12.5', 'FIVE' => 5]);
+            ->and($connection->select($sql, [], new Options(values: new ValueMapping()))->first())->toBe(['HALF' => '12.5', 'FIVE' => 5]);
     } finally {
         $connection->close();
     }
@@ -357,7 +357,7 @@ test('after the connection closes its cursor fails even with rows left in its ba
 function assertClosed(Cursor $cursor): void
 {
     foreach ([
-        'foreach' => static fn(): array => iterator_to_array($cursor),
+        'foreach' => static fn (): array => iterator_to_array($cursor),
         'all()' => $cursor->all(...),
         'first()' => $cursor->first(...),
         'value()' => $cursor->value(...),

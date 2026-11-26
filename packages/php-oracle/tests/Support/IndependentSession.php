@@ -104,7 +104,7 @@ final class IndependentSession
      * @param array<string, scalar|null> $binds
      * @return resource
      */
-    private function run(string $sql, array $binds)
+    private function run(string $sql, array $binds) // @phpstan-ignore typeCoverage.returnTypeCoverage (@pest-ignore-type: PHP has no native resource type)
     {
         $statement = @oci_parse($this->connection(), $sql);
         if ($statement === false) {
@@ -130,7 +130,7 @@ final class IndependentSession
     /**
      * @return resource
      */
-    private function connection()
+    private function connection() // @phpstan-ignore typeCoverage.returnTypeCoverage (@pest-ignore-type: PHP has no native resource type)
     {
         return $this->connection ?? throw new RuntimeException('The IndependentSession is closed.');
     }

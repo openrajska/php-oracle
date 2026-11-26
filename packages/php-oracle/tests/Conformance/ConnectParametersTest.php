@@ -6,8 +6,8 @@ namespace Rajska\Oracle\Tests\Conformance\ConnectParametersTest;
 
 use LogicException;
 use Rajska\Oracle\ConnectionConfig;
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\Extension\ExtensionDriver;
+use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Driver\ExtensionManager;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\UniqueViolationException;
@@ -284,7 +284,7 @@ test('two processes without a class share one drcp connection class', function (
     for ($process = 0; $process < 2; $process++) {
         runChild(TestDatabase::fromEnvironment()->connectString . ':pooled');
         $after = drcpClasses($user);
-        $classes[] = array_keys(array_filter($after, static fn(int $requests, string $class): bool => $requests > ($before[$class] ?? 0), ARRAY_FILTER_USE_BOTH));
+        $classes[] = array_keys(array_filter($after, static fn (int $requests, string $class): bool => $requests > ($before[$class] ?? 0), ARRAY_FILTER_USE_BOTH));
         $before = $after;
     }
 
@@ -348,7 +348,7 @@ function adapterHolds(string $secret): bool
         return false;
     };
 
-    return $holds(new ReflectionClass(ExtensionDriver::class)->getStaticProperties());
+    return $holds(new ReflectionClass(ExtensionManager::class)->getStaticProperties());
 }
 
 test('a wrong wallet password is a configuration error that shows no secret', function (): void {
@@ -416,7 +416,7 @@ function user(): string
     return TestDatabase::fromEnvironment()->user;
 }
 
-function protocol(DriverConnection $connection): mixed
+function protocol(Session $connection): mixed
 {
     return test()->value($connection, "select sys_context('userenv', 'network_protocol') from dual");
 }
@@ -447,8 +447,8 @@ function runChild(string $dsn): void
     $code = <<<'PHP'
             require $argv[1];
             $config = Rajska\Oracle\Tests\Support\TestDatabase::fromEnvironment()->config(dsn: $argv[2]);
-            $connection = new Rajska\Oracle\Driver\Extension\ExtensionDriver()->connect($config);
-            $connection->execute('select 1 from dual', [], new Rajska\Oracle\Driver\DriverOptions(true, null, 100, new Rajska\Oracle\ValueMapping(), Rajska\Oracle\RowShape::Assoc, Rajska\Oracle\KeyCase::Native))->cursor()?->fetchBatch();
+            $connection = new Rajska\Oracle\Driver\ExtensionManager()->connect($config);
+            $connection->execute('select 1 from dual', [], new Rajska\Oracle\Driver\Options(true, null, 100, new Rajska\Oracle\Statement\ValueMapping(), Rajska\Oracle\Statement\RowShape::Assoc, Rajska\Oracle\Statement\KeyCase::Native))->cursor()?->fetchBatch();
             $connection->close();
             echo 'connected';
             PHP;

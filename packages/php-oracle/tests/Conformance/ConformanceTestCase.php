@@ -4,25 +4,26 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance;
 
+use Override;
 use PHPUnit\Framework\TestCase;
-use Rajska\Oracle\Driver\Driver;
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\DriverOptions;
-use Rajska\Oracle\Driver\Extension\ExtensionDriver;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Contracts\Driver\Manager;
+use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Driver\ExtensionManager;
+use Rajska\Oracle\Driver\Options;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
-use Rajska\Oracle\ValueMapping;
 use RuntimeException;
 
 /**
  * The conformance tests run at the Driver contract seam:
- * `new ExtensionDriver()->connect($config)`.
+ * `new ExtensionManager()->connect($config)`.
  */
 abstract class ConformanceTestCase extends TestCase
 {
-    /** @var list<DriverConnection> */
+    /** @var list<Session> */
     private array $connections = [];
 
     private static int $pools = 0;
@@ -34,6 +35,7 @@ abstract class ConformanceTestCase extends TestCase
      */
     private static IndependentSession | null $observer = null;
 
+    #[Override]
     protected function tearDown(): void
     {
         foreach ($this->connections as $connection) {
@@ -42,18 +44,19 @@ abstract class ConformanceTestCase extends TestCase
         $this->connections = [];
     }
 
+    #[Override]
     public static function tearDownAfterClass(): void
     {
         self::$observer?->close();
         self::$observer = null;
     }
 
-    protected function driver(): Driver
+    protected function driver(): Manager
     {
-        return new ExtensionDriver();
+        return new ExtensionManager();
     }
 
-    protected function connect(mixed ...$fields): DriverConnection
+    protected function connect(mixed ...$fields): Session
     {
         $connection = $this->driver()->connect(TestDatabase::fromEnvironment()->config(...$fields));
         $this->connections[] = $connection;
@@ -80,8 +83,8 @@ abstract class ConformanceTestCase extends TestCase
         ValueMapping $values = new ValueMapping(),
         RowShape $rowShape = RowShape::Assoc,
         KeyCase $keyCase = KeyCase::Native,
-    ): DriverOptions {
-        return new DriverOptions(
+    ): Options {
+        return new Options(
             autocommit: $autocommit,
             timeout: $timeout,
             fetchSize: $fetchSize,
@@ -98,7 +101,7 @@ abstract class ConformanceTestCase extends TestCase
      *
      * @phpstan-impure
      */
-    public static function rows(DriverConnection $connection, string $sql, array $binds = [], DriverOptions | null $options = null): array
+    public static function rows(Session $connection, string $sql, array $binds = [], Options | null $options = null): array
     {
         $cursor = $connection->execute($sql, $binds, $options ?? self::options())->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");
@@ -117,7 +120,7 @@ abstract class ConformanceTestCase extends TestCase
      *
      * @param array<string, mixed> $binds
      */
-    protected static function value(DriverConnection $connection, string $sql, array $binds = []): mixed
+    protected static function value(Session $connection, string $sql, array $binds = []): mixed
     {
         $cursor = $connection->execute($sql, $binds, self::options(autocommit: false))->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");
@@ -128,7 +131,7 @@ abstract class ConformanceTestCase extends TestCase
         return array_values($rows[0])[0];
     }
 
-    protected static function sid(DriverConnection $connection): int
+    protected static function sid(Session $connection): int
     {
         $sid = self::value($connection, "select sys_context('userenv', 'sid') from dual");
         self::assertIsString($sid);
@@ -140,7 +143,7 @@ abstract class ConformanceTestCase extends TestCase
      * Which Session is behind a Connection: its AUDSID, unique per logon
      * (a SID is reused by the next Session in its slot).
      */
-    protected static function session(DriverConnection $connection): string
+    protected static function session(Session $connection): string
     {
         $session = self::value($connection, "select sys_context('userenv', 'sessionid') from dual");
         self::assertIsString($session);
@@ -153,7 +156,7 @@ abstract class ConformanceTestCase extends TestCase
      * would: `immediate` ends it at once, otherwise its next call gets
      * ORA-00028 first.
      */
-    protected static function kill(DriverConnection $connection, bool $immediate = true): void
+    protected static function kill(Session $connection, bool $immediate = true): void
     {
         $sid = self::sid($connection);
         $observer = self::observer();

@@ -120,11 +120,11 @@ test('begin costs no round trip and commit and rollback one each', function (): 
  */
 dataset('misuses', function () {
     yield 'commit() outside a transaction' => [
-        static fn(Connection $c) => $c->commit(),
+        static fn (Connection $c) => $c->commit(),
         'There is no transaction to commit',
     ];
     yield 'rollback() outside a transaction' => [
-        static fn(Connection $c) => $c->rollback(),
+        static fn (Connection $c) => $c->rollback(),
         'There is no transaction to roll back',
     ];
     yield 'begin() inside begin()' => [
@@ -137,27 +137,27 @@ dataset('misuses', function () {
     yield 'transaction() inside begin()' => [
         static function (Connection $c): void {
             $c->begin();
-            $c->transaction(static fn(): null => null);
+            $c->transaction(static fn (): null => null);
         },
         'Transactions do not nest',
     ];
     yield 'begin() inside transaction()' => [
-        static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->begin()),
+        static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->begin()),
         'Transactions do not nest',
         1,
     ];
     yield 'transaction() inside transaction()' => [
-        static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->transaction(static fn(): null => null)),
+        static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->transaction(static fn (): null => null)),
         'Transactions do not nest',
         1,
     ];
     yield 'commit() inside transaction()' => [
-        static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->commit()),
+        static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->commit()),
         'commit() inside transaction()',
         1,
     ];
     yield 'rollback() inside transaction()' => [
-        static fn(Connection $c) => $c->transaction(static fn(Connection $c) => $c->rollback()),
+        static fn (Connection $c) => $c->transaction(static fn (Connection $c) => $c->rollback()),
         'rollback() inside transaction()',
         1,
     ];
@@ -184,12 +184,12 @@ test('misusing a transaction verb throws usage exception before any round trip',
 })->with('misuses');
 
 test('a misuse leaves the transaction state as it was', function (): void {
-    expect(fn() => $this->connection->commit())->toThrow(UsageException::class);
+    expect(fn () => $this->connection->commit())->toThrow(UsageException::class);
     $this->connection->run('insert into fx_tx_rows (id) values (1)');
     expect($this->observer->committed())->toBe([1]);
 
     $this->connection->begin();
-    expect(fn() => $this->connection->begin())->toThrow(UsageException::class);
+    expect(fn () => $this->connection->begin())->toThrow(UsageException::class);
     $this->connection->run('insert into fx_tx_rows (id) values (2)');
     expect($this->observer->committed())->toBe([1]);
     $this->connection->commit();
@@ -382,7 +382,7 @@ test('the transaction verbs fail after close', function (): void {
             expect($e->getMessage())->toBe('The Connection is closed.', $verb);
         }
     }
-    expect(fn() => $this->connection->transaction(fn(): never => $this->fail('The closure ran.')))->toThrow(UsageException::class);
+    expect(fn () => $this->connection->transaction(fn (): never => $this->fail('The closure ran.')))->toThrow(UsageException::class);
 });
 
 function kill(Connection $connection, TransactionObserver $observer): void

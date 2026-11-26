@@ -28,7 +28,7 @@ back and rethrows the same exception.
 $customerId = $connection->transaction(function (Connection $connection): int {
     $customer = $connection->run(
         "insert into customers (name, country) values (:name, 'NO') returning id into :id",
-        ['name' => 'Ole-Johan Dahl', 'id' => Number::out()],
+        ['name' => 'Ole-Johan Dahl', 'id' => new Out\Number()],
     );
     $id = $customer->out('id')->int();
     $connection->run('insert into orders (customer_id, total) values (:customer, 10)', ['customer' => $id]);
@@ -98,8 +98,8 @@ one execute and one Round trip:
 $arrayDml = $connection->runMany(
     'insert into orders (customer_id, total) values (:customer, :total) returning id into :id',
     [
-        ['customer' => 1, 'total' => 30, 'id' => Number::out()],
-        ['customer' => 2, 'total' => 45.5, 'id' => Number::out()],
+        ['customer' => 1, 'total' => 30, 'id' => new Out\Number()],
+        ['customer' => 2, 'total' => 45.5, 'id' => new Out\Number()],
     ],
 );
 
@@ -108,7 +108,7 @@ $arrayDml->affected(); // 2 rows inserted
 $ids = array_map(fn (OutValue $id): ?int => $id->int(), $arrayDml->out('id')); // one OutValue per row
 ```
 
-**It applies every row or none.** When rows fail, one `ArrayDmlException` lists
+**It applies every row or none.** When rows fail, one `ArrayDmlFailedException` lists
 every failing row, and nothing of that call is applied:
 
 ```php
@@ -118,7 +118,7 @@ try {
         ['name' => 'Duplicate', 'email' => 'ada@example.com'], // already taken
         ['name' => null, 'email' => 'nobody@example.com'],      // NOT NULL
     ]);
-} catch (ArrayDmlException $exception) {
+} catch (ArrayDmlFailedException $exception) {
     $exception->getMessage(); // '2 of 3 rows failed; first: row 1: ORA-00001: …'
     foreach ($exception->rows() as $failure) {
         // $failure->index (0-based), $failure->code, $failure->message
@@ -142,6 +142,6 @@ mix as an exact NUMBER; any other mix fails, naming the row and bind); a
 string over 32767 bytes makes its whole column CLOB; a typed bind keeps its
 class down its column; an all-null column binds as NULL.
 
-`runMany()` refuses a query, `Cursor::out()` and a block that returns
+`runMany()` refuses a query, `Out\Cursor` and a block that returns
 Implicit results. A PL/SQL block runs too, but stops at its first failing row
 with that row's server error instead of a row list.

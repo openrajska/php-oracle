@@ -7,20 +7,13 @@ namespace Rajska\Oracle\Tests\Conformance\ValuesTest;
 use DateTime;
 use DateTimeImmutable;
 use DateTimeZone;
-use Rajska\Oracle\Bind\BinaryDouble;
-use Rajska\Oracle\Bind\BinaryFloat;
-use Rajska\Oracle\Bind\Date;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Rowid;
-use Rajska\Oracle\Bind\Timestamp;
-use Rajska\Oracle\Bind\TimestampLtz;
-use Rajska\Oracle\Bind\TimestampTz;
-use Rajska\Oracle\Driver\DriverOptions;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Driver\Options;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\NumberMode;
-use Rajska\Oracle\TemporalMode;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\TemporalMode;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\Temporals;
-use Rajska\Oracle\ValueMapping;
 
 test('number maps to int or the canonical exact string', function (): void {
     $tiny = '0.' . str_repeat('0', 129) . '1';
@@ -103,7 +96,7 @@ test('the wall clock round trips bc years included', function (): void {
             $fetched = $this->value($connection, "select $stored from dual");
             assert($fetched instanceof DateTimeImmutable);
 
-            foreach ([Date::in($fetched), Timestamp::in($fetched)] as $bind) {
+            foreach ([new In\Date($fetched), new In\Timestamp($fetched)] as $bind) {
                 expect($this->value($connection, "select case when :v = $stored then 1 else 0 end from dual", ['v' => $bind]))->toBe(1, $text)
                     ->and(Temporals::shown($this->value($connection, 'select :v from dual', ['v' => $bind])))->toBe(Temporals::shown($fetched), $text);
             }
@@ -141,9 +134,9 @@ test('timestamp tz in stores the objects offset', function (): void {
             '+2026-03-01 10:00:00.000000 +00:00' => new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('UTC')),
         ];
         foreach ($cases as $expected => $date) {
-            $stored = $this->value($connection, "select to_char(:v, $format) from dual", ['v' => TimestampTz::in($date)]);
+            $stored = $this->value($connection, "select to_char(:v, $format) from dual", ['v' => new In\TimestampTz($date)]);
             expect($stored)->toBe(ltrim(substr($expected, 1)), $expected)
-                ->and(Temporals::shown($this->value($connection, 'select :v from dual', ['v' => TimestampTz::in($date)])))->toBe($expected);
+                ->and(Temporals::shown($this->value($connection, 'select :v from dual', ['v' => new In\TimestampTz($date)])))->toBe($expected);
         }
     });
 });
@@ -154,7 +147,7 @@ test('a tstz offset with seconds fails before any round trip', function (): void
     expect($lmt->getOffset() % 60)->not->toBe(0);
 
     try {
-        $connection->execute('select :v from dual', ['v' => TimestampTz::in($lmt)], $this->options());
+        $connection->execute('select :v from dual', ['v' => new In\TimestampTz($lmt)], $this->options());
         $this->fail('An offset with seconds was bound.');
     } catch (UsageException $usageException) {
         expect($usageException->getMessage())->toContain("Bind 'v'")
@@ -162,7 +155,7 @@ test('a tstz offset with seconds fails before any round trip', function (): void
     }
 
     // As the Instant (TSLTZ) or the Wall clock, the same date binds.
-    expect($this->value($connection, "select to_char(sys_extract_utc(cast(:v as timestamp with time zone)), 'YYYY-MM-DD HH24:MI:SS') from dual", ['v' => TimestampLtz::in($lmt)]))->toBe('1890-01-01 03:06:28');
+    expect($this->value($connection, "select to_char(sys_extract_utc(cast(:v as timestamp with time zone)), 'YYYY-MM-DD HH24:MI:SS') from dual", ['v' => new In\TimestampLtz($lmt)]))->toBe('1890-01-01 03:06:28');
 });
 
 test('tsltz gives the instant in phps zone', function (): void {
@@ -286,16 +279,16 @@ test('binary float and double give floats nan and infinities included', function
 test('nan and infinities round trip', function (): void {
     $connection = $this->connect();
     foreach (['Nan' => NAN, 'Inf' => INF, '-Inf' => -INF] as $stored => $value) {
-        foreach ([BinaryFloat::in($value), BinaryDouble::in($value)] as $bind) {
+        foreach ([new In\BinaryFloat($value), new In\BinaryDouble($value)] as $bind) {
             $row = $this->rows($connection, 'select :v value, to_char(:v) text from dual', ['v' => $bind])[0];
 
-            expect($row['TEXT'])->toBe($stored, $bind->type->value);
+            expect($row['TEXT'])->toBe($stored, $bind::class);
             assert(\is_float($row['VALUE']));
-            expect(is_nan($row['VALUE']) ? 'NAN' : (string) $row['VALUE'])->toBe(is_nan($value) ? 'NAN' : (string) $value, $bind->type->value);
+            expect(is_nan($row['VALUE']) ? 'NAN' : (string) $row['VALUE'])->toBe(is_nan($value) ? 'NAN' : (string) $value, $bind::class);
         }
     }
-    expect($this->value($connection, 'select :v from dual', ['v' => BinaryFloat::in(0.1)]))->toBe(0.1)
-        ->and($this->value($connection, 'select :v from dual', ['v' => BinaryDouble::in(0.1)]))->toBe(0.1);
+    expect($this->value($connection, 'select :v from dual', ['v' => new In\BinaryFloat(0.1)]))->toBe(0.1)
+        ->and($this->value($connection, 'select :v from dual', ['v' => new In\BinaryDouble(0.1)]))->toBe(0.1);
 });
 
 test('char raw rowid boolean and long map as stated', function (): void {
@@ -327,14 +320,14 @@ test('char raw rowid boolean and long map as stated', function (): void {
             'NO_RID' => null,
             'NO_URID' => null,
         ])
-        ->and($this->value($connection, 'select id from fx_items where rowid = :r', ['r' => Rowid::in($row['RID'])]))->toBe(1);
+        ->and($this->value($connection, 'select id from fx_items where rowid = :r', ['r' => new In\Rowid($row['RID'])]))->toBe(1);
 
     // An index-organized table's ROWID is a UROWID: its text, which
     // finds the row again.
     $urowid = $this->rows($connection, 'select rowid urid, cast(rowid as varchar2(4000)) urid_text from fx_iot')[0];
     assert(\is_string($urowid['URID']));
     expect($urowid['URID'])->toBe($urowid['URID_TEXT'])
-        ->and($this->value($connection, 'select label from fx_iot where rowid = :r', ['r' => Rowid::in($urowid['URID'])]))->toBe('one')
+        ->and($this->value($connection, 'select label from fx_iot where rowid = :r', ['r' => new In\Rowid($urowid['URID'])]))->toBe('one')
         ->and($this->rows($connection, 'select id, text from fx_long_rows order by id'))->toBe([['ID' => 1, 'TEXT' => 'long text'], ['ID' => 2, 'TEXT' => null]])
         ->and($this->rows($connection, 'select id, bytes from fx_long_raw_rows order by id'))->toBe([['ID' => 1, 'BYTES' => "\x00\xff\x10"], ['ID' => 2, 'BYTES' => null]]);
 });
@@ -354,9 +347,9 @@ test('values are identical under unusual nls settings', function (): void {
                        to_char(:n) number_text
                   from dual
                 SQL;
-        $binds = ['n' => Number::in('12.30')];
+        $binds = ['n' => new In\Number('12.30')];
         $float = $this->options(values: new ValueMapping(numbers: NumberMode::Float));
-        $read = fn(DriverOptions | null $options = null): array => array_map(
+        $read = fn (Options | null $options = null): array => array_map(
             Temporals::shown(...),
             $this->rows($connection, $sql, $binds, $options)[0],
         );

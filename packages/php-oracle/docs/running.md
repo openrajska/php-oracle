@@ -5,7 +5,7 @@
 | `run($sql, $binds)` | anything: a query, DML, DDL, an Anonymous block | `Execution` |
 | `select($sql, $binds)` | a query; the same as `run()->rows()` | `Cursor` |
 | `procedure($name, $binds)` | a stored procedure, by name | `Execution` |
-| `function($name, $binds)` | a stored function, by name | `FunctionCall`, then a type terminal |
+| `function($name, $binds)` | a stored function, by name | `PendingFunction`, then a type terminal |
 | `runMany($sql, $rows)` | one statement per bind row, in one Round trip ([Array DML](transactions.md#array-dml)) | `ArrayDml` |
 
 Binds are always named: `['id' => 1]` for `:id`. See [Binds](binds.md).
@@ -63,13 +63,13 @@ or per Execution:
 ```php
 $rows = $connection->select(
     'select id, name from customers order by id',
-    options: new ExecuteOptions(keyCase: KeyCase::Lower),
+    options: new Options(keyCase: KeyCase::Lower),
 )->all();
 // [['id' => 1, 'name' => 'Ada Lovelace'], ...]
 
 $lists = $connection->select(
     'select id, name from customers order by id',
-    options: new ExecuteOptions(rowShape: RowShape::List),
+    options: new Options(rowShape: RowShape::List),
 )->all();
 // [[1, 'Ada Lovelace'], ...]
 ```
@@ -78,7 +78,7 @@ Two columns with the same name under `RowShape::Assoc` throw
 `UsageException` when the Cursor opens, never overwrite each other: alias
 them, or use `RowShape::List`.
 
-`ExecuteOptions` also takes `fetchSize`, `timeout` and `values`. Every Cursor
+`Options` also takes `fetchSize`, `timeout` and `values`. Every Cursor
 born of an Execution (its rows, REF CURSORs, nested Cursors, Implicit
 results) inherits that Execution's options, and they cannot change
 afterwards.
@@ -93,9 +93,9 @@ Round trip, so a name never injects SQL.
 
 ```php
 $execution = $connection->procedure('billing.close_month', [
-    'month_start' => Date::in(new DateTimeImmutable('first day of next month')),
-    'closed' => Number::out(),
-    'orders' => Cursor::out(),
+    'month_start' => new In\Date(new DateTimeImmutable('first day of next month')),
+    'closed' => new Out\Number(),
+    'orders' => new Out\Cursor(),
 ]);
 
 $closed = $execution->out('closed')->int();
@@ -118,9 +118,9 @@ block:
 
 ```php no-run
 $execution = $connection->run('BEGIN :total := billing.total_with_tax(:order_id, :tax); END;', [
-    'total' => Number::out(),
+    'total' => new Out\Number(),
     'order_id' => 1,
-    'tax' => Number::out(),
+    'tax' => new Out\Number(),
 ]);
 ```
 
@@ -137,13 +137,13 @@ gives `null`.
 ```php
 $insert = $connection->run(
     "insert into customers (name, country) values (:name, 'BR') returning id into :id",
-    ['name' => 'Nise da Silveira', 'id' => Number::out()],
+    ['name' => 'Nise da Silveira', 'id' => new Out\Number()],
 );
 $customerId = $insert->out('id')->int();
 
 $closed = $connection->run(
     "update orders set status = 'closed' where status = 'open' returning id into :id",
-    ['id' => Number::out()],
+    ['id' => new Out\Number()],
 );
 $closedIds = $closed->out('id')->list(); // every returned row
 ```
@@ -154,7 +154,7 @@ one per returned row.
 
 ## REF CURSORs
 
-A REF CURSOR from an OUT or IN OUT bind (`Cursor::out()`, `Cursor::inOut()`),
+A REF CURSOR from an OUT or IN OUT bind (`Out\Cursor`, `InOut\Cursor`),
 a function's return (`->cursor()`) or a `CURSOR()` column arrives as a
 Cursor. Several from one Call can be read in any order, interleaved.
 

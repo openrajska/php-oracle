@@ -1,0 +1,16 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Rajska\Oracle\Binds\InOut;
+
+use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\Concerns\BindsFloat;
+
+/**
+ * An IN OUT BINARY_DOUBLE bind: sent as `In\BinaryDouble` sends it, read back as the server writes it.
+ */
+final readonly class BinaryDouble extends Bind
+{
+    use BindsFloat;
+}

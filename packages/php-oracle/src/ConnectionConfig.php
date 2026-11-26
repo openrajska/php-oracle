@@ -5,6 +5,9 @@ declare(strict_types = 1);
 namespace Rajska\Oracle;
 
 use Rajska\Oracle\Exceptions\ConfigurationException;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use SensitiveParameter;
 use SensitiveParameterValue;
 

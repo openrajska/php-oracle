@@ -7,7 +7,7 @@ namespace Rajska\Oracle\Tests\Api\OptionsTest;
 use Rajska\Oracle\ConnectionConfig;
 use Rajska\Oracle\Exceptions\ConfigurationException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
+use Rajska\Oracle\Statement\Options;
 
 /**
  * @return iterable<string, array{string, float|int}>
@@ -23,7 +23,7 @@ dataset('invalidValues', function () {
 
 test('execute options reject invalid values with usage exception', function (string $field, float | int $value): void {
     // @phpstan-ignore argument.type (the named field goes through as given)
-    expect(fn(): ExecuteOptions => new ExecuteOptions(...[$field => $value]))->toThrow(UsageException::class, $field);
+    expect(fn (): Options => new Options(...[$field => $value]))->toThrow(UsageException::class, $field);
 })->with('invalidValues');
 
 /**
@@ -45,7 +45,7 @@ dataset('invalidConfigValues', function () {
 
 test('connection config rejects invalid values with configuration exception', function (string $field, float | int $value): void {
     // @phpstan-ignore argument.type (the named field goes through as given)
-    expect(fn(): ConnectionConfig => new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]))->toThrow(ConfigurationException::class, $field);
+    expect(fn (): ConnectionConfig => new ConnectionConfig(...['dsn' => 'localhost/FREEPDB1', 'user' => 'u', 'password' => 'p', $field => $value]))->toThrow(ConfigurationException::class, $field);
 })->with('invalidConfigValues');
 
 test('connection config validates without the extension', function (): void {
@@ -86,9 +86,9 @@ test('connection config validates without the extension', function (): void {
 
 test('valid values are kept', function (): void {
     $config = new ConnectionConfig('localhost/FREEPDB1', 'u', 'p', connectTimeout: 0.5, maxConnections: 1, acquireTimeout: 2, statementCacheSize: 0, callTimeout: 1.5, fetchSize: 1);
-    $options = new ExecuteOptions(fetchSize: 1, timeout: 0.25);
+    $options = new Options(fetchSize: 1, timeout: 0.25);
 
     expect([$config->connectTimeout, $config->maxConnections, $config->acquireTimeout, $config->statementCacheSize, $config->callTimeout, $config->fetchSize])->toBe([0.5, 1, 2, 0, 1.5, 1])
         ->and([$options->fetchSize, $options->timeout])->toBe([1, 0.25])
-        ->and(new ExecuteOptions()->timeout)->toBeNull();
+        ->and(new Options()->timeout)->toBeNull();
 });

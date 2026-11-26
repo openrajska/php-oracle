@@ -20,7 +20,7 @@
 //! crate gives a DATE inside JSON as a timestamp, so it maps as a
 //! TIMESTAMP.
 //!
-//! `Json::in()` takes what Core's `Json` leaves of any JSON-encodable value:
+//! `In\Json` takes what Core's `Json` leaves of any JSON-encodable value:
 //! `null`, `bool`, `int`, `float` (an exact NUMBER, C4), UTF-8 strings,
 //! arrays (a `list` is a JSON array, any other array an object), `stdClass`
 //! (an object) and `DateTimeInterface` (a TIMESTAMP, its Wall clock).
@@ -154,7 +154,7 @@ fn of(what: &str, value: &Zval, depth: usize) -> Result<JsonValue, Error> {
             )?))
         } else {
             Err(Error::usage(format!(
-                "{what}: an object of class {} cannot be encoded as JSON here; build the bind with Json::in().",
+                "{what}: an object of class {} cannot be encoded as JSON here; build the bind with In\\Json.",
                 object.get_class_name().unwrap_or_default()
             )))
         }

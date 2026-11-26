@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Support\Binds;
 
 use DateTimeImmutable;
+use Override;
 use Stringable;
 
 /**
@@ -13,6 +14,7 @@ use Stringable;
  */
 final class StringableDate extends DateTimeImmutable implements Stringable
 {
+    #[Override]
     public function __toString(): string
     {
         return $this->format('Y-m-d H:i:s');

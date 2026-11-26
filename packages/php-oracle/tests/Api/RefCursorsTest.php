@@ -4,23 +4,22 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api\RefCursorsTest;
 
-use Rajska\Oracle\Bind\Cursor as CursorBind;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
-use Rajska\Oracle\Column;
-use Rajska\Oracle\Cursor;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\DataType\Type;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Statement\Column;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
-use Rajska\Oracle\Type;
-use Rajska\Oracle\ValueMapping;
 
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
@@ -33,11 +32,11 @@ afterEach(function (): void {
 test('a procedure gives its ref cursors as cursors read interleaved', function (): void {
     $execution = $this->connection->procedure('fx_cursor.report', [
         'p_limit' => 250,
-        'io_label' => Varchar::inOut('total'),
-        'o_items' => CursorBind::out(),
-        'o_categories' => CursorBind::out(),
-        'o_total' => Number::out(),
-        'io_names' => CursorBind::inOut(),
+        'io_label' => new InOut\Varchar('total'),
+        'o_items' => new Out\Cursor(),
+        'o_categories' => new Out\Cursor(),
+        'o_total' => new Out\Number(),
+        'io_names' => new InOut\Cursor(),
     ]);
 
     expect($execution->out('io_label')->string())->toBe('total!')
@@ -83,10 +82,10 @@ test('every nested cursor reads after the parents all', function (): void {
              order by c.id
             SQL;
 
-    $rows = $this->connection->select($nested, options: new ExecuteOptions(fetchSize: 2))->all();
+    $rows = $this->connection->select($nested, options: new Options(fetchSize: 2))->all();
 
     expect(array_column($rows, 'ID'))->toBe([1, 2, 3, 4, 5])
-        ->and(array_map(static fn(array $row): array => array_column(nested($row['ITEMS'])->all(), 'ID'), $rows))->toBe([[1, 6, 11, 16], [2, 7, 12, 17], [3, 8, 13, 18], [4, 9, 14, 19], [5, 10, 15, 20]]);
+        ->and(array_map(static fn (array $row): array => array_column(nested($row['ITEMS'])->all(), 'ID'), $rows))->toBe([[1, 6, 11, 16], [2, 7, 12, 17], [3, 8, 13, 18], [4, 9, 14, 19], [5, 10, 15, 20]]);
 });
 
 test('a nested cursor fails after its parents close', function (): void {
@@ -116,11 +115,11 @@ test('a nested cursor fails after its parents close', function (): void {
 
     $first = $this->connection->select($nested)->first();
     assert($first !== null);
-    expect(fn(): array => nested($first['ITEMS'])->all())->toThrow(UsageException::class);
+    expect(fn (): array => nested($first['ITEMS'])->all())->toThrow(UsageException::class);
 });
 
 test('ref cursors and nested cursors inherit the executions options', function (): void {
-    $options = new ExecuteOptions(
+    $options = new Options(
         fetchSize: 3,
         values: new ValueMapping(numbers: NumberMode::Float),
         rowShape: RowShape::List,
@@ -128,7 +127,7 @@ test('ref cursors and nested cursors inherit the executions options', function (
     );
     $categories = $this->connection->function('fx_cursor.categories_with_items', options: $options)->cursor();
 
-    expect(array_map(static fn(Column $c): string => $c->name, $categories->columns()))->toBe(['id', 'name', 'items'])
+    expect(array_map(static fn (Column $c): string => $c->name, $categories->columns()))->toBe(['id', 'name', 'items'])
         ->and($categories->columns()[2]->type)->toBe(Type::Cursor);
     [$id, $name, $items] = $categories->getIterator()->current();
     expect([$id, $name])->toBe([1, 'Plain']);
@@ -139,7 +138,7 @@ test('ref cursors and nested cursors inherit the executions options', function (
 test('a nested cursor reads with the executions options', function (): void {
     $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
     assert(\is_string($sid));
-    $options = new ExecuteOptions(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
+    $options = new Options(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
     $parent = $this->connection->select(
         'select cursor(select level / 2 as half from dual connect by level <= 7) as halves from dual',
         options: $options,
@@ -180,7 +179,7 @@ test('after close ref cursors and nested cursors fail as use after close', funct
 });
 
 test('an unopened ref cursor fails on its first read', function (): void {
-    $cursor = $this->connection->run('declare c sys_refcursor; begin :o := c; end;', ['o' => CursorBind::out()])->out('o')->cursor();
+    $cursor = $this->connection->run('declare c sys_refcursor; begin :o := c; end;', ['o' => new Out\Cursor()])->out('o')->cursor();
 
     try {
         $cursor->all();
@@ -197,7 +196,7 @@ test('a cursor passed back as in fails loudly', function (): void {
     $counter = RoundTripCounter::open();
 
     try {
-        foreach (['a plain value' => $cursor, 'Cursor::inOut()' => CursorBind::inOut($cursor)] as $how => $bind) {
+        foreach (['a plain value' => $cursor, 'InOut\Cursor' => new InOut\Cursor($cursor)] as $how => $bind) {
             $trips = $counter->during((int) $sid, function () use ($bind, $how): void {
                 try {
                     $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind]);
@@ -215,8 +214,8 @@ test('a cursor passed back as in fails loudly', function (): void {
 
 test('getters narrow between cursors and scalars', function (): void {
     $execution = $this->connection->run('begin open :c for select 1 from dual; :n := 5; end;', [
-        'c' => CursorBind::out(),
-        'n' => Number::out(),
+        'c' => new Out\Cursor(),
+        'n' => new Out\Number(),
     ]);
     expect(function () use ($execution): void {
         $execution->out('n')->cursor();
@@ -225,7 +224,7 @@ test('getters narrow between cursors and scalars', function (): void {
         ->and(function () use ($execution): void {
             $execution->out('c')->int();
             $this->fail('int() read a REF CURSOR.');
-        })->toThrow(UsageException::class, "OUT bind 'c' holds Rajska\\Oracle\\Cursor, not an int. Read it with cursor().")
+        })->toThrow(UsageException::class, "OUT bind 'c' holds Rajska\\Oracle\\Statement\\Cursor, not an int. Read it with cursor().")
         ->and(nested($execution->out('c')->value())->value())->toBe(1);
 });
 

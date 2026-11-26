@@ -4,8 +4,8 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\TransactionsTest;
 
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Contracts\Driver\Response;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TransactionObserver;
@@ -28,7 +28,7 @@ afterEach(function (): void {
 dataset('writes', function () {
     yield 'DML' => ['insert into fx_tx_rows (id) values (:id)', ['id' => 1]];
     yield 'procedure block' => ['BEGIN fx_tx.add_row(p_id => :b1); END;', ['b1' => 1]];
-    yield 'function block' => ['BEGIN :b0 := fx_tx.add_row_count(p_id => :b1); END;', ['b0' => Number::out(), 'b1' => 1]];
+    yield 'function block' => ['BEGIN :b0 := fx_tx.add_row_count(p_id => :b1); END;', ['b0' => new Out\Number(), 'b1' => 1]];
     yield 'writing block' => ['begin insert into fx_tx_rows (id) values (:id); end;', ['id' => 1]];
 });
 
@@ -113,8 +113,8 @@ test('autocommit adds no round trip and commit and rollback take one each', func
     $counter = RoundTripCounter::open();
 
     try {
-        expect($counter->during($sid, fn(): DriverExecution => $connection->execute($insert, ['id' => 2], $this->options())))->toBe(1)
-            ->and($counter->during($sid, fn(): DriverExecution => $connection->execute($insert, ['id' => 3], $this->options(autocommit: false))))->toBe(1)
+        expect($counter->during($sid, fn (): Response => $connection->execute($insert, ['id' => 2], $this->options())))->toBe(1)
+            ->and($counter->during($sid, fn (): Response => $connection->execute($insert, ['id' => 3], $this->options(autocommit: false))))->toBe(1)
             ->and($counter->during($sid, $connection->commit(...)))->toBe(1);
         $connection->execute($insert, ['id' => 4], $this->options(autocommit: false));
         expect($counter->during($sid, $connection->rollback(...)))->toBe(1);

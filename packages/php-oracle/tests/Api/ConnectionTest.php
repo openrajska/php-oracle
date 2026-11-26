@@ -51,7 +51,7 @@ test('a query affects nothing', function (): void {
 });
 
 test('rows of a non query fail', function (): void {
-    expect(fn() => $this->connection->select('update fx_items set name = name where id = 1'))->toThrow(UsageException::class);
+    expect(fn () => $this->connection->select('update fx_items set name = name where id = 1'))->toThrow(UsageException::class);
 });
 
 test('a wrong password throws connection exception with code 1017', function (): void {
@@ -67,7 +67,7 @@ test('a wrong password throws connection exception with code 1017', function ():
 test('a call after close fails and a second close is fine', function (): void {
     $this->connection->close();
 
-    expect(fn() => $this->connection->run('select 1 from dual'))->toThrow(function (UsageException $usageException): void {
+    expect(fn () => $this->connection->run('select 1 from dual'))->toThrow(function (UsageException $usageException): void {
         expect($usageException->getMessage())->toBe('The Connection is closed.')
             ->and($usageException->sql())->toBe('select 1 from dual');
     });
@@ -96,5 +96,5 @@ test('server version is the five part version full with no round trip', function
 
 test('server version after close fails', function (): void {
     $this->connection->close();
-    expect(fn() => $this->connection->serverVersion())->toThrow(UsageException::class, 'The Connection is closed.');
+    expect(fn () => $this->connection->serverVersion())->toThrow(UsageException::class, 'The Connection is closed.');
 });

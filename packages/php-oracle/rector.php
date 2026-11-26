@@ -3,6 +3,7 @@
 declare(strict_types = 1);
 
 use Pest\Rector\Set\PestSetList;
+use Rajska\Oracle\Rector\KeepBindDirectionRector;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
@@ -24,4 +25,7 @@ return RectorConfig::configure()
     ->withSets([
         PestSetList::CODING_STYLE,
     ])
-    ->withPhpSets();
+    ->withPhpSets()
+    ->withRules([
+        KeepBindDirectionRector::class,
+    ]);

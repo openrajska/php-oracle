@@ -4,20 +4,20 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api\ImplicitResultsTest;
 
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Column;
-use Rajska\Oracle\Cursor;
+use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
-use Rajska\Oracle\Execution;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Statement\Column;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\Execution;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
-use Rajska\Oracle\ValueMapping;
 
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
@@ -30,8 +30,8 @@ afterEach(function (): void {
 test('a blocks implicit results come in order next to an out value', function (): void {
     $execution = $this->connection->run(
         'begin fx_cursor.implicit_results(:n); select count(*) into :total from fx_items; end;',
-        ['n' => 3, 'total' => Number::out()],
-        new ExecuteOptions(fetchSize: 2),
+        ['n' => 3, 'total' => new Out\Number()],
+        new Options(fetchSize: 2),
     );
 
     expect($execution->out('total')->int())->toBe(1000);
@@ -77,14 +77,14 @@ test('a raise after return result throws', function (): void {
 test('implicit results inherit the executions options', function (): void {
     $sid = $this->connection->select("select sys_context('userenv', 'sid') from dual")->value();
     assert(\is_string($sid));
-    $options = new ExecuteOptions(
+    $options = new Options(
         fetchSize: 3,
         values: new ValueMapping(numbers: NumberMode::Float),
         rowShape: RowShape::List,
         keyCase: KeyCase::Lower,
     );
     [$items] = results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 7], $options), 2);
-    expect(array_map(static fn(Column $column): string => $column->name, $items->columns()))->toBe(['id', 'name', 'price']);
+    expect(array_map(static fn (Column $column): string => $column->name, $items->columns()))->toBe(['id', 'name', 'price']);
     $counter = RoundTripCounter::open();
 
     try {
@@ -101,7 +101,7 @@ test('implicit results inherit the executions options', function (): void {
 });
 
 test('after close implicit results fail as use after close', function (): void {
-    [$items, $categories] = results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 5], new ExecuteOptions(fetchSize: 2)), 2);
+    [$items, $categories] = results($this->connection->procedure('fx_cursor.implicit_results', ['p_limit' => 5], new Options(fetchSize: 2)), 2);
     $iterator = $items->getIterator();
     expect($iterator->current()['ID'])->toBe(1);
 

@@ -6,15 +6,14 @@ namespace Rajska\Oracle\Tests\Api\BindsTest;
 
 use Closure;
 use DateTimeImmutable;
-use Rajska\Oracle\Bind\Boolean;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\PlsInteger;
-use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\Execution;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\Statement\Execution;
 use Rajska\Oracle\Tests\Support\Binds\Priority;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use SensitiveParameter;
@@ -36,17 +35,17 @@ test('plain values bind by name case insensitively', function (): void {
 });
 
 test('a date fails naming the typed binds', function (): void {
-    expect(fn() => $this->connection->select('select :at from dual', ['at' => new DateTimeImmutable()]))->toThrow(UsageException::class, "Bind 'at': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in().");
+    expect(fn () => $this->connection->select('select :at from dual', ['at' => new DateTimeImmutable()]))->toThrow(UsageException::class, "Bind 'at': a DateTimeInterface does not bind by itself; use In\Date or In\Timestamp.");
 });
 
 /**
  * @return iterable<string, array{Closure}>
  */
 dataset('rejectedValues', function () {
-    yield 'Number::in(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::in("1e5$secret")];
-    yield 'Number::inOut(), not a decimal literal' => [static fn(#[SensitiveParameter] string $secret): mixed => Number::inOut("1e5$secret")];
-    yield 'Boolean::in(), a string' => [Boolean::in(...)];
-    yield 'PlsInteger::inOut(), a string' => [PlsInteger::inOut(...)];
+    yield 'In\Number, not a decimal literal' => [static fn (#[SensitiveParameter] string $secret): mixed => new In\Number("1e5$secret")];
+    yield 'InOut\Number, not a decimal literal' => [static fn (#[SensitiveParameter] string $secret): mixed => new InOut\Number("1e5$secret")];
+    yield 'In\Boolean, a string' => [static fn (#[SensitiveParameter] string $value): mixed => new In\Boolean($value)]; // @phpstan-ignore argument.type (the mistake is the point)
+    yield 'InOut\PlsInteger, a string' => [static fn (#[SensitiveParameter] string $value): mixed => new InOut\PlsInteger($value)]; // @phpstan-ignore argument.type (the mistake is the point)
 });
 
 test('a value a typed bind rejects never appears in its exception', function (Closure $factory): void {
@@ -67,9 +66,9 @@ test('a bound value never appears in a run error', function (): void {
     expect(\ini_get('zend.exception_ignore_args'))->toBe('0', "the suite keeps exceptions' arguments");
     $secret = 'zq32secret';
     $calls = [
-        'server error' => fn(): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => $secret]),
-        'typed bind, server error' => fn(): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => Number::out(), 'text' => Varchar::in($secret)]),
-        'refused bind' => fn(): Execution => $this->connection->run('begin :n := :text; end;', ['n' => Number::out(), 'text' => [$secret]]),
+        'server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => new Out\Number(), 'text' => $secret]),
+        'typed bind, server error' => fn (): Execution => $this->connection->run('begin :n := to_number(:text); end;', ['n' => new Out\Number(), 'text' => new In\Varchar($secret)]),
+        'refused bind' => fn (): Execution => $this->connection->run('begin :n := :text; end;', ['n' => new Out\Number(), 'text' => [$secret]]),
     ];
     foreach ($calls as $kind => $call) {
         try {
@@ -89,5 +88,5 @@ test('a bound value never appears in a run error', function (): void {
 
 test('a list of binds fails naming the named form', function (): void {
     // @phpstan-ignore argument.type (static analysis already flags a list)
-    expect(fn() => $this->connection->select('select * from fx_items where id = :id', [1]))->toThrow(UsageException::class, "key every value by its placeholder name without ':'");
+    expect(fn () => $this->connection->select('select * from fx_items where id = :id', [1]))->toThrow(UsageException::class, "key every value by its placeholder name without ':'");
 });

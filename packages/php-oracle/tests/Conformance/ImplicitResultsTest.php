@@ -4,21 +4,21 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\ImplicitResultsTest;
 
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Driver\DriverCursor;
-use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Contracts\Driver\Cursor;
+use Rajska\Oracle\Contracts\Driver\Response;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
-use Rajska\Oracle\ValueMapping;
 
 test('two implicit results come in order next to an out value and read interleaved', function (): void {
     $report = 'begin fx_cursor.implicit_results(:n); select count(*) into :total from fx_items; end;';
 
-    $execution = $this->connect()->execute($report, ['n' => 4, 'total' => Number::out()], $this->options(fetchSize: 2));
+    $execution = $this->connect()->execute($report, ['n' => 4, 'total' => new Out\Number()], $this->options(fetchSize: 2));
 
     expect($execution->outValues())->toBe(['total' => [1000]]);
     [$items, $categories] = results($execution, 2);
@@ -51,7 +51,7 @@ test('a statement with no return result gives no implicit results', function ():
         'query' => 'select id from fx_categories',
         'DML' => 'update fx_categories set name = name where id = 0',
     ] as $kind => $sql) {
-        $binds = $kind === 'block' ? ['x' => Number::out()] : [];
+        $binds = $kind === 'block' ? ['x' => new Out\Number()] : [];
         expect($connection->execute($sql, $binds, $this->options())->implicitResults())->toBe([], $kind);
     }
 });
@@ -162,9 +162,9 @@ test('implicit results dropped unread raise no ora 01000', function (): void {
 });
 
 /**
- * @return list<DriverCursor>
+ * @return list<Cursor>
  */
-function results(DriverExecution $execution, int $count): array
+function results(Response $execution, int $count): array
 {
     $results = $execution->implicitResults();
     expect($results)->toHaveCount($count);
@@ -175,7 +175,7 @@ function results(DriverExecution $execution, int $count): array
 /**
  * @return list<array<int|string, mixed>>
  */
-function drain(DriverCursor $cursor): array
+function drain(Cursor $cursor): array
 {
     $rows = [];
     while (($batch = $cursor->fetchBatch()) !== []) {

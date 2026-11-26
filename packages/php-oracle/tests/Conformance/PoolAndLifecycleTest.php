@@ -5,21 +5,21 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Conformance\PoolAndLifecycleTest;
 
 use Closure;
-use Rajska\Oracle\Driver\DriverArrayDml;
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Contracts\Driver\ArrayDml;
+use Rajska\Oracle\Contracts\Driver\Response;
+use Rajska\Oracle\Contracts\Driver\Session;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
 use Rajska\Oracle\Exceptions\PoolExhaustedException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\RowShape;
+use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Conformance\ConformanceTestCase;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 use Rajska\Oracle\Tracing;
-use Rajska\Oracle\ValueMapping;
 
 test('two connects give two sessions that do not see each others uncommitted changes', function (): void {
     $first = $this->connect();
@@ -87,7 +87,7 @@ test('a standalone connection starts clean and logs off', function (): void {
 
     $observer = IndependentSession::open();
     try {
-        expect(eventually(static fn(): bool => $observer->select(
+        expect(eventually(static fn (): bool => $observer->select(
             'select count(*) as n from v$session where audsid = :audsid',
             ['audsid' => $session],
         ) === [['N' => '0']]))->toBeTrue('The standalone Session logged off.');
@@ -135,7 +135,7 @@ test('the pool grows one session at a time up to max connections', function (): 
     }
 
     expect(array_unique($sids))->toHaveCount(3)
-        ->and(fn() => $this->connect(...$fields))->toThrow(PoolExhaustedException::class);
+        ->and(fn () => $this->connect(...$fields))->toThrow(PoolExhaustedException::class);
 });
 
 /**
@@ -247,15 +247,15 @@ test('a release rolls back and never commits', function (string $release, bool $
 })->with('releases');
 
 /**
- * @return iterable<string, array{Closure(DriverConnection): mixed}>
+ * @return iterable<string, array{Closure(Session): mixed}>
  */
 dataset('connectionCalls', function () {
-    yield 'execute()' => [static fn(DriverConnection $c): DriverExecution => $c->execute('select 1 from dual', [], ConformanceTestCase::options())];
-    yield 'executeMany()' => [static fn(DriverConnection $c): DriverArrayDml => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], ConformanceTestCase::options())];
-    yield 'commit()' => [static fn(DriverConnection $c) => $c->commit()];
-    yield 'rollback()' => [static fn(DriverConnection $c) => $c->rollback()];
-    yield 'trace()' => [static fn(DriverConnection $c) => $c->trace(new Tracing(module: 'after close'))];
-    yield 'serverVersion()' => [static fn(DriverConnection $c): string => $c->serverVersion()];
+    yield 'execute()' => [static fn (Session $c): Response => $c->execute('select 1 from dual', [], ConformanceTestCase::options())];
+    yield 'executeMany()' => [static fn (Session $c): ArrayDml => $c->executeMany('insert into fx_batch_rows (id) values (:id)', [['id' => 1]], ConformanceTestCase::options())];
+    yield 'commit()' => [static fn (Session $c) => $c->commit()];
+    yield 'rollback()' => [static fn (Session $c) => $c->rollback()];
+    yield 'trace()' => [static fn (Session $c) => $c->trace(new Tracing(module: 'after close'))];
+    yield 'serverVersion()' => [static fn (Session $c): string => $c->serverVersion()];
 });
 
 test('every call after close fails as usage', function (Closure $call): void {
@@ -331,7 +331,7 @@ test('a killed session makes the connection broken and never comes back', functi
         $this->assertStringStartsNotWith('Connection is broken: ', $connectionLostException->getMessage());
     }
     foreach ([
-        'execute()' => fn(): DriverExecution => $connection->execute('select 1 from dual', [], $this->options()),
+        'execute()' => fn (): Response => $connection->execute('select 1 from dual', [], $this->options()),
         'commit()' => $connection->commit(...),
         'rollback()' => $connection->rollback(...),
         'serverVersion()' => $connection->serverVersion(...),

@@ -6,15 +6,15 @@
 //! |                           | shortest round-trip text)                   |
 //! | INT8                      | `list<int>`                                 |
 //! | BINARY                    | `list<int>` of bytes (8 dimensions each)    |
-//! | sparse                    | `Rajska\Oracle\SparseVector`                |
+//! | sparse                    | `Rajska\Oracle\DataType\SparseVector`       |
 //!
 //! A sparse VECTOR becomes a `SparseVector` through
 //! `SparseVector::fromDriver(int $dimensions, array $values)`, the one Core
 //! call the Extension makes: its name and signature are part of the
 //! Extension's semver contract.
 //!
-//! `Vector::in()` takes a `list<int|float>` or a `SparseVector`, with the
-//! `VectorFormat` (its backing value travels as the bind's `typeName`).
+//! `In\Vector` takes a `list<int|float>` or a `SparseVector`, with the
+//! `VectorFormat` (the bind's `format`).
 //! Every value is checked before any Round trip.
 
 use ext_php_rs::boxed::ZBox;
@@ -27,7 +27,7 @@ use crate::error::Error;
 use crate::value::widen;
 
 /// The Core class a sparse VECTOR becomes.
-pub const SPARSE_VECTOR_CLASS: &str = "Rajska\\Oracle\\SparseVector";
+pub const SPARSE_VECTOR_CLASS: &str = "Rajska\\Oracle\\DataType\\SparseVector";
 
 /// The most non-zero values a sparse VECTOR sends (its count is 16 bits).
 const MAX_SPARSE_VALUES: usize = 65535;
@@ -133,7 +133,7 @@ impl Format {
             Some("int8") => Ok(Self::Int8),
             Some("binary") => Ok(Self::Binary),
             _ => Err(Error::usage(format!(
-                "Bind '{name}': a Vector bind needs its VectorFormat as typeName."
+                "Bind '{name}': a Vector bind needs its format."
             ))),
         }
     }

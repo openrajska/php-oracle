@@ -40,7 +40,7 @@ final readonly class TransactionObserver
      */
     public function committed(): array
     {
-        return array_map(static fn(array $row): int => (int) $row['ID'], $this->select('select id from fx_tx_rows order by id'));
+        return array_map(static fn (array $row): int => (int) $row['ID'], $this->select('select id from fx_tx_rows order by id'));
     }
 
     /**

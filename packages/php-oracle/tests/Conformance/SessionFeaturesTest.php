@@ -4,9 +4,9 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\SessionFeaturesTest;
 
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\DriverCursor;
-use Rajska\Oracle\Driver\DriverOptions;
+use Rajska\Oracle\Contracts\Driver\Cursor;
+use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Driver\Options;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
 use Rajska\Oracle\Exceptions\TimeoutException;
 use Rajska\Oracle\Tests\Support\IndependentSession;
@@ -64,7 +64,7 @@ test('a fetch size of 10 reads 25 rows in 3 round trips', function (): void {
     $trips[] = $this->counter->during($sid, function () use ($connection, $rows, &$cursor): void {
         $cursor = $connection->execute($rows, ['n' => 25], $this->options(fetchSize: 10))->cursor();
     });
-    assert($cursor instanceof DriverCursor);
+    assert($cursor instanceof Cursor);
     $sizes = [];
     for ($i = 0; $i < 5; ++$i) {
         $trips[] = $this->counter->during($sid, function () use ($cursor, &$sizes): void {
@@ -169,7 +169,7 @@ test('a fetch batch over the call timeout throws timeout exception', function ()
     assert($cursor !== null);
     expect($cursor->fetchBatch())->toBe([['N' => 1]])
         ->and($cursor->fetchBatch())->toBe([['N' => 2]])
-        ->and(fn() => $cursor->fetchBatch())->toThrow(TimeoutException::class);
+        ->and(fn () => $cursor->fetchBatch())->toThrow(TimeoutException::class);
 });
 
 test('on a killed session tracing and the call timeout give way to connection lost', function (): void {
@@ -215,7 +215,7 @@ test('a repeated statement parses once unless the statement cache is off', funct
  */
 function statistic(IndependentSession $observer, int $sid, string $name, callable $action): int
 {
-    $read = fn(): int => (int) $observer->select(
+    $read = fn (): int => (int) $observer->select(
         'select s.value from v$sesstat s join v$statname n on n.statistic# = s.statistic# where n.name = :name and s.sid = :sid',
         ['name' => $name, 'sid' => $sid],
     )[0]['VALUE'];
@@ -239,12 +239,12 @@ function tracing(IndependentSession $observer, int $sid): array
 /**
  * @return list<list<array<int|string, mixed>>> the batches
  */
-function readAll(DriverConnection $connection, int $count, DriverOptions $options): array
+function readAll(Session $connection, int $count, Options $options): array
 {
     $rows = 'select level n from dual connect by level <= :n';
 
     $cursor = $connection->execute($rows, ['n' => $count], $options)->cursor();
-    assert($cursor instanceof DriverCursor);
+    assert($cursor instanceof Cursor);
     $batches = [];
     while (($batch = $cursor->fetchBatch()) !== []) {
         $batches[] = $batch;

@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Api\DocumentationTest;
 
-use Rajska\Oracle\Bind\Cursor;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Support\TestDatabase;
@@ -159,7 +158,7 @@ test('the example runs', function (string $code): void {
 function script(string $code): string
 {
     preg_match_all('/^\s*use\s+[\w\\\\]*?(\w+)(?:\s+as\s+(\w+))?;/m', $code, $uses, PREG_SET_ORDER);
-    $imported = array_map(static fn(array $use): string => ($use[2] ?? '') !== '' ? $use[2] : $use[1], $uses);
+    $imported = array_map(static fn (array $use): string => ($use[2] ?? '') !== '' ? $use[2] : $use[1], $uses);
     $imports = '';
     foreach (publicClasses() as $short => $class) {
         if (!\in_array($short, $imported, true)) {
@@ -171,23 +170,22 @@ function script(string $code): string
 }
 
 /**
- * Every public class of Core by short name, except the root `Cursor`
- * (an example names the bind class `Cursor` far more often).
+ * Every public class of Core by short name, plus the bind namespaces `In`,
+ * `Out` and `InOut`.
  *
  * @return array<string, string>
  */
 function publicClasses(): array
 {
     $src = \dirname(__DIR__, 2) . '/src';
-    $classes = [];
-    foreach (['' => '', 'Bind/' => 'Bind\\', 'Exceptions/' => 'Exceptions\\'] as $directory => $namespace) {
+    $classes = ['In' => 'Rajska\\Oracle\\Binds\\In', 'Out' => 'Rajska\\Oracle\\Binds\\Out', 'InOut' => 'Rajska\\Oracle\\Binds\\InOut'];
+    foreach (['' => '', 'Binds/' => 'Binds\\', 'Exceptions/' => 'Exceptions\\', 'Statement/' => 'Statement\\', 'Subprogram/' => 'Subprogram\\', 'Lob/' => 'Lob\\', 'DataType/' => 'DataType\\'] as $directory => $namespace) {
         foreach (glob("$src/{$directory}*.php") ?: [] as $file) {
             $short = basename($file, '.php');
             $classes[$short] ??= "Rajska\\Oracle\\$namespace$short";
         }
     }
-    $classes['Cursor'] = Cursor::class;
-    unset($classes['ConnectionState'], $classes['Call'], $classes['CallExecution']);
+    unset($classes['ConnectionState'], $classes['Call'], $classes['Stream']);
 
     return $classes;
 }

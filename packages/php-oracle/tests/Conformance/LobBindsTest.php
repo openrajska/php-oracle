@@ -5,13 +5,13 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Conformance\LobBindsTest;
 
 use Closure;
-use Rajska\Oracle\Bind\Bind;
-use Rajska\Oracle\Bind\Blob;
-use Rajska\Oracle\Bind\Clob;
-use Rajska\Oracle\Bind\NClob;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\DriverLob;
+use Override;
+use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Contracts\Driver\Locator;
+use Rajska\Oracle\Contracts\Driver\Session;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use RuntimeException;
@@ -26,20 +26,20 @@ use Stringable;
 dataset('classes', function () {
     $text = "h\u{e9}llo \u{65e5}\u{672c} \u{1f600}";
 
-    yield 'Clob' => ['clob', Clob::in($text), $text, Clob::inOut('a'), "io || 'b'", 'ab'];
-    yield 'NClob' => ['nclob', NClob::in($text), $text, NClob::inOut('é'), "io || n'日'", 'é日'];
-    yield 'Blob' => ['blob', Blob::in("\x00\xff\x80"), "\x00\xff\x80", Blob::inOut("\x01"), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
-    yield 'Clob from a stream' => ['clob', Clob::in(stream($text)), $text, Clob::inOut(stream('a')), "io || 'b'", 'ab'];
-    yield 'Blob from a stream' => ['blob', Blob::in(stream("\x00\xff\x80")), "\x00\xff\x80", Blob::inOut(stream("\x01")), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
-    yield 'Clob unchanged' => ['clob', Clob::in(''), '', Clob::inOut('kept'), 'io', 'kept'];
-    yield 'Blob unchanged' => ['blob', Blob::in(''), '', Blob::inOut("\xff"), 'io', "\xff"];
+    yield 'Clob' => ['clob', new In\Clob($text), $text, new InOut\Clob('a'), "io || 'b'", 'ab'];
+    yield 'NClob' => ['nclob', new In\NClob($text), $text, new InOut\NClob('é'), "io || n'日'", 'é日'];
+    yield 'Blob' => ['blob', new In\Blob("\x00\xff\x80"), "\x00\xff\x80", new InOut\Blob("\x01"), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
+    yield 'Clob from a stream' => ['clob', new In\Clob(stream($text)), $text, new InOut\Clob(stream('a')), "io || 'b'", 'ab'];
+    yield 'Blob from a stream' => ['blob', new In\Blob(stream("\x00\xff\x80")), "\x00\xff\x80", new InOut\Blob(stream("\x01")), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
+    yield 'Clob unchanged' => ['clob', new In\Clob(''), '', new InOut\Clob('kept'), 'io', 'kept'];
+    yield 'Blob unchanged' => ['blob', new In\Blob(''), '', new InOut\Blob("\xff"), 'io', "\xff"];
 });
 
 test('each lob class binds in out and in out through its plsql type', function (string $plsql, Bind $in, string $out, Bind $inOut, string $change, string $changed): void {
     $outBind = match ($plsql) {
-        'clob' => Clob::out(),
-        'nclob' => NClob::out(),
-        default => Blob::out(),
+        'clob' => new Out\Clob(),
+        'nclob' => new Out\NClob(),
+        default => new Out\Blob(),
     };
 
     $values = $this->connect()->execute(
@@ -53,7 +53,7 @@ test('each lob class binds in out and in out through its plsql type', function (
                p(:i, :o, :io);
                :i_null := case when :i is null then 1 else 0 end;
              end;",
-        ['i' => $in, 'o' => $outBind, 'io' => $inOut, 'i_null' => Number::out()],
+        ['i' => $in, 'o' => $outBind, 'io' => $inOut, 'i_null' => new Out\Number()],
         $this->options(),
     )->outValues();
 
@@ -67,9 +67,9 @@ test('each lob class binds in out and in out through its plsql type', function (
  * @return iterable<string, array{string, Bind, Bind, Bind}>
  */
 dataset('nulls', function () {
-    yield 'Clob' => ['clob', Clob::in(null), Clob::out(), Clob::inOut(null)];
-    yield 'NClob' => ['nclob', NClob::in(null), NClob::out(), NClob::inOut(null)];
-    yield 'Blob' => ['blob', Blob::in(null), Blob::out(), Blob::inOut(null)];
+    yield 'Clob' => ['clob', new In\Clob(null), new Out\Clob(), new InOut\Clob(null)];
+    yield 'NClob' => ['nclob', new In\NClob(null), new Out\NClob(), new InOut\NClob(null)];
+    yield 'Blob' => ['blob', new In\Blob(null), new Out\Blob(), new InOut\Blob(null)];
 });
 
 test('each lob class binds null', function (string $plsql, Bind $in, Bind $out, Bind $inOut): void {
@@ -94,15 +94,15 @@ test('a 16 mib string and stream go through sql and plsql exactly', function ():
     $text = largeText();
     $binary = largeBinary();
     $sources = [
-        'string' => static fn(): array => [$text, $binary],
-        'stream' => static fn(): array => [stream($text), stream($binary)],
+        'string' => static fn (): array => [$text, $binary],
+        'stream' => static fn (): array => [stream($text), stream($binary)],
     ];
 
     foreach ($sources as $source => $values) {
         [$t, $b] = $values();
         $connection->execute(
             "insert into fx_lobs (id, label, text_value, binary_value) values (100, 'written', :t, :b)",
-            ['t' => Clob::in($t), 'b' => Blob::in($b)],
+            ['t' => new In\Clob($t), 'b' => new In\Blob($b)],
             $this->options(autocommit: false),
         );
         expect($this->rows($connection, <<<'SQL'
@@ -136,8 +136,8 @@ test('a 16 mib string and stream go through sql and plsql exactly', function ():
                     end;
                     SQL,
             [
-                'text' => Clob::in($t), 'national' => NClob::in($n), 'binary' => Blob::in($b),
-                't' => Number::out(), 'n' => Number::out(), 'b' => Number::out(), 't_length' => Number::out(),
+                'text' => new In\Clob($t), 'national' => new In\NClob($n), 'binary' => new In\Blob($b),
+                't' => new Out\Number(), 'n' => new Out\Number(), 'b' => new Out\Number(), 't_length' => new Out\Number(),
             ],
             $this->options(),
         )->outValues();
@@ -153,10 +153,10 @@ test('a supplemental character survives at every chunk boundary', function (): v
     foreach (['', 'a', 'ab', 'abc'] as $prefix) {
         $text = $prefix . str_repeat($grin, intdiv($chunk, 4) + 10);
         foreach (['string' => $text, 'stream' => stream($text)] as $source => $value) {
-            foreach (['Clob' => Clob::in($value), 'NClob' => NClob::in(\is_string($value) ? $value : stream($text))] as $class => $bind) {
+            foreach (['Clob' => new In\Clob($value), 'NClob' => new In\NClob(\is_string($value) ? $value : stream($text))] as $class => $bind) {
                 $out = $connection->execute(
                     'begin :o := :i; :units := dbms_lob.getlength(:i); end;',
-                    ['i' => $bind, 'o' => $class === 'Clob' ? Clob::out() : NClob::out(), 'units' => Number::out()],
+                    ['i' => $bind, 'o' => $class === 'Clob' ? new Out\Clob() : new Out\NClob(), 'units' => new Out\Number()],
                     $this->options(),
                 )->outValues();
                 $what = "prefix '$prefix', $source, $class";
@@ -176,7 +176,7 @@ test('a large in out lob round trips', function (): void {
 
     $values = $connection->execute(
         "begin :changed := :changed || 'end'; :bytes := :bytes; end;",
-        ['changed' => Clob::inOut($text), 'bytes' => Blob::inOut(stream($binary))],
+        ['changed' => new InOut\Clob($text), 'bytes' => new InOut\Blob(stream($binary))],
         $this->options(),
     )->outValues();
 
@@ -186,10 +186,10 @@ test('a large in out lob round trips', function (): void {
 
 test('a lob given back from a lob bind stays readable while held', function (): void {
     $connection = $this->connect();
-    $out = $connection->execute('begin :o := :i; end;', ['i' => Clob::in('kept'), 'o' => Clob::out()], $this->options())->outValues();
-    $cursor = $connection->execute('select :b as b from dual', ['b' => Blob::in("\x01\x02")], $this->options())->cursor();
+    $out = $connection->execute('begin :o := :i; end;', ['i' => new In\Clob('kept'), 'o' => new Out\Clob()], $this->options())->outValues();
+    $cursor = $connection->execute('select :b as b from dual', ['b' => new In\Blob("\x01\x02")], $this->options())->cursor();
     assert($cursor !== null);
-    $connection->execute('begin :n := 1; end;', ['n' => Number::out()], $this->options());
+    $connection->execute('begin :n := 1; end;', ['n' => new Out\Number()], $this->options());
 
     $rows = $cursor->fetchBatch();
     $this->value($connection, 'select 1 from dual');
@@ -204,7 +204,7 @@ test('a stream is read from its position to its end', function (): void {
 
     $values = $this->connect()->execute(
         'begin :o := :i; :empty := dbms_lob.getlength(:e); end;',
-        ['i' => Clob::in($stream), 'o' => Clob::out(), 'e' => Blob::in(stream('')), 'empty' => Number::out()],
+        ['i' => new In\Clob($stream), 'o' => new Out\Clob(), 'e' => new In\Blob(stream('')), 'empty' => new Out\Number()],
         $this->options(),
     )->outValues();
 
@@ -219,15 +219,15 @@ test('text that is not utf8 fails naming blob', function (): void {
     $counter = RoundTripCounter::open();
     try {
         $trips = $counter->during($sid, function () use ($connection): void {
-            assertUsage($connection, ['v' => Clob::in("ok \xff")], "Bind 'v': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in().");
+            assertUsage($connection, ['v' => new In\Clob("ok \xff")], "Bind 'v': the string is not valid UTF-8; bind binary data with In\Raw or In\Blob.");
         });
         expect($trips)->toBe(0, 'Fails before any Round trip');
     } finally {
         $counter->close();
     }
 
-    assertUsage($connection, ['v' => NClob::in(stream(str_repeat('a', 10) . "\xff"))], "Bind 'v': the stream is not valid UTF-8 at byte 10; bind binary data with Blob::in().");
-    assertUsage($connection, ['v' => Clob::in(stream("ends inside \xe6\x97"))], "Bind 'v': the stream is not valid UTF-8 at byte 12; bind binary data with Blob::in().");
+    assertUsage($connection, ['v' => new In\NClob(stream(str_repeat('a', 10) . "\xff"))], "Bind 'v': the stream is not valid UTF-8 at byte 10; bind binary data with In\Blob.");
+    assertUsage($connection, ['v' => new In\Clob(stream("ends inside \xe6\x97"))], "Bind 'v': the stream is not valid UTF-8 at byte 12; bind binary data with In\Blob.");
     expect($this->value($connection, 'select 1 from dual'))->toBe(1, 'The Connection still works');
 });
 
@@ -236,21 +236,22 @@ test('text that is not utf8 fails naming blob', function (): void {
  */
 dataset('wrongValues', function () {
     // @phpstan-ignore argument.type (the mistake is the point)
-    yield 'an int' => [static fn(): Clob => Clob::in(5), 'Clob::in() takes a string, an open stream resource or null, but was given int.'];
+    yield 'an int' => [static fn (): In\Clob => new In\Clob(5), 'A LOB bind takes a string, an open stream resource or null, but was given int.'];
     // @phpstan-ignore argument.type (the mistake is the point)
-    yield 'an array' => [static fn(): NClob => NClob::inOut([]), 'NClob::in() takes a string, an open stream resource or null, but was given array.'];
+    yield 'an array' => [static fn (): InOut\NClob => new InOut\NClob([]), 'A LOB bind takes a string, an open stream resource or null, but was given array.'];
     yield 'a closed stream' => [static function (): Bind {
         $stream = stream('x');
         fclose($stream);
 
-        return Blob::in($stream);
-    }, 'Blob::in() takes a string, an open stream resource or null, but was given resource (closed).'];
-    yield 'a Stringable' => [static fn(): Clob => Clob::in(new class implements Stringable { // @phpstan-ignore argument.type (the mistake is the point)
+        return new In\Blob($stream);
+    }, 'A LOB bind takes a string, an open stream resource or null, but was given resource (closed).'];
+    yield 'a Stringable' => [static fn (): In\Clob => new In\Clob(new class implements Stringable { // @phpstan-ignore argument.type (the mistake is the point)
+        #[Override]
         public function __toString(): string
         {
             return 'x';
         }
-    }), 'Clob::in() takes a string, an open stream resource or null, but was given Stringable@anonymous.'];
+    }), 'A LOB bind takes a string, an open stream resource or null, but was given Stringable@anonymous.'];
 });
 
 test('a value that is not a string or a stream fails when the bind is built', function (Closure $bind, string $message): void {
@@ -267,18 +268,18 @@ test('a lob written by sql comes back from returning', function (): void {
 
     $one = $connection->execute(
         $sql,
-        ['v' => Clob::in(str_repeat('x', 100)), 'w' => Blob::in("\x00\xFF"), 'id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
+        ['v' => new In\Clob(str_repeat('x', 100)), 'w' => new In\Blob("\x00\xFF"), 'id' => 1, 't' => new Out\Clob(), 'b' => new Out\Blob()],
         $options,
     )->outValues();
     expect(array_map(read(...), $one['t']))->toBe([str_repeat('x', 100)])
         ->and(array_map(read(...), $one['b']))->toBe(["\x00\xFF"]);
 
     $many = $connection->executeMany($sql, [
-        ['v' => Clob::in('one'), 'w' => Blob::in("\x01"), 'id' => 1, 't' => Clob::out(), 'b' => Blob::out()],
-        ['v' => Clob::in('two'), 'w' => Blob::in("\x02"), 'id' => 2, 't' => Clob::out(), 'b' => Blob::out()],
+        ['v' => new In\Clob('one'), 'w' => new In\Blob("\x01"), 'id' => 1, 't' => new Out\Clob(), 'b' => new Out\Blob()],
+        ['v' => new In\Clob('two'), 'w' => new In\Blob("\x02"), 'id' => 2, 't' => new Out\Clob(), 'b' => new Out\Blob()],
     ], $options)->outValues();
-    expect(array_map(static fn(array $list): array => array_map(read(...), $list), $many['t']))->toBe([['one'], ['two']])
-        ->and(array_map(static fn(array $list): array => array_map(read(...), $list), $many['b']))->toBe([["\x01"], ["\x02"]]);
+    expect(array_map(static fn (array $list): array => array_map(read(...), $list), $many['t']))->toBe([['one'], ['two']])
+        ->and(array_map(static fn (array $list): array => array_map(read(...), $list), $many['b']))->toBe([["\x01"], ["\x02"]]);
 
     $connection->rollback();
 });
@@ -290,12 +291,12 @@ test('temporary lobs of binds do not pile up or reach the next owner', function 
     for ($i = 0; $i < 200; ++$i) {
         $connection->execute(
             'begin :n := dbms_lob.getlength(:c) + dbms_lob.getlength(:b) + length(:long); end;',
-            ['c' => Clob::in("text $i"), 'b' => Blob::in(stream("bytes $i")), 'long' => str_repeat('x', 40_000), 'n' => Number::out()],
+            ['c' => new In\Clob("text $i"), 'b' => new In\Blob(stream("bytes $i")), 'long' => str_repeat('x', 40_000), 'n' => new Out\Number()],
             $this->options(),
         );
     }
     expect($this->value($connection, $count))->toBeLessThanOrEqual(3, 'Temporary LOBs left on the Session');
-    $held = $connection->execute('begin :o := :i; end;', ['i' => Clob::in('held'), 'o' => Clob::out()], $this->options())->outValues();
+    $held = $connection->execute('begin :o := :i; end;', ['i' => new In\Clob('held'), 'o' => new Out\Clob()], $this->options())->outValues();
     $connection->close();
     expect($held['o'])->toHaveCount(1);
 
@@ -306,7 +307,7 @@ test('temporary lobs of binds do not pile up or reach the next owner', function 
 /**
  * @param array<string, mixed> $binds
  */
-function assertUsage(DriverConnection $connection, array $binds, string $message): void
+function assertUsage(Session $connection, array $binds, string $message): void
 {
     try {
         $connection->execute('begin :v := :v; end;', $binds, test()->options());
@@ -331,7 +332,7 @@ function stream(string $contents)
 
 function read(mixed $lob): string
 {
-    assert($lob instanceof DriverLob);
+    assert($lob instanceof Locator);
     $contents = '';
     while (($chunk = $lob->readChunk()) !== '') {
         $contents .= $chunk;

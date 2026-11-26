@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Rajska\Oracle\Statement;
+
+/**
+ * How a Cursor shapes its rows: keyed by column name, or a list in column
+ * order.
+ */
+enum RowShape: string
+{
+    case Assoc = 'assoc';
+    case List = 'list';
+}

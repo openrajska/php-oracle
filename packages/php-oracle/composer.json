@@ -26,6 +26,7 @@
     "autoload-dev": {
         "psr-4": {
             "Rajska\\Oracle\\Bench\\": "bench/src/",
+            "Rajska\\Oracle\\Rector\\": "rector/",
             "Rajska\\Oracle\\Tests\\": "tests/"
         }
     },

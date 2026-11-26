@@ -7,14 +7,21 @@ namespace Rajska\Oracle;
 use Closure;
 use Error;
 use Exception;
-use Rajska\Oracle\Bind\Bind;
-use Rajska\Oracle\Bind\Collection;
-use Rajska\Oracle\Bind\PlsInteger;
-use Rajska\Oracle\Driver\DriverConnection;
-use Rajska\Oracle\Driver\DriverOptions;
-use Rajska\Oracle\Exceptions\ArrayDmlException;
+use Rajska\Oracle\Binds\Bind;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Driver\Options as DriverOptions;
+use Rajska\Oracle\Exceptions\ArrayDmlFailedException;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\UsageException;
+use Rajska\Oracle\Statement\ArrayDml;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\Execution;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\OutValue;
+use Rajska\Oracle\Subprogram\Call;
+use Rajska\Oracle\Subprogram\PendingFunction;
 use ReflectionProperty;
 use SensitiveParameter;
 use Throwable;
@@ -62,7 +69,7 @@ final class Connection
      * @internal use Oracle::connect()
      */
     public function __construct(
-        private readonly DriverConnection $driver,
+        private readonly Session $driver,
         private readonly ConnectionConfig $config,
     ) {
         $this->state = new ConnectionState();
@@ -73,7 +80,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function run(string $sql, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Execution
+    public function run(string $sql, #[SensitiveParameter] array $binds = [], Options | null $options = null): Execution
     {
         return new Execution(
             $this->driver->execute($sql, $binds, $this->resolve($options)),
@@ -91,7 +98,7 @@ final class Connection
      *
      * @param array<string, mixed> $binds keyed by placeholder name, without ':'
      */
-    public function select(string $sql, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Cursor
+    public function select(string $sql, #[SensitiveParameter] array $binds = [], Options | null $options = null): Cursor
     {
         return $this->run($sql, $binds, $options)->rows();
     }
@@ -106,14 +113,14 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function procedure(string $name, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): Execution
+    public function procedure(string $name, #[SensitiveParameter] array $binds = [], Options | null $options = null): Execution
     {
         return Call::of($name, $binds)->procedure($this->driver, $this->resolve($options), $this->state);
     }
 
     /**
      * A stored function, called by name like `procedure()`. Nothing runs
-     * until a terminal of the FunctionCall names the return type:
+     * until a terminal of the PendingFunction names the return type:
      * `function('pkg.total', ['id' => 1])->number()`.
      *
      * @param string $name 1 to 3 dot-separated parts (`schema.package.function`), each an identifier or a double-quoted name
@@ -121,13 +128,13 @@ final class Connection
      *
      * @throws UsageException if the name or a parameter name is not valid, before any Round trip
      */
-    public function function(string $name, #[SensitiveParameter] array $binds = [], ExecuteOptions | null $options = null): FunctionCall
+    public function function(string $name, #[SensitiveParameter] array $binds = [], Options | null $options = null): PendingFunction
     {
         $call = Call::of($name, $binds);
 
-        return new FunctionCall(
+        return new PendingFunction(
             $call,
-            fn(Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return, $this->state),
+            fn (Bind $return): OutValue => $call->function($this->driver, $this->resolve($options), $return, $this->state),
         );
     }
 
@@ -142,7 +149,7 @@ final class Connection
      * column CLOB; a typed bind keeps its class down its column.
      *
      * The call is atomic: when rows fail, none of its rows is applied, and
-     * one `ArrayDmlException` lists every failing DML row. Under Autocommit
+     * one `ArrayDmlFailedException` lists every failing DML row. Under Autocommit
      * DML rows commit with the execute and a PL/SQL block commits after it,
      * once the call succeeded (one Round trip more); a failed call never
      * commits. Inside a transaction a savepoint (one Round trip more) undoes
@@ -151,10 +158,10 @@ final class Connection
      *
      * @param list<array<string, mixed>> $rows each keyed by placeholder name, without ':'
      *
-     * @throws ArrayDmlException listing every failing row
+     * @throws ArrayDmlFailedException listing every failing row
      * @throws UsageException for rows that differ in keys or column types, a query, a REF CURSOR or Implicit results
      */
-    public function runMany(string $sql, #[SensitiveParameter] array $rows, ExecuteOptions | null $options = null): ArrayDml
+    public function runMany(string $sql, #[SensitiveParameter] array $rows, Options | null $options = null): ArrayDml
     {
         return new ArrayDml(
             $this->driver->executeMany($sql, $rows, $this->resolve($options)),
@@ -325,8 +332,8 @@ final class Connection
         $lines = [];
         do {
             $execution = $this->dbmsOutput('BEGIN DBMS_OUTPUT.GET_LINES(:lines, :count); END;', [
-                'lines' => Collection::out('SYS.DBMSOUTPUT_LINESARRAY'),
-                'count' => PlsInteger::inOut(self::OUTPUT_BATCH),
+                'lines' => new Out\Collection('SYS.DBMSOUTPUT_LINESARRAY'),
+                'count' => new InOut\PlsInteger(self::OUTPUT_BATCH),
             ]);
             $count = $execution->out('count')->int() ?? 0;
             foreach (\array_slice($execution->out('lines')->array() ?? [], 0, $count) as $line) {
@@ -466,11 +473,11 @@ final class Connection
         }
     }
 
-    private function resolve(ExecuteOptions | null $options): DriverOptions
+    private function resolve(Options | null $options): DriverOptions
     {
-        if (!$options instanceof ExecuteOptions) {
+        if (!$options instanceof Options) {
             // The ConnectionConfig is immutable: these never change.
-            return $this->defaults[(int) !$this->inTransaction] ??= $this->resolve(new ExecuteOptions());
+            return $this->defaults[(int) !$this->inTransaction] ??= $this->resolve(new Options());
         }
 
         return new DriverOptions(

@@ -8,9 +8,10 @@ use DateTime;
 use DateTimeImmutable;
 use DomainException;
 use JsonSerializable;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
-use Rajska\Oracle\Driver\DriverLob;
+use Override;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\Contracts\Driver\Locator;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Support\Binds\Color;
 use Rajska\Oracle\Tests\Support\Binds\Priority;
@@ -39,6 +40,7 @@ dataset('inferred', function () {
     yield 'int-backed enum' => [Priority::High, 'Typ=2 Len=2: 193,3', 2];
     yield 'string-backed enum' => [Color::Green, 'Typ=1 Len=5: 103,114,101,101,110', 'green'];
     yield 'Stringable' => [new class implements Stringable {
+        #[Override]
         public function __toString(): string
         {
             return 'from __toString';
@@ -66,7 +68,7 @@ test('a string over 32767 bytes binds as a clob', function (): void {
     $connection = $this->connect();
 
     // 4-byte characters, so a cut inside one would show.
-    $text = static fn(int $bytes): string => str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
+    $text = static fn (int $bytes): string => str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
 
     foreach ([4000 => 'VARCHAR2', 4001 => 'VARCHAR2', 32767 => 'VARCHAR2', 32768 => 'CLOB', 1 << 20 => 'CLOB'] as $bytes => $type) {
         $value = $text($bytes);
@@ -80,14 +82,14 @@ test('a string over 32767 bytes binds as a clob', function (): void {
                    :type := type_of(:v);
                    insert into fx_lobs (id, label, text_value) values (100, 'inferred', :v);
                  end;",
-            ['v' => $value, 'type' => Varchar::out()],
+            ['v' => $value, 'type' => new Out\Varchar()],
             $this->options(autocommit: false),
         )->outValues();
         expect($bound)->toBe(['type' => [$type]], "$bytes bytes");
 
         [$row] = $this->rows($connection, 'select text_value from fx_lobs where id = 100', [], $this->options(autocommit: false));
         $lob = $row['TEXT_VALUE'];
-        assert($lob instanceof DriverLob);
+        assert($lob instanceof Locator);
         $read = '';
         while (($chunk = $lob->readChunk()) !== '') {
             $read .= $chunk;
@@ -111,7 +113,7 @@ test('a blocks binds match its placeholders in any order and case', function ():
 
     $execution = $connection->execute(
         'begin :Total := :a + :b; :Echo := to_char(:b) || :a; end;',
-        ['B' => 2, 'echo' => Varchar::out(), 'TOTAL' => Number::out(), 'a' => 40],
+        ['B' => 2, 'echo' => new Out\Varchar(), 'TOTAL' => new Out\Number(), 'a' => 40],
         $this->options(),
     );
 
@@ -160,7 +162,7 @@ test('one sql text takes ever longer text with the statement cache on', function
         foreach ([[1, 10, 100, 2000, 4000, 4001, 16000, 32767], [10, 16000], [100, 16000], [4000, 32767], [1, 32767]] as $i => $sizes) {
             foreach ($sizes as $bytes) {
                 $text = str_repeat('x', $bytes);
-                foreach (['inferred' => $text, 'typed' => Varchar::in($text)] as $kind => $bind) {
+                foreach (['inferred' => $text, 'typed' => new In\Varchar($text)] as $kind => $bind) {
                     $read = $this->value($connection, "select :v from dual -- sizes $i", ['v' => $bind]);
                     assert(\is_string($read));
                     // The length first: a failure then shows numbers, not 32 KB of text.
@@ -177,27 +179,28 @@ test('one sql text takes ever longer text with the statement cache on', function
  */
 dataset('mistakes', function () {
     $one = 'select :v from dual';
-    $date = 'use Date::in() or Timestamp::in()';
-    $json = 'use Json::in()';
+    $date = 'use In\Date or In\Timestamp';
+    $json = 'use In\Json';
 
     yield 'DateTimeImmutable' => [['v' => new DateTimeImmutable()], $one, $date];
     yield 'DateTime' => [['v' => new DateTime()], $one, $date];
     yield 'a Stringable date, as Carbon' => [['v' => new StringableDate()], $one, $date];
     yield 'array' => [['v' => [1, 2]], $one, $json];
     yield 'JsonSerializable' => [['v' => new class implements JsonSerializable {
+        #[Override]
         public function jsonSerialize(): mixed
         {
             return [];
         }
     }], $one, $json];
-    yield 'other object' => [['v' => new stdClass()], $one, 'an object of class stdClass does not bind by itself; use Json::in() or a typed bind'];
+    yield 'other object' => [['v' => new stdClass()], $one, 'an object of class stdClass does not bind by itself; use In\Json or a typed bind'];
     yield 'enum without backing value' => [['v' => Suit::Hearts], $one, 'an object of class ' . Suit::class . ' does not bind by itself'];
-    yield 'resource' => [['v' => fopen('php://memory', 'r')], $one, 'use Clob::in() or Blob::in()'];
-    yield 'bytes that are not UTF-8' => [['v' => "\xff\xfe"], $one, 'bind binary data with Raw::in() or Blob::in()'];
-    yield 'NaN' => [['v' => \NAN], $one, 'bind it with BinaryDouble::in()'];
-    yield 'INF' => [['v' => \INF], $one, 'bind it with BinaryDouble::in()'];
-    yield 'float beyond NUMBER' => [['v' => 1e126], $one, 'bind it with BinaryDouble::in()'];
-    yield 'float below NUMBER' => [['v' => 1e-131], $one, 'bind it with BinaryDouble::in()'];
+    yield 'resource' => [['v' => fopen('php://memory', 'r')], $one, 'use In\Clob or In\Blob'];
+    yield 'bytes that are not UTF-8' => [['v' => "\xff\xfe"], $one, 'bind binary data with In\Raw or In\Blob'];
+    yield 'NaN' => [['v' => \NAN], $one, 'bind it with In\BinaryDouble'];
+    yield 'INF' => [['v' => \INF], $one, 'bind it with In\BinaryDouble'];
+    yield 'float beyond NUMBER' => [['v' => 1e126], $one, 'bind it with In\BinaryDouble'];
+    yield 'float below NUMBER' => [['v' => 1e-131], $one, 'bind it with In\BinaryDouble'];
     yield 'list' => [[1], $one, 'key 0 is an integer (is the array a list?)'];
     yield 'a string over 32767 bytes beside an extra bind' => [['v' => 1, 'long' => str_repeat('x', 40_000)], $one, "Bind 'long' matches no placeholder"];
     yield 'int key' => [[5 => 1], $one, 'key 5 is an integer'];
@@ -245,6 +248,7 @@ test('an exception from to string reaches the caller', function (): void {
             {
             }
 
+            #[Override]
             public function __toString(): string
             {
                 throw $this->thrown;

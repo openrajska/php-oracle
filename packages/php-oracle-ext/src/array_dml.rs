@@ -10,7 +10,7 @@
 //!   its column's type;
 //! - a typed bind keeps its class (and direction, and Object type) down its
 //!   column, and a column of typed binds takes no plain value;
-//! - a REF CURSOR (`Cursor::out()`) is refused, and so is a query.
+//! - a REF CURSOR (`Out\Cursor`) is refused, and so is a query.
 //!
 //! The call is atomic. Rows that fail do not stop the call (C3): their
 //! errors come back together, and the Extension then rolls back what the
@@ -159,7 +159,7 @@ pub fn execute(
 }
 
 /// The crate's error for an Array DML call of `total` rows. Past 65535
-/// failing rows the server lists none, so there is no ArrayDmlException to
+/// failing rows the server lists none, so there is no ArrayDmlFailedException to
 /// give. A placeholder written twice in SQL needs one value per occurrence,
 /// which named rows cannot give yet. Types differing down a column are
 /// caught before, by [`Rows::read`].

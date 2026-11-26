@@ -8,8 +8,8 @@ use Closure;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
 use Rajska\Oracle\Oracle;
+use Rajska\Oracle\Statement\Options;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\TestDatabase;
@@ -44,7 +44,7 @@ test('output gives 2500 lines in order then nothing', function (): void {
         $counter->close();
     }
 
-    expect($lines)->toBe(array_map(static fn(int $i): string => "line $i", range(1, 2500)))
+    expect($lines)->toBe(array_map(static fn (int $i): string => "line $i", range(1, 2500)))
         ->and($connection->output())->toBeEmpty();
 });
 
@@ -137,7 +137,7 @@ test('output is purged when a connection is dropped before its cursor', function
     $first->enableOutput();
     $first->run("begin dbms_output.put_line('secret of A'); end;");
 
-    $cursor = $first->select('select level n from dual connect by level <= 3', [], new ExecuteOptions(fetchSize: 1));
+    $cursor = $first->select('select level n from dual connect by level <= 3', [], new Options(fetchSize: 1));
     $rows = [];
     foreach ($cursor as $row) {
         $rows[] = $row;
@@ -198,7 +198,7 @@ test('output calls never commit an open transaction', function (bool $close): vo
     $observer = TransactionObserver::open();
     try {
         $observer->execute("insert into fx_tx_rows (id, note) values (1, 'committed')");
-        $note = static fn(): string | null => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
+        $note = static fn (): string | null => $observer->select('select note from fx_tx_rows where id = 1')[0]['NOTE'];
         $connection = fresh();
         $connection->begin();
         $connection->run("update fx_tx_rows set note = 'uncommitted' where id = 1");
@@ -226,9 +226,9 @@ test('output calls never commit an open transaction', function (bool $close): vo
  * @return iterable<string, array{Closure(Connection): mixed}>
  */
 dataset('outputCalls', function () {
-    yield 'enableOutput()' => [static fn(Connection $connection) => $connection->enableOutput()];
-    yield 'output()' => [static fn(Connection $connection): array => $connection->output()];
-    yield 'disableOutput()' => [static fn(Connection $connection) => $connection->disableOutput()];
+    yield 'enableOutput()' => [static fn (Connection $connection) => $connection->enableOutput()];
+    yield 'output()' => [static fn (Connection $connection): array => $connection->output()];
+    yield 'disableOutput()' => [static fn (Connection $connection) => $connection->disableOutput()];
 });
 
 test('output calls after close fail', function (Closure $call): void {
@@ -236,7 +236,7 @@ test('output calls after close fail', function (Closure $call): void {
     $connection->enableOutput();
     $connection->close();
 
-    expect(fn() => $call($connection))->toThrow(UsageException::class, 'The Connection is closed.');
+    expect(fn () => $call($connection))->toThrow(UsageException::class, 'The Connection is closed.');
 })->with('outputCalls');
 
 /**

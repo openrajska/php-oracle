@@ -4,12 +4,12 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Conformance\SeamAndRowsTest;
 
-use Rajska\Oracle\Driver\DriverCursor;
-use Rajska\Oracle\Driver\DriverExecution;
+use Rajska\Oracle\Contracts\Driver\Cursor;
+use Rajska\Oracle\Contracts\Driver\Response;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\RowShape;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\RowShape;
 use Rajska\Oracle\Tests\Support\IndependentSession;
 use Rajska\Oracle\Tests\Support\TestDatabase;
 
@@ -58,7 +58,7 @@ test('every statement kind returns a complete execution', function (): void {
     foreach ($kinds as $kind => [$sql, $count, $query]) {
         $execution = $connection->execute($sql, [], $this->options());
         expect($execution->rowCount())->toBe($count, $kind)
-            ->and($execution->cursor() instanceof DriverCursor)->toBe($query, $kind)
+            ->and($execution->cursor() instanceof Cursor)->toBe($query, $kind)
             ->and($execution->outValues())->toBe([], $kind)
             ->and($execution->implicitResults())->toBe([], $kind)
             ->and($execution->warning())->toBeNull($kind);
@@ -82,7 +82,7 @@ test('duplicate column names under assoc fail at cursor open with a hint', funct
     ];
 
     foreach ($cases as $sql => $options) {
-        expect(fn(): DriverExecution => $connection->execute($sql, [], $options))->toThrow(function (UsageException $usageException) use ($sql): void {
+        expect(fn (): Response => $connection->execute($sql, [], $options))->toThrow(function (UsageException $usageException) use ($sql): void {
             expect($usageException->getMessage())->toContain('alias', 'RowShape::List')
                 ->and($usageException->sql())->toBe($sql);
         });
@@ -195,7 +195,7 @@ test('a bfile column is described and only fetching it fails', function (): void
     $cursor = $this->connect()->execute("select bfilename('NO_SUCH_DIRECTORY', 'x') f from dual", [], $this->options())->cursor();
     assert($cursor !== null);
     expect($cursor->columns()[0]['type'])->toBe('bfile')
-        ->and(fn() => $cursor->fetchBatch())->toThrow(UnsupportedException::class);
+        ->and(fn () => $cursor->fetchBatch())->toThrow(UnsupportedException::class);
 });
 
 test('after close the connections cursors fail as use after close and the next owner is unaffected', function (): void {

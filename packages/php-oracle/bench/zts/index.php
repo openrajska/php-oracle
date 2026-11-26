@@ -2,6 +2,7 @@
 
 declare(strict_types = 1);
 
+
 // FrankenPHP worker of the concurrency run. Each worker thread runs this
 // script once, then serves requests in the loop at the end.
 //   ?d=oci8|core|core-held  &w=scalar|scalar-txn|cursor|fetch
@@ -17,9 +18,8 @@ declare(strict_types = 1);
 // rolls back explicitly; Core's close() rolls back as part of the Release.
 require __DIR__ . '/../bootstrap.php';
 
-use Rajska\Oracle\Bind\Date;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Connection;
 use Rajska\Oracle\Oracle;
 
@@ -35,10 +35,10 @@ function core_scalar(Connection $connection, int $i): int
 {
     $execution = $connection->procedure('fx_scalar.echo_out', [
         ...scalar_in($i),
-        'p_date' => Date::in(new DateTimeImmutable(SCALAR_DATE)),
-        'o_num' => Number::out(),
-        'o_str' => Varchar::out(),
-        'o_date' => Date::out(),
+        'p_date' => new In\Date(new DateTimeImmutable(SCALAR_DATE)),
+        'o_num' => new Out\Number(),
+        'o_str' => new Out\Varchar(),
+        'o_date' => new Out\Date(),
     ]);
 
     return count([$execution->out('o_num')->int(), $execution->out('o_str')->string(), $execution->out('o_date')->dateTime()]);

@@ -57,7 +57,7 @@ pub const PREFETCH: u32 = MAX_VARCHAR2 as u32;
 /// code units of a CLOB / NCLOB (up to 3 UTF-8 bytes each).
 const CHUNK: usize = 1 << 20;
 
-/// `LobType`'s backing value for a LOB type, or `None` for any other type
+/// `Lob\Type`'s backing value for a LOB type, or `None` for any other type
 /// (BFILE included).
 pub fn lob_type(db_type: &DbType) -> Option<&'static str> {
     is_lob(db_type).then(|| type_name::of(db_type)).flatten()
@@ -385,7 +385,7 @@ impl NativeLob {
 
 #[php_impl]
 impl NativeLob {
-    /// `LobType`'s backing value: clob, nClob or blob.
+    /// `Lob\Type`'s backing value: clob, nClob or blob.
     #[php(name = "type")]
     pub fn lob_type(&self) -> PhpResult<&'static str> {
         self.on_lob(|_| Ok(self.lob_type))

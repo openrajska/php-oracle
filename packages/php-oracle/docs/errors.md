@@ -8,7 +8,7 @@ exceptions.
 OracleException (interface)                     sql(), call()
 ├─ QueryException          RuntimeException     a server error; offset()
 │  ├─ UniqueViolationException                  ORA-00001
-│  └─ ArrayDmlException                            rows(): the failing rows of runMany()
+│  └─ ArrayDmlFailedException                   rows(): the failing rows of runMany()
 ├─ ConnectionException     RuntimeException     no Session obtained (wrong password, unreachable host)
 │  ├─ PoolExhaustedException                    acquireTimeout expired
 │  └─ ConnectionLostException                   a Broken Connection
@@ -56,7 +56,7 @@ The message names the fix:
 try {
     $connection->select('select * from orders where placed_at > :since', ['since' => new DateTimeImmutable()]);
 } catch (UsageException $exception) {
-    // "Bind 'since': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in()."
+    // "Bind 'since': a DateTimeInterface does not bind by itself; use new In\Date() or new In\Timestamp()."
 }
 ```
 

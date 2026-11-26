@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Exceptions;
 
+use Rajska\Oracle\Exceptions\Concerns\CarriesStatement;
 use RuntimeException;
 
 /**

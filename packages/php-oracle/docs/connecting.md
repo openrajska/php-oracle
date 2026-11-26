@@ -125,14 +125,14 @@ does not release it between uses (see [Known limitations](known-limitations.md))
 The **Call timeout** bounds each wait for the server on the network, so one
 runaway query cannot hold a worker forever. It is not a limit on a whole
 Execution: reading a large result takes many Round trips, each with its own
-limit. `ExecuteOptions`' `timeout` overrides it for one Execution and the
+limit. `Options`' `timeout` overrides it for one Execution and the
 Cursors it produces:
 
 ```php
 try {
     $rows = $connection->select(
         'select * from orders order by placed_at',
-        options: new ExecuteOptions(timeout: 2.5),
+        options: new Options(timeout: 2.5),
     )->all();
 } catch (TimeoutException $exception) {
     // "Call timeout of 2500 ms exceeded."

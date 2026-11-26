@@ -5,26 +5,25 @@ declare(strict_types = 1);
 namespace Rajska\Oracle\Tests\Api\CallsTest;
 
 use DateTimeImmutable;
-use Rajska\Oracle\Bind\Collection;
-use Rajska\Oracle\Bind\Indexed;
-use Rajska\Oracle\Bind\Number;
-use Rajska\Oracle\Bind\Varchar;
-use Rajska\Oracle\Cursor;
+use Rajska\Oracle\Binds\In;
+use Rajska\Oracle\Binds\InOut;
+use Rajska\Oracle\Binds\Out;
+use Rajska\Oracle\DataType\SparseVector;
 use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
-use Rajska\Oracle\ExecuteOptions;
-use Rajska\Oracle\Execution;
-use Rajska\Oracle\FunctionCall;
-use Rajska\Oracle\KeyCase;
-use Rajska\Oracle\NumberMode;
 use Rajska\Oracle\Oracle;
-use Rajska\Oracle\SparseVector;
-use Rajska\Oracle\TemporalMode;
+use Rajska\Oracle\Statement\Cursor;
+use Rajska\Oracle\Statement\Execution;
+use Rajska\Oracle\Statement\KeyCase;
+use Rajska\Oracle\Statement\NumberMode;
+use Rajska\Oracle\Statement\Options;
+use Rajska\Oracle\Statement\TemporalMode;
+use Rajska\Oracle\Statement\ValueMapping;
+use Rajska\Oracle\Subprogram\PendingFunction;
 use Rajska\Oracle\Tests\Support\RoundTripCounter;
 use Rajska\Oracle\Tests\Support\Temporals;
 use Rajska\Oracle\Tests\Support\TestDatabase;
-use Rajska\Oracle\ValueMapping;
 
 beforeEach(function (): void {
     $this->connection = Oracle::connect(TestDatabase::fromEnvironment()->config());
@@ -37,9 +36,9 @@ afterEach(function (): void {
 test('a procedure reads its out and in out parameters by name', function (): void {
     $execution = $this->connection->procedure('fx_call.echo', [
         'p_num' => 21,
-        'o_doubled' => Number::out(),
-        'o_label' => Varchar::out(),
-        'io_text' => Varchar::inOut('hi'),
+        'o_doubled' => new Out\Number(),
+        'o_label' => new Out\Varchar(),
+        'io_text' => new InOut\Varchar('hi'),
     ]);
 
     expect($execution->out('o_doubled')->int())->toBe(42)
@@ -51,18 +50,18 @@ test('a repeated call binds its own values and a colliding name is still refused
     foreach ([21 => 42, 5 => 10] as $number => $doubled) {
         $execution = $this->connection->procedure('fx_call.echo', [
             'p_num' => $number,
-            'o_doubled' => Number::out(),
-            'o_label' => Varchar::out(),
-            'io_text' => Varchar::inOut('hi'),
+            'o_doubled' => new Out\Number(),
+            'o_label' => new Out\Varchar(),
+            'io_text' => new InOut\Varchar('hi'),
         ]);
         expect($execution->out('o_doubled')->int())->toBe($doubled);
     }
 
     try {
         $this->connection->procedure("fx_call.echo\0p_num", [
-            'o_doubled' => Number::out(),
-            'o_label' => Varchar::out(),
-            'io_text' => Varchar::inOut('hi'),
+            'o_doubled' => new Out\Number(),
+            'o_label' => new Out\Varchar(),
+            'io_text' => new InOut\Varchar('hi'),
         ]);
         $this->fail('A name with a NUL byte ran.');
     } catch (UsageException $usageException) {
@@ -71,11 +70,11 @@ test('a repeated call binds its own values and a colliding name is still refused
 });
 
 test('a procedure gives a complete execution', function (): void {
-    $execution = $this->connection->procedure('fx_call.grow', ['io_text' => Varchar::inOut('a'), 'p_length' => 3]);
+    $execution = $this->connection->procedure('fx_call.grow', ['io_text' => new InOut\Varchar('a'), 'p_length' => 3]);
 
     expect($execution->affected())->toBe(0)
         ->and($execution->warning())->toBeNull()
-        ->and(fn(): Cursor => $execution->rows())->toThrow(function (UsageException $usageException): void {
+        ->and(fn (): Cursor => $execution->rows())->toThrow(function (UsageException $usageException): void {
             expect($usageException->getMessage())->toStartWith('The statement is not a query')
                 ->and($usageException->sql())->toBe('BEGIN fx_call.grow(io_text => :b1, p_length => :b2); END;')
                 ->and($usageException->call())->toBe('fx_call.grow');
@@ -85,7 +84,7 @@ test('a procedure gives a complete execution', function (): void {
 
 test('the json and vector terminals return the mapped value', function (): void {
     expect($this->connection->function('fx_json_vector.f_json')->json())->toBe(['a' => [1, '2.5']])
-        ->and($this->connection->function('fx_json_vector.f_json', [], new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float)))->json())->toBe(['a' => [1, 2.5]])
+        ->and($this->connection->function('fx_json_vector.f_json', [], new Options(values: new ValueMapping(numbers: NumberMode::Float)))->json())->toBe(['a' => [1, 2.5]])
         ->and($this->connection->function('fx_json_vector.f_json', ['p_null' => true])->json())->toBeNull()
         ->and($this->connection->function('fx_json_vector.f_vector')->vector())->toBe([1.5, 2.0])
         ->and($this->connection->function('fx_json_vector.f_vector', ['p_null' => true])->vector())->toBeNull();
@@ -100,9 +99,9 @@ test('the json and vector terminals return the mapped value', function (): void 
  */
 dataset('scalarTerminals', function () {
     yield 'varchar' => ['varchar', 'fx_call.f_varchar', 'text'];
-    yield 'nvarchar' => ['nvarchar', 'fx_call.f_nvarchar', 'Ação 日本'];
+    yield 'nVarchar' => ['nVarchar', 'fx_call.f_nvarchar', 'Ação 日本'];
     yield 'char' => ['char', 'fx_call.f_char', 'AB   '];
-    yield 'nchar' => ['nchar', 'fx_call.f_nchar', 'ç    '];
+    yield 'nChar' => ['nChar', 'fx_call.f_nchar', 'ç    '];
     yield 'binaryFloat' => ['binaryFloat', 'fx_call.f_binary_float', 0.5];
     yield 'binaryDouble' => ['binaryDouble', 'fx_call.f_binary_double', 0.1];
     yield 'plsInteger' => ['plsInteger', 'fx_call.f_pls_integer', -7];
@@ -116,20 +115,20 @@ test('a scalar terminal returns the mapped value and null for null', function (s
 })->with('scalarTerminals');
 
 test('the object and collection terminals return arrays', function (): void {
-    expect($this->connection->function('fx_object.make_point', ['p_x' => Number::in('1.5'), 'p_y' => -2, 'p_label' => 'p'])->struct('fx_point'))->toBe(['X' => '1.5', 'Y' => -2, 'LABEL' => 'p'])
-        ->and($this->connection->function('fx_object.make_polygon', ['p_name' => 'tri', 'p_sides' => 1], new ExecuteOptions(keyCase: KeyCase::Lower))->struct('FX_POLYGON'))->toBe(['name' => 'tri', 'vertices' => [['x' => 1, 'y' => 0, 'label' => 'v1']]])
+    expect($this->connection->function('fx_object.make_point', ['p_x' => new In\Number('1.5'), 'p_y' => -2, 'p_label' => 'p'])->struct('fx_point'))->toBe(['X' => '1.5', 'Y' => -2, 'LABEL' => 'p'])
+        ->and($this->connection->function('fx_object.make_polygon', ['p_name' => 'tri', 'p_sides' => 1], new Options(keyCase: KeyCase::Lower))->struct('FX_POLYGON'))->toBe(['name' => 'tri', 'vertices' => [['x' => 1, 'y' => 0, 'label' => 'v1']]])
         ->and($this->connection->function('fx_object.split_csv', ['p_csv' => 'a,,b'])->collection('fx_string_varray'))->toBe(['a', null, 'b'])
         ->and($this->connection->function('fx_object.split_csv', ['p_csv' => null])->collection('fx_string_varray'))->toBe([])
         ->and($this->connection->function('fx_kinds.sparse_numbers')->collection('fx_number_list'))->toBe([1, 3, 5])
-        ->and($this->connection->function('fx_kinds.echo_numbers', ['p_numbers' => Collection::in('fx_number_list', null)])->collection('fx_number_list'))->toBeNull()
-        ->and($this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', [3 => 6, -1 => 5])])->indexed('fx_object.t_number_map'))->toBe([-1 => 5, 3 => 6]);
+        ->and($this->connection->function('fx_kinds.echo_numbers', ['p_numbers' => new In\Collection('fx_number_list', null)])->collection('fx_number_list'))->toBeNull()
+        ->and($this->connection->function('fx_kinds.echo_map', ['p_map' => new In\Indexed('fx_object.t_number_map', [3 => 6, -1 => 5])])->indexed('fx_object.t_number_map'))->toBe([-1 => 5, 3 => 6]);
 
     // A PL/SQL Associative array is never NULL: a NULL comes in empty.
-    expect($this->connection->function('fx_kinds.echo_map', ['p_map' => Indexed::in('fx_object.t_number_map', null)])->indexed('fx_object.t_number_map'))->toBe([]);
+    expect($this->connection->function('fx_kinds.echo_map', ['p_map' => new In\Indexed('fx_object.t_number_map', null)])->indexed('fx_object.t_number_map'))->toBe([]);
 });
 
 test('an object terminal of the wrong kind fails naming the fix', function (): void {
-    expect(fn() => $this->connection->function('fx_object.split_csv', ['p_csv' => 'a'])->struct('fx_string_varray'))->toThrow(function (UsageException $usageException): void {
+    expect(fn () => $this->connection->function('fx_object.split_csv', ['p_csv' => 'a'])->struct('fx_string_varray'))->toThrow(function (UsageException $usageException): void {
         expect($usageException->getMessage())->toStartWith('The return value of fx_object.split_csv: ')
             ->toEndWith('.FX_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.')
             ->and($usageException->call())->toBe('fx_object.split_csv');
@@ -137,7 +136,7 @@ test('an object terminal of the wrong kind fails naming the fix', function (): v
 });
 
 test('the temporal terminals return the mapped value', function (): void {
-    $string = new ExecuteOptions(values: new ValueMapping(temporals: TemporalMode::String));
+    $string = new Options(values: new ValueMapping(temporals: TemporalMode::String));
     $cases = [
         'date' => ['fx_call.f_date', '+2026-03-01 10:00:00.000000 America/Sao_Paulo', '2026-03-01 10:00:00'],
         'timestamp' => ['fx_call.f_timestamp', '+2026-03-01 10:00:00.123456 America/Sao_Paulo', '2026-03-01 10:00:00.123456000'],
@@ -165,11 +164,11 @@ test('the temporal terminals return the mapped value', function (): void {
 
 test('the number terminal follows the value mapping', function (): void {
     expect($this->connection->function('fx_call.f_number', ['p_value' => 42])->number())->toBe(42)
-        ->and($this->connection->function('fx_call.f_number', ['p_value' => Number::in('12.5')])->number())->toBe('12.5')
+        ->and($this->connection->function('fx_call.f_number', ['p_value' => new In\Number('12.5')])->number())->toBe('12.5')
         ->and($this->connection->function(
             'fx_call.f_number',
-            ['p_value' => Number::in('12.5')],
-            new ExecuteOptions(values: new ValueMapping(numbers: NumberMode::Float)),
+            ['p_value' => new In\Number('12.5')],
+            new Options(values: new ValueMapping(numbers: NumberMode::Float)),
         )->number())->toBe(12.5)
         ->and($this->connection->function('fx_call.f_number', ['p_value' => null])->number())->toBeNull();
 });
@@ -182,22 +181,22 @@ test('the rowid terminal returns the rowid text', function (): void {
 });
 
 test('a call reads varchar2 values of the largest size', function (): void {
-    $ascii = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'x', 'p_length' => 32767, 'o_str' => Varchar::out()]);
-    $multibyte = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'ç', 'p_length' => 16383, 'o_str' => Varchar::out()]);
+    $ascii = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'x', 'p_length' => 32767, 'o_str' => new Out\Varchar()]);
+    $multibyte = $this->connection->procedure('fx_scalar.repeat_out', ['p_char' => 'ç', 'p_length' => 16383, 'o_str' => new Out\Varchar()]);
 
     expect($ascii->out('o_str')->string())->toBe(str_repeat('x', 32767))
         ->and($multibyte->out('o_str')->string())->toBe(str_repeat('ç', 16383));
 
     foreach ([null, 'a'] as $start) {
-        $grown = $this->connection->procedure('fx_call.grow', ['io_text' => Varchar::inOut($start), 'p_length' => 32767]);
+        $grown = $this->connection->procedure('fx_call.grow', ['io_text' => new InOut\Varchar($start), 'p_length' => 32767]);
         expect($grown->out('io_text')->string())->toBe(str_repeat('a', 32767));
     }
 });
 
 test('a failing call carries its name and generated block', function (): void {
     $calls = [
-        'BEGIN fx_call.fail(p_value => :b1); END;' => fn(): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
-        'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
+        'BEGIN fx_call.fail(p_value => :b1); END;' => fn (): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => 'x']),
+        'BEGIN :b0 := fx_call.f_fail(p_value => :b1); END;' => fn (): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => 'x'])->number(),
     ];
     foreach ($calls as $sql => $call) {
         try {
@@ -211,7 +210,7 @@ test('a failing call carries its name and generated block', function (): void {
         }
     }
 
-    expect(fn() => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'P_Label' => 'x', 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)])->out('nothing'))->toThrow(function (UsageException $usageException): void {
+    expect(fn () => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'P_Label' => 'x', 'o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar(null)])->out('nothing'))->toThrow(function (UsageException $usageException): void {
         expect($usageException->getMessage())->toBe("No OUT bind is named 'nothing'; they are 'o_doubled', 'o_label', 'io_text'.")
             ->and($usageException->sql())->toBe('BEGIN fx_call.echo(p_num => :b1, P_Label => :b2, o_doubled => :b3, o_label => :b4, io_text => :b5); END;')
             ->and($usageException->call())->toBe('fx_call.echo');
@@ -223,7 +222,7 @@ test('a call after close fails', function (): void {
     $this->connection->close();
 
     $calls = [
-        'fx_call.echo' => fn(): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut(null)]),
+        'fx_call.echo' => fn (): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => 1, 'o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar(null)]),
         'fx_call.f_number' => $function->number(...),
     ];
     foreach ($calls as $name => $call) {
@@ -236,15 +235,15 @@ test('a call after close fails', function (): void {
 
 test('a bind error names the parameter', function (): void {
     $calls = [
-        fn(): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new DateTimeImmutable()]),
-        fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['P_Value' => new DateTimeImmutable()])->number(),
+        fn (): Execution => $this->connection->procedure('fx_call.fail', ['P_Value' => new DateTimeImmutable()]),
+        fn (): float | int | string | null => $this->connection->function('fx_call.f_fail', ['P_Value' => new DateTimeImmutable()])->number(),
     ];
     foreach ($calls as $call) {
         try {
             $call();
             $this->fail('A DateTimeImmutable was bound.');
         } catch (UsageException $e) {
-            expect($e->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in().")
+            expect($e->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use In\Date or In\Timestamp.")
                 ->and((string) $e->call())->toStartWith('fx_call.');
         }
     }
@@ -253,10 +252,10 @@ test('a bind error names the parameter', function (): void {
 test('a bound value never appears in a call error', function (): void {
     $secret = 'zq46secret';
     $calls = [
-        'procedure' => fn(): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => $secret, 'o_doubled' => Number::out(), 'o_label' => Varchar::out(), 'io_text' => Varchar::inOut($secret)]),
-        'function' => fn(): float | int | string | null => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
-        'procedure, usage' => fn(): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => [$secret]]),
-        'function, usage' => fn(): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
+        'procedure' => fn (): Execution => $this->connection->procedure('fx_call.echo', ['p_num' => $secret, 'o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar($secret)]),
+        'function' => fn (): float | int | string | null => $this->connection->function('fx_call.f_number', ['p_value' => $secret])->number(),
+        'procedure, usage' => fn (): Execution => $this->connection->procedure('fx_call.fail', ['p_value' => [$secret]]),
+        'function, usage' => fn (): float | int | string | null => $this->connection->function('fx_call.f_fail', ['p_value' => [$secret]])->number(),
     ];
     foreach ($calls as $kind => $call) {
         try {
@@ -314,9 +313,9 @@ test('an invalid name fails before any round trip', function (string $name, arra
     try {
         $calls = [
             // @phpstan-ignore argument.type (a list is one of the mistakes under test)
-            fn(): Execution => $this->connection->procedure($name, $binds),
+            fn (): Execution => $this->connection->procedure($name, $binds),
             // @phpstan-ignore argument.type (a list is one of the mistakes under test)
-            fn(): FunctionCall => $this->connection->function($name, $binds),
+            fn (): PendingFunction => $this->connection->function($name, $binds),
         ];
         foreach ($calls as $call) {
             $trips = $counter->during((int) $sid, function () use ($call, $name, $message): void {

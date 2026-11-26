@@ -18,7 +18,7 @@
 //! Anything else, and every naming mistake, is a `usage` error raised before
 //! any Round trip, naming the fix. Messages name the bind, never its value.
 //!
-//! A typed bind (`Rajska\Oracle\Bind\Bind`) binds as its declared type (see
+//! A typed bind (`Rajska\Oracle\Binds\Bind`) binds as its declared type (see
 //! [`crate::typed`]).
 //!
 //! A CLOB, NCLOB or BLOB value is written into a temporary LOB by
@@ -46,7 +46,7 @@ use crate::typed::{self, Typed};
 use crate::value::cell;
 
 /// Core's Cursor and the native one: passing either back is later.
-const CORE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Cursor";
+const CORE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Statement\\Cursor";
 const NATIVE_CURSOR_CLASS: &str = "Rajska\\Oracle\\Extension\\Cursor";
 
 /// The longest string that binds as VARCHAR2 (PL/SQL's limit).
@@ -426,11 +426,11 @@ fn infer(
         object_value(name, object, describe, classes)
     } else if zval.is_array() {
         Err(Error::usage(format!(
-            "Bind '{name}': an array does not bind by itself; use Json::in() or a typed bind."
+            "Bind '{name}': an array does not bind by itself; use In\\Json or a typed bind."
         )))
     } else {
         Err(Error::usage(format!(
-            "Bind '{name}': a {} does not bind by itself; use Clob::in() or Blob::in() for a stream, or a typed bind.",
+            "Bind '{name}': a {} does not bind by itself; use In\\Clob or In\\Blob for a stream, or a typed bind.",
             zval.get_type()
         )))
     }
@@ -441,7 +441,7 @@ fn infer(
 fn text(name: &str, zval: &Zval) -> Result<Value, Error> {
     let Some(text) = zval.str() else {
         return Err(Error::usage(format!(
-            "Bind '{name}': the string is not valid UTF-8; bind binary data with Raw::in() or Blob::in()."
+            "Bind '{name}': the string is not valid UTF-8; bind binary data with In\\Raw or In\\Blob."
         )));
     };
     if text.len() > MAX_VARCHAR2 {
@@ -483,7 +483,7 @@ pub fn exact(value: f64) -> Option<OracleNumber> {
 
 fn out_of_number_range(name: &str) -> Error {
     Error::usage(format!(
-        "Bind '{name}': this float is outside NUMBER's range (NaN, INF, or beyond 1e-130..1e126); bind it with BinaryDouble::in()."
+        "Bind '{name}': this float is outside NUMBER's range (NaN, INF, or beyond 1e-130..1e126); bind it with In\\BinaryDouble."
     ))
 }
 
@@ -504,7 +504,7 @@ fn object_value(
     }
     if is("DateTimeInterface") {
         return Err(Error::usage(format!(
-            "Bind '{name}': a DateTimeInterface does not bind by itself; use Date::in() or Timestamp::in()."
+            "Bind '{name}': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp."
         )));
     }
     if is("BackedEnum") {
@@ -521,7 +521,7 @@ fn object_value(
     }
     if is("JsonSerializable") {
         return Err(Error::usage(format!(
-            "Bind '{name}': a JsonSerializable does not bind by itself; use Json::in()."
+            "Bind '{name}': a JsonSerializable does not bind by itself; use In\\Json."
         )));
     }
     if object.instance_of(ce::stringable()) {
@@ -538,6 +538,6 @@ fn object_value(
         .get_class_name()
         .unwrap_or_else(|_| "object".to_string());
     Err(Error::usage(format!(
-        "Bind '{name}': an object of class {class} does not bind by itself; use Json::in() or a typed bind."
+        "Bind '{name}': an object of class {class} does not bind by itself; use In\\Json or a typed bind."
     )))
 }

@@ -395,7 +395,7 @@ fn list(what: &Path<'_>, array: &ZendHashTable) -> Result<(), Error> {
     for (position, (key, _)) in array.iter().enumerate() {
         if !matches!(key, ArrayKey::Long(index) if usize::try_from(index) == Ok(position)) {
             return Err(Error::usage(format!(
-                "{what}: a Collection is a list (keys 0, 1, 2… in order), but key {} is not; pass array_values() of it, or bind an Associative array with Indexed::in().",
+                "{what}: a Collection is a list (keys 0, 1, 2… in order), but key {} is not; pass array_values() of it, or bind an Associative array with In\\Indexed.",
                 key_text(&key)
             )));
         }
