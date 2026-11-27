@@ -168,7 +168,7 @@ final readonly class Call
     private function named(OracleException $e): OracleException
     {
         $class = $e::class;
-        while (!\in_array(CarriesStatement::class, class_uses($class), true)) {
+        while (! \in_array(CarriesStatement::class, class_uses($class), true)) {
             $class = get_parent_class($class);
             if ($class === false) {
                 return $e;

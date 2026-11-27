@@ -38,7 +38,7 @@ final class Stream
      */
     public static function open(Closure $read) // @pest-ignore-type
     {
-        if (!\in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
+        if (! \in_array(self::PROTOCOL, stream_get_wrappers(), true)) {
             stream_wrapper_register(self::PROTOCOL, self::class);
         }
         $context = stream_context_create([self::PROTOCOL => ['read' => $read]]);
@@ -52,7 +52,7 @@ final class Stream
     {
         $options = \is_resource($this->context) ? stream_context_get_options($this->context) : [];
         $read = \is_array($options[self::PROTOCOL] ?? null) ? ($options[self::PROTOCOL]['read'] ?? null) : null;
-        if (!$read instanceof Closure || !\in_array($mode, ['r', 'rb'], true)) {
+        if (! $read instanceof Closure || ! \in_array($mode, ['r', 'rb'], true)) {
             return false;
         }
         $this->read = $read;
@@ -62,7 +62,7 @@ final class Stream
 
     public function stream_read(int $count): string
     {
-        if ($this->offset === \strlen($this->buffer) && !$this->end) {
+        if ($this->offset === \strlen($this->buffer) && ! $this->end) {
             $this->buffer = ($this->read)();
             $this->offset = 0;
             $this->end = $this->buffer === '';

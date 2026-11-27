@@ -29,7 +29,7 @@ final readonly class Options
             throw new UsageException("Options: fetchSize must be at least 1, got $fetchSize.");
         }
 
-        if ($timeout !== null && (!($timeout > 0) || !is_finite($timeout))) {
+        if ($timeout !== null && (! ($timeout > 0) || ! is_finite($timeout))) {
             throw new UsageException("Options: timeout must be a positive number of seconds or null, got $timeout.");
         }
     }

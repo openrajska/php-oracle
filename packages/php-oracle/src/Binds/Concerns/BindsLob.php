@@ -27,7 +27,7 @@ trait BindsLob
      */
     public function __construct(#[SensitiveParameter] mixed $value)
     {
-        if ($value !== null && !\is_string($value) && (!\is_resource($value) || get_resource_type($value) !== 'stream')) {
+        if ($value !== null && ! \is_string($value) && (! \is_resource($value) || get_resource_type($value) !== 'stream')) {
             throw new UsageException(\sprintf('A LOB bind takes a string, an open stream resource or null, but was given %s.', get_debug_type($value)));
         }
         $this->value = $value;

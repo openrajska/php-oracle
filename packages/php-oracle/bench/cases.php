@@ -228,7 +228,7 @@ function oci8_scalar($connection, int $i, bool $typed, int $mode = OCI_COMMIT_ON
     oci_bind_by_name($statement, ':o_num', $number, 64);
     oci_bind_by_name($statement, ':o_str', $string, 4000);
     oci_bind_by_name($statement, ':o_date', $out, 32);
-    if (!oci_execute($statement, $mode)) {
+    if (! oci_execute($statement, $mode)) {
         throw new RuntimeException(json_encode(oci_error($statement)));
     }
     if ($typed) {
@@ -261,7 +261,7 @@ function oci8_lobs($connection, bool $inline): array
     $rows = [];
     $flags = OCI_ASSOC + OCI_RETURN_NULLS + ($inline ? OCI_RETURN_LOBS : 0);
     while (($row = oci_fetch_array($statement, $flags)) !== false) {
-        if (!$inline) {
+        if (! $inline) {
             $body = $row['BODY'];
             $data = $row['DATA'];
             $row['BODY'] = $body->load();

@@ -392,7 +392,7 @@ final class Connection
 
     private function disableOutputBeforeRelease(): void
     {
-        if (!$this->outputEnabled || $this->state->released) {
+        if (! $this->outputEnabled || $this->state->released) {
             return;
         }
         $this->outputEnabled = false;
@@ -411,7 +411,7 @@ final class Connection
     {
         try {
             // A closure that closed the Connection has rolled back already.
-            if (!$this->state->released) {
+            if (! $this->state->released) {
                 $this->driver->rollback();
             }
         } catch (Throwable $throwable) {
@@ -466,7 +466,7 @@ final class Connection
                 "$method inside transaction(): the transaction commits when the closure returns and rolls back when it throws.",
             );
         }
-        if (!$this->inTransaction) {
+        if (! $this->inTransaction) {
             throw new UsageException(
                 "There is no transaction to $verb: call begin() first. Outside a transaction, every statement commits on its own.",
             );
@@ -475,13 +475,13 @@ final class Connection
 
     private function resolve(Options | null $options): DriverOptions
     {
-        if (!$options instanceof Options) {
+        if (! $options instanceof Options) {
             // The ConnectionConfig is immutable: these never change.
-            return $this->defaults[(int) !$this->inTransaction] ??= $this->resolve(new Options());
+            return $this->defaults[(int) ! $this->inTransaction] ??= $this->resolve(new Options());
         }
 
         return new DriverOptions(
-            autocommit: !$this->inTransaction,
+            autocommit: ! $this->inTransaction,
             timeout: $options->timeout ?? $this->config->callTimeout,
             fetchSize: $options->fetchSize ?? $this->config->fetchSize,
             values: $options->values ?? $this->config->values,

@@ -188,7 +188,7 @@ foreach ($work as $name => [$iterations, $layers]) {
     }
     foreach ($layers as $layer => $run) {
         $trips = 'n/a (new Session)';
-        if (!str_starts_with($name, 'Connect')) {
+        if (! str_starts_with($name, 'Connect')) {
             $before = $roundTrips($sid);
             $run(1);
             $trips = (string) ($roundTrips($sid) - $before);

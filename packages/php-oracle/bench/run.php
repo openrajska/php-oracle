@@ -98,7 +98,7 @@ for ($round = 1; $from === null && $round <= $rounds; $round++) {
                 }
                 fwrite(STDERR, "attempt $attempt failed: $id\n" . substr($output, 0, 500) . "\n");
             }
-            if (!is_array($result)) {
+            if (! is_array($result)) {
                 fwrite(STDERR, "FAILED: $command\n$output\n");
                 exit(1);
             }
@@ -156,7 +156,7 @@ $md .= sprintf(
 $md .= "## Core against oci8\n\n`same values`: both sides return identical PHP values (`crosscheck.php`). Otherwise oci8 returns its strings, the work it does by default.\n\n";
 $md .= "| Comparison | Core | oci8 | Core median (per-round spread) | oci8 median (per-round spread) | Speedup | Spike | Verdict |\n|---|---|---|---|---|---|---|---|\n";
 foreach (bench_comparisons() as $comparison) {
-    if (!isset($results[$comparison['core']], $results[$comparison['oci8']])) {
+    if (! isset($results[$comparison['core']], $results[$comparison['oci8']])) {
         continue;
     }
     $cell = static function (string $id) use ($results): string {

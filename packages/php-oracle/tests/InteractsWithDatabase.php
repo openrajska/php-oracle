@@ -31,7 +31,7 @@ trait InteractsWithDatabase
      */
     public function schema(): Connection
     {
-        if (!self::$schema instanceof Connection) {
+        if (! self::$schema instanceof Connection) {
             self::$schema = Oracle::connect(self::config(standalone: true));
             self::$schema->run('alter session set ddl_lock_timeout = 10');
         }

@@ -40,11 +40,11 @@ final readonly class SparseVector
         }
         $checked = [];
         foreach ($values as $position => $value) {
-            if (!\is_int($position) || $position < 0 || $position >= $dimensions) {
+            if (! \is_int($position) || $position < 0 || $position >= $dimensions) {
                 $last = $dimensions - 1;
                 throw new UsageException("A SparseVector's values are keyed by position, from 0 to $last; '$position' is not one.");
             }
-            if (!\is_int($value) && !\is_float($value)) {
+            if (! \is_int($value) && ! \is_float($value)) {
                 throw new UsageException("A SparseVector's values are ints and floats; position $position holds " . get_debug_type($value) . '.');
             }
             $checked[$position] = $value;

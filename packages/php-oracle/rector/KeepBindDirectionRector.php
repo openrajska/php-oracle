@@ -46,7 +46,7 @@ final class KeepBindDirectionRector extends AbstractRector
             return null;
         }
         $written = $node->getAttribute(AttributeKey::ORIGINAL_NAME);
-        if (!$written instanceof Name || $written instanceof FullyQualified || \count($written->getParts()) !== 2) {
+        if (! $written instanceof Name || $written instanceof FullyQualified || \count($written->getParts()) !== 2) {
             return null;
         }
 

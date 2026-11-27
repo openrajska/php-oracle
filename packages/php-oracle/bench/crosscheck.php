@@ -31,7 +31,7 @@ $valuesOf = static function (string $id) use ($cases, $context, $written): array
 
 $failed = 0;
 foreach (bench_comparisons() as $comparison) {
-    if (!$comparison['same']) {
+    if (! $comparison['same']) {
         continue;
     }
     $core = Oci8Values::canonical((array) $valuesOf($comparison['core']));

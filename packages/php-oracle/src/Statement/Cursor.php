@@ -142,7 +142,7 @@ final class Cursor implements IteratorAggregate
     private function next(): array | null
     {
         $this->ensureOpen();
-        if (!isset($this->batch[$this->next])) {
+        if (! isset($this->batch[$this->next])) {
             $this->batch = $this->fetch();
             $this->next = 0;
             if ($this->batch === []) {
