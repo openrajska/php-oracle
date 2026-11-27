@@ -9,6 +9,8 @@ use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Contracts\Driver\Cursor;
 use Rajska\Oracle\Contracts\Driver\Locator;
 use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Exceptions\QueryException;
+use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Statement\KeyCase;
 use Rajska\Oracle\Statement\RowShape;
@@ -17,6 +19,8 @@ use Rajska\Oracle\Tracing;
 use Throwable;
 
 uses(TestCase::class);
+
+const INVALID_UNIT = 'create or replace procedure invalid_unit is begin no_such_thing; end;';
 
 beforeEach(function (): void {
     schema()->run(<<<'SQL'
@@ -28,6 +32,8 @@ beforeEach(function (): void {
         )
         SQL);
     schema()->run('create table statement_rows (id number(10))');
+    schema()->run('create table statement_codes (id number(10) primary key, code varchar2(10) not null unique, note varchar2(100))');
+    schema()->run("insert into statement_codes (id, code) values (1, 'one')");
     schema()->run('create table statement_longs (text long)');
     schema()->run('create table statement_long_raws (bytes long raw)');
     schema()->run('create type statement_point as object (x number, y number, label varchar2(30))');
@@ -273,6 +279,85 @@ test("after close the session's next owner is unaffected by what the last one le
     expect($this->session($next))->toBe($session)
         ->and($this->rows($next, 'select level as n from dual connect by level <= 3', [], $this->options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
 })->with('usesAfterClose');
+
+test('a duplicate gives unique violation exception', function (): void {
+    $connection = $this->connect();
+    $sql = "insert into statement_codes (id, code) values (1, 'duplicate')";
+    $thrown = null;
+
+    try {
+        $connection->execute($sql, [], $this->options());
+    } catch (UniqueViolationException $uniqueViolationException) {
+        $thrown = $uniqueViolationException;
+    }
+
+    expect($thrown?->getCode())->toBe(1)
+        ->and($thrown?->getMessage())->toStartWith('ORA-00001')
+        ->and($thrown?->sql())->toBe($sql)
+        ->and($thrown?->call())->toBeNull();
+});
+
+test('a unique violation on a fresh connection carries no ora 03301 line and no bound value', function (): void {
+    $connection = $this->connect(...$this->ownPool());
+    $insert = 'insert into statement_codes (id, code) values (:id, :code)';
+    $connection->execute($insert, ['id' => 2, 'code' => 'zq39secret'], $this->options(autocommit: false));
+    $thrown = null;
+
+    try {
+        $connection->execute($insert, ['id' => 3, 'code' => 'zq39secret'], $this->options(autocommit: false));
+    } catch (UniqueViolationException $uniqueViolationException) {
+        $thrown = $uniqueViolationException;
+    }
+
+    expect($thrown?->getMessage())->toStartWith('ORA-00001')
+        ->not->toContain('ORA-03301')
+        ->not->toContain('zq39secret');
+});
+
+test('a syntax error gives query exception with the server offset', function (string $sql, int $code, int $offset): void {
+    $connection = $this->connect();
+    $thrown = null;
+
+    try {
+        $connection->execute($sql, [], $this->options());
+    } catch (QueryException $queryException) {
+        $thrown = $queryException;
+    }
+
+    assert($thrown instanceof QueryException);
+    expect($thrown::class)->toBe(QueryException::class)
+        ->and($thrown->getCode())->toBe($code)
+        ->and($thrown->offset())->toBe($offset)
+        ->and($thrown->sql())->toBe($sql);
+})->with([
+    'a misspelled keyword' => ['select 1 fro dual', 923, 13],
+    'an unknown column' => ['select nosuchcolumn from dual', 904, 7],
+]);
+
+test('a compilation error gives a warning every time it runs', function (): void {
+    $connection = $this->connect();
+
+    $warnings = [
+        $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
+        $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
+    ];
+
+    expect($warnings[0])->toContain('compilation errors')
+        ->and($warnings[1])->toContain('compilation errors');
+});
+
+test('a statement after a compilation error gives no warning', function (string $sql): void {
+    $connection = $this->connect();
+    $connection->execute(INVALID_UNIT, [], $this->options());
+
+    $warning = $connection->execute($sql, [], $this->options())->warning();
+
+    expect($warning)->toBeNull();
+})->with([
+    'a query' => ['select 1 from dual'],
+    'a block' => ['begin null; end;'],
+    'a valid unit' => ['create or replace procedure invalid_unit is begin null; end;'],
+]);
 
 /**
  * @return array<string, mixed>

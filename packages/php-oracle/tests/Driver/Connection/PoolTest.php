@@ -21,6 +21,8 @@ use RuntimeException;
 
 uses(TestCase::class);
 
+const INVALID_UNIT = 'create or replace procedure invalid_unit is begin no_such_thing; end;';
+
 beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create package pool_counter as
@@ -354,6 +356,61 @@ test('a killed session makes the connection broken and never comes back', functi
         ->and($later)->toBe(array_fill_keys(array_keys($later), $broken))
         ->and($this->session($this->connect(...$fields)))->not->toBe($session);
 })->with(['kill immediate' => [true], 'kill' => [false]]);
+
+test('a warning never reaches the next connection on the pooled session', function (): void {
+    $fields = $this->ownPool() + ['maxConnections' => 1];
+    $first = $this->connect(...$fields);
+    $session = $this->session($first);
+    $first->execute(INVALID_UNIT, [], $this->options());
+    $first->close();
+
+    $second = $this->connect(...$fields);
+
+    expect($this->session($second))->toBe($session)
+        ->and($second->execute('select 1 from dual', [], $this->options())->warning())->toBeNull()
+        ->and($second->execute('begin null; end;', [], $this->options())->warning())->toBeNull();
+});
+
+test('a session dead after the last call is released without a throw and not returned', function (bool $destroy): void {
+    $fields = $this->ownPool() + ['maxConnections' => 1];
+    $connection = $this->driver()->connect($this->config(...$fields));
+    $session = $this->session($connection);
+    $connection->execute("update pool_rows set note = 'uncommitted' where id = 1", [], $this->options(autocommit: false));
+    kill($this->sid($connection));
+
+    if ($destroy) {
+        unset($connection);
+    } else {
+        $connection->close();
+    }
+
+    expect($this->session($this->connect(...$fields)))->not->toBe($session);
+})->with(['close()' => [false], 'the destructor' => [true]]);
+
+test('an injected panic gives connection lost and makes the connection broken', function (): void {
+    $fields = $this->ownPool() + ['maxConnections' => 1];
+    $this->connect(...$fields)->close();
+    $connection = $this->connect(...$fields);
+    $session = $this->session($connection);
+
+    try {
+        $connection->execute('/* oracledb: panic */ select 1 from dual', [], $this->options());
+        $this->markTestSkipped('The panic hook exists in debug builds of the Extension only.');
+    } catch (ConnectionLostException $connectionLostException) {
+        $panic = $connectionLostException;
+    }
+
+    expect($panic->getCode())->toBe(0)
+        ->and($panic->getMessage())->toStartWith('internal error in oracledb: ')
+        ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
+        ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $panic->getMessage());
+    $connection->close();
+    for ($i = 0; $i < 3; ++$i) {
+        $next = $this->connect(...$fields);
+        expect($this->session($next))->not->toBe($session);
+        $next->close();
+    }
+});
 
 /**
  * @param callable(): bool $condition
