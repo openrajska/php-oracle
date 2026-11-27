@@ -206,6 +206,14 @@ test('an array getter of the wrong kind names the one to use', function (Closure
     expect($call)->toThrow(UsageException::class, $message);
 })->with('arrayGetterMistakes');
 
+test('a getter of a value without a getter of its own names value', function (): void {
+    $execution = $this->connection->run('begin :sparse := :sparse; end;', ['sparse' => new InOut\Vector(new SparseVector(4, [2 => 0.5]))]);
+
+    $read = static fn (): string | null => $execution->out('sparse')->string();
+
+    expect($read)->toThrow(UsageException::class, "OUT bind 'sparse' holds Rajska\\Oracle\\DataType\\SparseVector, not a string. Read it with value().");
+});
+
 test('json and vector out values have their mapped types', function (): void {
     $execution = $this->connection->run(
         "begin :doc := :doc; :scalar := json('5'); :dense := :dense; :sparse := :sparse; end;",

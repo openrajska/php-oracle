@@ -7,11 +7,14 @@ namespace Rajska\Oracle\Tests\Functional\Subprogram\CallTest;
 use Closure;
 use DateInterval;
 use DateTimeImmutable;
+use Override;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
 use Rajska\Oracle\Connection;
+use Rajska\Oracle\Contracts\Driver\Session;
 use Rajska\Oracle\DataType\SparseVector;
+use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Statement\Execution;
@@ -22,6 +25,7 @@ use Rajska\Oracle\Statement\TemporalMode;
 use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Subprogram\PendingFunction;
 use Rajska\Oracle\Tests\Functional\TestCase;
+use RuntimeException;
 
 uses(TestCase::class);
 
@@ -549,6 +553,42 @@ dataset('failingCalls', function () {
         'call_pkg.f_fail',
         'BEGIN :b0 := call_pkg.f_fail(p_value => :b1); END;',
     ];
+});
+
+test('a call still runs after more call shapes than the cache keeps', function (): void {
+    $this->connection->function('call_pkg.f_number', ['p_value' => 1])->number();
+    foreach (range(1, 256) as $i) {
+        $this->connection->function("never_called_$i");
+    }
+
+    $value = $this->connection->function('call_pkg.f_number', ['p_value' => 2])->number();
+
+    expect($value)->toBe(2);
+});
+
+test('an exception of another backend reaches the caller as it was thrown', function (): void {
+    $failure = new class ('the backend failed') extends RuntimeException implements OracleException {
+        #[Override]
+        public function sql(): string | null
+        {
+            return null;
+        }
+
+        #[Override]
+        public function call(): string | null
+        {
+            return null;
+        }
+    };
+    $driver = $this->createStub(Session::class);
+    $driver->method('execute')->willThrowException($failure);
+    $connection = new Connection($driver, $this->config());
+
+    $call = fn (): Execution => $connection->procedure('any_procedure');
+
+    expect($call)->toThrow(function (RuntimeException $exception) use ($failure): void {
+        expect($exception)->toBe($failure);
+    });
 });
 
 test('a failing call carries its name and generated block', function (Closure $call, string $name, string $sql): void {

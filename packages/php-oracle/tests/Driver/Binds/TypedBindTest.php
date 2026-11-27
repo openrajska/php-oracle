@@ -37,74 +37,74 @@ beforeEach(function (): void {
  * becomes; the OUT bind; the IN OUT bind, how the block changes it, and
  * the result.
  *
- * @return iterable<string, array{string, Bindable, mixed, Bindable, Bindable, string, mixed}>
+ * @return iterable<string, array{string, Closure(): Bindable, mixed, Closure(): Bindable, Closure(): Bindable, string, mixed}>
  */
 dataset('classes', function () {
-    yield 'Varchar' => ['varchar2', new In\Varchar('héllo'), 'héllo', new Out\Varchar(), new InOut\Varchar('a'), "io || 'b'", 'ab'];
+    yield 'Varchar' => ['varchar2', fn (): Bindable => new In\Varchar('héllo'), 'héllo', fn (): Bindable => new Out\Varchar(), fn (): Bindable => new InOut\Varchar('a'), "io || 'b'", 'ab'];
 
     // An unconstrained CHAR parameter takes its length from the bind: the
     // largest buffer, 32767 bytes (16383 UTF-16 code units for NCHAR).
-    yield 'Char' => ['char', new In\Char('AB'), str_pad('AB', 32767), new Out\Char(), new InOut\Char('x'), "rtrim(io) || 'y'", str_pad('xy', 32767)];
-    yield 'NVarchar' => ['nvarchar2', new In\NVarchar('çã日😀'), 'çã日😀', new Out\NVarchar(), new InOut\NVarchar('é'), "io || n'日'", 'é日'];
-    yield 'NChar' => ['nchar', new In\NChar('ç日😀'), 'ç日😀' . str_repeat(' ', 16383 - 4), new Out\NChar(), new InOut\NChar('é'), "rtrim(io) || n'😀'", 'é😀' . str_repeat(' ', 16383 - 3)];
-    yield 'Number' => ['number', new In\Number('12.30'), '12.3', new Out\Number(), new InOut\Number(41), 'io + 1', 42];
-    yield 'Number from a float' => ['number', new In\Number(0.1), '0.1', new Out\Number(), new InOut\Number(0.5), 'io * 3', '1.5'];
-    yield 'BinaryFloat' => ['binary_float', new In\BinaryFloat(0.1), 0.1, new Out\BinaryFloat(), new InOut\BinaryFloat(1.5), 'io * 2', 3.0];
-    yield 'BinaryDouble' => ['binary_double', new In\BinaryDouble(0.1), 0.1, new Out\BinaryDouble(), new InOut\BinaryDouble(2), 'io / 4', 0.5];
-    yield 'BinaryDouble NaN' => ['binary_double', new In\BinaryDouble(\NAN), \NAN, new Out\BinaryDouble(), new InOut\BinaryDouble(\INF), '-io', -\INF];
-    yield 'PlsInteger' => ['pls_integer', new In\PlsInteger(-2147483648), -2147483648, new Out\PlsInteger(), new InOut\PlsInteger(41), 'io + 1', 42];
-    yield 'Boolean' => ['boolean', new In\Boolean(true), true, new Out\Boolean(), new InOut\Boolean(false), 'not io', true];
-    yield 'Raw' => ['raw', new In\Raw("\x00\xff\x80"), "\x00\xff\x80", new Out\Raw(), new InOut\Raw("\x01"), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
+    yield 'Char' => ['char', fn (): Bindable => new In\Char('AB'), str_pad('AB', 32767), fn (): Bindable => new Out\Char(), fn (): Bindable => new InOut\Char('x'), "rtrim(io) || 'y'", str_pad('xy', 32767)];
+    yield 'NVarchar' => ['nvarchar2', fn (): Bindable => new In\NVarchar('çã日😀'), 'çã日😀', fn (): Bindable => new Out\NVarchar(), fn (): Bindable => new InOut\NVarchar('é'), "io || n'日'", 'é日'];
+    yield 'NChar' => ['nchar', fn (): Bindable => new In\NChar('ç日😀'), 'ç日😀' . str_repeat(' ', 16383 - 4), fn (): Bindable => new Out\NChar(), fn (): Bindable => new InOut\NChar('é'), "rtrim(io) || n'😀'", 'é😀' . str_repeat(' ', 16383 - 3)];
+    yield 'Number' => ['number', fn (): Bindable => new In\Number('12.30'), '12.3', fn (): Bindable => new Out\Number(), fn (): Bindable => new InOut\Number(41), 'io + 1', 42];
+    yield 'Number from a float' => ['number', fn (): Bindable => new In\Number(0.1), '0.1', fn (): Bindable => new Out\Number(), fn (): Bindable => new InOut\Number(0.5), 'io * 3', '1.5'];
+    yield 'BinaryFloat' => ['binary_float', fn (): Bindable => new In\BinaryFloat(0.1), 0.1, fn (): Bindable => new Out\BinaryFloat(), fn (): Bindable => new InOut\BinaryFloat(1.5), 'io * 2', 3.0];
+    yield 'BinaryDouble' => ['binary_double', fn (): Bindable => new In\BinaryDouble(0.1), 0.1, fn (): Bindable => new Out\BinaryDouble(), fn (): Bindable => new InOut\BinaryDouble(2), 'io / 4', 0.5];
+    yield 'BinaryDouble NaN' => ['binary_double', fn (): Bindable => new In\BinaryDouble(\NAN), \NAN, fn (): Bindable => new Out\BinaryDouble(), fn (): Bindable => new InOut\BinaryDouble(\INF), '-io', -\INF];
+    yield 'PlsInteger' => ['pls_integer', fn (): Bindable => new In\PlsInteger(-2147483648), -2147483648, fn (): Bindable => new Out\PlsInteger(), fn (): Bindable => new InOut\PlsInteger(41), 'io + 1', 42];
+    yield 'Boolean' => ['boolean', fn (): Bindable => new In\Boolean(true), true, fn (): Bindable => new Out\Boolean(), fn (): Bindable => new InOut\Boolean(false), 'not io', true];
+    yield 'Raw' => ['raw', fn (): Bindable => new In\Raw("\x00\xff\x80"), "\x00\xff\x80", fn (): Bindable => new Out\Raw(), fn (): Bindable => new InOut\Raw("\x01"), "utl_raw.concat(io, hextoraw('02'))", "\x01\x02"];
 });
 
 /**
- * @return iterable<string, array{string, Bindable, Bindable, Bindable}>
+ * @return iterable<string, array{string, Closure(): Bindable, Closure(): Bindable, Closure(): Bindable}>
  */
 dataset('nulls', function () {
-    yield 'Varchar' => ['varchar2', new In\Varchar(null), new Out\Varchar(), new InOut\Varchar(null)];
-    yield 'Char' => ['char', new In\Char(null), new Out\Char(), new InOut\Char(null)];
-    yield 'NVarchar' => ['nvarchar2', new In\NVarchar(null), new Out\NVarchar(), new InOut\NVarchar(null)];
-    yield 'NChar' => ['nchar', new In\NChar(null), new Out\NChar(), new InOut\NChar(null)];
-    yield 'Number' => ['number', new In\Number(null), new Out\Number(), new InOut\Number(null)];
-    yield 'BinaryFloat' => ['binary_float', new In\BinaryFloat(null), new Out\BinaryFloat(), new InOut\BinaryFloat(null)];
-    yield 'BinaryDouble' => ['binary_double', new In\BinaryDouble(null), new Out\BinaryDouble(), new InOut\BinaryDouble(null)];
-    yield 'PlsInteger' => ['pls_integer', new In\PlsInteger(null), new Out\PlsInteger(), new InOut\PlsInteger(null)];
-    yield 'Boolean' => ['boolean', new In\Boolean(null), new Out\Boolean(), new InOut\Boolean(null)];
-    yield 'Raw' => ['raw', new In\Raw(null), new Out\Raw(), new InOut\Raw(null)];
-    yield 'Rowid' => ['rowid', new In\Rowid(null), new Out\Rowid(), new InOut\Rowid(null)];
-    yield 'Date' => ['date', new In\Date(null), new Out\Date(), new InOut\Date(null)];
-    yield 'Timestamp' => ['timestamp', new In\Timestamp(null), new Out\Timestamp(), new InOut\Timestamp(null)];
-    yield 'TimestampTz' => ['timestamp with time zone', new In\TimestampTz(null), new Out\TimestampTz(), new InOut\TimestampTz(null)];
-    yield 'TimestampLtz' => ['timestamp with local time zone', new In\TimestampLtz(null), new Out\TimestampLtz(), new InOut\TimestampLtz(null)];
-    yield 'IntervalDs' => ['interval day to second', new In\IntervalDs(null), new Out\IntervalDs(), new InOut\IntervalDs(null)];
-    yield 'IntervalYm' => ['interval year to month', new In\IntervalYm(null), new Out\IntervalYm(), new InOut\IntervalYm(null)];
+    yield 'Varchar' => ['varchar2', fn (): Bindable => new In\Varchar(null), fn (): Bindable => new Out\Varchar(), fn (): Bindable => new InOut\Varchar(null)];
+    yield 'Char' => ['char', fn (): Bindable => new In\Char(null), fn (): Bindable => new Out\Char(), fn (): Bindable => new InOut\Char(null)];
+    yield 'NVarchar' => ['nvarchar2', fn (): Bindable => new In\NVarchar(null), fn (): Bindable => new Out\NVarchar(), fn (): Bindable => new InOut\NVarchar(null)];
+    yield 'NChar' => ['nchar', fn (): Bindable => new In\NChar(null), fn (): Bindable => new Out\NChar(), fn (): Bindable => new InOut\NChar(null)];
+    yield 'Number' => ['number', fn (): Bindable => new In\Number(null), fn (): Bindable => new Out\Number(), fn (): Bindable => new InOut\Number(null)];
+    yield 'BinaryFloat' => ['binary_float', fn (): Bindable => new In\BinaryFloat(null), fn (): Bindable => new Out\BinaryFloat(), fn (): Bindable => new InOut\BinaryFloat(null)];
+    yield 'BinaryDouble' => ['binary_double', fn (): Bindable => new In\BinaryDouble(null), fn (): Bindable => new Out\BinaryDouble(), fn (): Bindable => new InOut\BinaryDouble(null)];
+    yield 'PlsInteger' => ['pls_integer', fn (): Bindable => new In\PlsInteger(null), fn (): Bindable => new Out\PlsInteger(), fn (): Bindable => new InOut\PlsInteger(null)];
+    yield 'Boolean' => ['boolean', fn (): Bindable => new In\Boolean(null), fn (): Bindable => new Out\Boolean(), fn (): Bindable => new InOut\Boolean(null)];
+    yield 'Raw' => ['raw', fn (): Bindable => new In\Raw(null), fn (): Bindable => new Out\Raw(), fn (): Bindable => new InOut\Raw(null)];
+    yield 'Rowid' => ['rowid', fn (): Bindable => new In\Rowid(null), fn (): Bindable => new Out\Rowid(), fn (): Bindable => new InOut\Rowid(null)];
+    yield 'Date' => ['date', fn (): Bindable => new In\Date(null), fn (): Bindable => new Out\Date(), fn (): Bindable => new InOut\Date(null)];
+    yield 'Timestamp' => ['timestamp', fn (): Bindable => new In\Timestamp(null), fn (): Bindable => new Out\Timestamp(), fn (): Bindable => new InOut\Timestamp(null)];
+    yield 'TimestampTz' => ['timestamp with time zone', fn (): Bindable => new In\TimestampTz(null), fn (): Bindable => new Out\TimestampTz(), fn (): Bindable => new InOut\TimestampTz(null)];
+    yield 'TimestampLtz' => ['timestamp with local time zone', fn (): Bindable => new In\TimestampLtz(null), fn (): Bindable => new Out\TimestampLtz(), fn (): Bindable => new InOut\TimestampLtz(null)];
+    yield 'IntervalDs' => ['interval day to second', fn (): Bindable => new In\IntervalDs(null), fn (): Bindable => new Out\IntervalDs(), fn (): Bindable => new InOut\IntervalDs(null)];
+    yield 'IntervalYm' => ['interval year to month', fn (): Bindable => new In\IntervalYm(null), fn (): Bindable => new Out\IntervalYm(), fn (): Bindable => new InOut\IntervalYm(null)];
 });
 
 /**
  * Each temporal class, as `classes()`. Values as `temporalText()`
  * writes them, in PHP's zone America/Sao_Paulo.
  *
- * @return iterable<string, array{string, Bindable, string, Bindable, Bindable, string, string}>
+ * @return iterable<string, array{string, Closure(): Bindable, string, Closure(): Bindable, Closure(): Bindable, string, string}>
  */
 dataset('temporalClasses', function () {
     $date = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Kathmandu'));
     $zone = 'America/Sao_Paulo';
-    yield 'Date' => ['date', new In\Date($date), "+2026-03-01 10:00:00.000000 $zone", new Out\Date(), new InOut\Date($date), 'io + 1', "+2026-03-02 10:00:00.000000 $zone"];
-    yield 'Timestamp' => ['timestamp', new In\Timestamp($date), "+2026-03-01 10:00:00.123456 $zone", new Out\Timestamp(), new InOut\Timestamp($date), "io + interval '0.5' second", "+2026-03-01 10:00:00.623456 $zone"];
-    yield 'TimestampTz' => ['timestamp with time zone', new In\TimestampTz($date), '+2026-03-01 10:00:00.123456 +05:45', new Out\TimestampTz(), new InOut\TimestampTz($date), "io + interval '1' hour", '+2026-03-01 11:00:00.123456 +05:45'];
+    yield 'Date' => ['date', fn (): Bindable => new In\Date($date), "+2026-03-01 10:00:00.000000 $zone", fn (): Bindable => new Out\Date(), fn (): Bindable => new InOut\Date($date), 'io + 1', "+2026-03-02 10:00:00.000000 $zone"];
+    yield 'Timestamp' => ['timestamp', fn (): Bindable => new In\Timestamp($date), "+2026-03-01 10:00:00.123456 $zone", fn (): Bindable => new Out\Timestamp(), fn (): Bindable => new InOut\Timestamp($date), "io + interval '0.5' second", "+2026-03-01 10:00:00.623456 $zone"];
+    yield 'TimestampTz' => ['timestamp with time zone', fn (): Bindable => new In\TimestampTz($date), '+2026-03-01 10:00:00.123456 +05:45', fn (): Bindable => new Out\TimestampTz(), fn (): Bindable => new InOut\TimestampTz($date), "io + interval '1' hour", '+2026-03-01 11:00:00.123456 +05:45'];
 
     // 10:00 at +05:45 is 04:15 UTC, 01:15 in São Paulo.
-    yield 'TimestampLtz' => ['timestamp with local time zone', new In\TimestampLtz($date), "+2026-03-01 01:15:00.123456 $zone", new Out\TimestampLtz(), new InOut\TimestampLtz($date), "io + interval '1' hour", "+2026-03-01 02:15:00.123456 $zone"];
+    yield 'TimestampLtz' => ['timestamp with local time zone', fn (): Bindable => new In\TimestampLtz($date), "+2026-03-01 01:15:00.123456 $zone", fn (): Bindable => new Out\TimestampLtz(), fn (): Bindable => new InOut\TimestampLtz($date), "io + interval '1' hour", "+2026-03-01 02:15:00.123456 $zone"];
     $ds = new DateInterval('P3DT4H5M6S');
     $ds->f = 0.789;
-    yield 'IntervalDs' => ['interval day to second', new In\IntervalDs($ds), '+0Y0M3DT4H5M6S.789000', new Out\IntervalDs(), new InOut\IntervalDs($ds), 'io * 2', '+0Y0M6DT8H10M13S.578000'];
+    yield 'IntervalDs' => ['interval day to second', fn (): Bindable => new In\IntervalDs($ds), '+0Y0M3DT4H5M6S.789000', fn (): Bindable => new Out\IntervalDs(), fn (): Bindable => new InOut\IntervalDs($ds), 'io * 2', '+0Y0M6DT8H10M13S.578000'];
     $negative = new DateInterval('PT36H');
     $negative->invert = 1;
-    yield 'IntervalDs negative' => ['interval day to second', new In\IntervalDs($negative), '-0Y0M1DT12H0M0S.000000', new Out\IntervalDs(), new InOut\IntervalDs($negative), 'io * -1', '+0Y0M1DT12H0M0S.000000'];
-    yield 'IntervalYm' => ['interval year to month', new In\IntervalYm(new DateInterval('P2Y5M')), '+2Y5M0DT0H0M0S.000000', new Out\IntervalYm(), new InOut\IntervalYm(new DateInterval('P1Y11M')), 'io * 2', '+3Y10M0DT0H0M0S.000000'];
+    yield 'IntervalDs negative' => ['interval day to second', fn (): Bindable => new In\IntervalDs($negative), '-0Y0M1DT12H0M0S.000000', fn (): Bindable => new Out\IntervalDs(), fn (): Bindable => new InOut\IntervalDs($negative), 'io * -1', '+0Y0M1DT12H0M0S.000000'];
+    yield 'IntervalYm' => ['interval year to month', fn (): Bindable => new In\IntervalYm(new DateInterval('P2Y5M')), '+2Y5M0DT0H0M0S.000000', fn (): Bindable => new Out\IntervalYm(), fn (): Bindable => new InOut\IntervalYm(new DateInterval('P1Y11M')), 'io * 2', '+3Y10M0DT0H0M0S.000000'];
     $months = new DateInterval('P14M');
     $months->invert = 1;
-    yield 'IntervalYm negative' => ['interval year to month', new In\IntervalYm($months), '-1Y2M0DT0H0M0S.000000', new Out\IntervalYm(), new InOut\IntervalYm($months), 'io', '-1Y2M0DT0H0M0S.000000'];
+    yield 'IntervalYm negative' => ['interval year to month', fn (): Bindable => new In\IntervalYm($months), '-1Y2M0DT0H0M0S.000000', fn (): Bindable => new Out\IntervalYm(), fn (): Bindable => new InOut\IntervalYm($months), 'io', '-1Y2M0DT0H0M0S.000000'];
 });
 
 test('each temporal class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, string $out, Bindable $outBind, Bindable $inOut, string $change, string $changed): void {

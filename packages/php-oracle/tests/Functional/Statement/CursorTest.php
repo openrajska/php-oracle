@@ -49,6 +49,14 @@ test('select gives the rows run gives', function (): void {
         ->and($selected)->toHaveCount(3);
 });
 
+test('rows of an execution is the same cursor every time', function (): void {
+    $execution = $this->connection->run('select 1 as one from dual');
+
+    $rows = $execution->rows();
+
+    expect($execution->rows())->toBe($rows);
+});
+
 test('select executes and brings the first batch in one round trip', function (): void {
     $sid = $this->sid($this->connection);
 

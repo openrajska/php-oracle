@@ -114,6 +114,14 @@ test('contents and stream go on from where the last read stopped', function (): 
         ->and(stream_get_contents($lob->stream()))->toBe('');
 });
 
+test('the lob stream protocol opens nothing but a lob for reading', function (string $mode): void {
+    lob($this->connection->select('select text_value from lobs where id = 1')->value())->stream();
+
+    $opened = @fopen('rajska-lob://lob', $mode);
+
+    expect($opened)->toBeFalse();
+})->with(['reading without a lob' => ['rb'], 'writing' => ['wb']]);
+
 test('stream reads the 16 mib clob line by line exactly', function (): void {
     $stream = lob($this->connection->select('select text_value from lobs where id = 4')->value())->stream();
     $hash = hash_init('md5');

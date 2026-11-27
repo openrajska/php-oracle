@@ -270,6 +270,7 @@ test('json in refuses what json cannot hold', function (mixed $value): void {
     'NaN' => [\NAN],
     'INF inside' => [[\INF]],
     'a resource' => [fopen('php://memory', 'r')],
+    'values nested deeper than 512 levels' => [array_reduce(range(1, 513), static fn (array $nested): array => [$nested], [])],
 ]);
 
 test('json text that is not utf8 fails when bound', function (): void {

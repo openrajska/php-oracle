@@ -13,6 +13,7 @@ use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Statement\Execution;
 use Rajska\Oracle\Tests\Functional\TestCase;
+use RuntimeException;
 use Throwable;
 use TypeError;
 
@@ -297,6 +298,25 @@ test('a failed rollback becomes previous of the rethrown exception', function ()
     expect($caught)->toBe($thrown)
         ->and($thrown->getPrevious())->toBeInstanceOf(ConnectionLostException::class)
         ->and(committed(otherSession()))->toBeEmpty();
+});
+
+test('a failed rollback goes at the end of the previous chain of the rethrown exception', function (): void {
+    $connection = $this->connect();
+    $cause = new RuntimeException('the cause');
+    $thrown = new DomainException('the closure failed', 0, $cause);
+
+    $transaction = fn () => $connection->transaction(function (Connection $connection) use ($thrown): never {
+        $connection->run('insert into tx_rows (id) values (1)');
+        kill($this->sid($connection));
+
+        throw $thrown;
+    });
+
+    expect($transaction)->toThrow(function (DomainException $exception) use ($thrown, $cause): void {
+        expect($exception)->toBe($thrown)
+            ->and($exception->getPrevious())->toBe($cause)
+            ->and($cause->getPrevious())->toBeInstanceOf(ConnectionLostException::class);
+    });
 });
 
 test('a closure that closes the connection rethrows with nothing chained', function (): void {
