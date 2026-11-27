@@ -31,8 +31,9 @@ database image lacks, so it uses `gvenzl/oracle-free`'s "full" image (about
 
 ## Starting the listeners
 
-- ddev: `ddev fixtures` runs `listeners.sh` (the folder is mounted at
-  `/fixtures/tls` in the `oracle` container) and sets the variables above.
+- ddev: the `oracle` container runs `listeners.sh` on every start
+  (`.ddev/oracle-startdb/`; the folder is mounted at `/fixtures/tls`), and
+  the web container sets the variables above.
 - CI: `.github/workflows/ci.yml` copies the folder into the service container
   and runs it.
 - Elsewhere:

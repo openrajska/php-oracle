@@ -4,8 +4,6 @@ parameters:
         - src
         - tests
         - bench/src
-    excludePaths:
-        - tests/Harness/Probes
     tmpDir: .phpstan.cache
     checkMissingOverrideMethodAttribute: true
     scanFiles:

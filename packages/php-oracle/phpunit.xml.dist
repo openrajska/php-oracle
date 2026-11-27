@@ -24,14 +24,11 @@
          displayDetailsOnTestsThatTriggerErrors="true"
          displayDetailsOnPhpunitDeprecations="true">
     <testsuites>
-        <testsuite name="harness">
-            <directory>tests/Harness</directory>
+        <testsuite name="functional">
+            <directory>tests/Functional</directory>
         </testsuite>
-        <testsuite name="conformance">
-            <directory>tests/Conformance</directory>
-        </testsuite>
-        <testsuite name="api">
-            <directory>tests/Api</directory>
+        <testsuite name="driver">
+            <directory>tests/Driver</directory>
         </testsuite>
     </testsuites>
 
@@ -45,5 +42,9 @@
         <ini name="error_reporting" value="-1"/>
         <ini name="zend.exception_ignore_args" value="0"/>
         <ini name="zend.exception_string_param_max_len" value="1000000"/>
+        <env name="ORACLE_CONNECT_STRING" value="localhost:1521/FREEPDB1"/>
+        <env name="ORACLE_ADMIN_CONNECT_STRING" value="localhost:1521/FREE"/>
+        <env name="ORACLE_ADMIN_USER" value="system"/>
+        <env name="ORACLE_ADMIN_PASSWORD" value="oracle"/>
     </php>
 </phpunit>

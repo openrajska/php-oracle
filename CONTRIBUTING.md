@@ -59,7 +59,7 @@ add its scope here first.
 | `ext`      | `packages/php-oracle-ext`: the Rust extension (`oracledb`)           |
 | `laravel`  | `packages/laravel-oracle`: the Laravel adapter                       |
 | `spike`    | `spikes/`: throwaway experiments                                     |
-| `fixtures` | `fixtures/`: SQL and PL/SQL test schemas                             |
+| `fixtures` | `fixtures/`: TLS certificates and listeners for the tests            |
 | `ddev`     | `.ddev/`: the local development environment                          |
 | `docs`     | `docs/`: research, ADRs and guides                                   |
 | `ci`       | `.github/`: workflows and automation                                 |
@@ -119,7 +119,7 @@ history to change one.
 feat(core): add named-notation call builder for procedures
 fix(ext): release statement handle when fetch is interrupted
 perf(ext): convert NUMBER columns to int without string round-trip
-test(fixtures): add pipelined table function with BOOLEAN column
+test(fixtures): regenerate the TLS test certificates
 build(ddev): pin Rust toolchain to 1.100.0
 docs: record ADR for choosing the Rust thin backend
 chore(spike): drop smoke tests superseded by the probe
@@ -140,15 +140,19 @@ is required on the host.
 ```bash
 ddev start                     # PHP 8.4 web container + Oracle 26ai Free
 ddev cargo build               # cargo inside the web container (from any directory)
-ddev exec -s oracle sqlplus rajska/rajska@localhost/FREEPDB1
+ddev exec -s oracle sqlplus system/oracle@localhost/FREEPDB1
 ```
 
 The Oracle database is ephemeral. `ddev restart` gives you a clean database.
 
 ### Running the suites
 
-Install the fixtures and the suites' grants first (`ddev fixtures`, again
-after every restart). Then, from the repository root:
+The suites need nothing installed beforehand. Each test process creates its
+own schema through the admin user (`test`, or `test_<TEST_TOKEN>` under
+`--parallel`). Before each test file the schema is emptied
+(`tests/RefreshDatabase.php`, like Laravel's `migrate:fresh`), and the file
+creates the tables, types and PL/SQL it uses through `schema()->run()`
+(`tests/Pest.php`). From the repository root:
 
 ```bash
 # The Extension's suite
@@ -157,34 +161,44 @@ after every restart). Then, from the repository root:
 # Core's suite, with the Extension built and loaded
 ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
   && ddev exec -d /var/www/html/packages/php-oracle composer install --ignore-platform-req=ext-oracledb \
-  && ddev exec -d /var/www/html/packages/php-oracle php \
-       -d extension=/var/cache/cargo-target/debug/libphp_oracledb.so vendor/bin/phpunit
+  && ddev exec -d /var/www/html/packages/php-oracle vendor/bin/pest
 ```
 
-Core's suite has three parts (`--testsuite <name>` runs one): `harness` (the
-test helpers), `conformance` (the conformance catalog of spec #32, through the
-Driver contract: `new ExtensionDriver()->connect($config)`) and `api` (Core's
-public API). The Extension's stub, `packages/php-oracle-ext/oracledb.stub.php`,
-has a copy in `packages/php-oracle/stubs/` for PHPStan; change both together.
+Core's suite has two parts (`--testsuite <name>` runs one): `functional`
+(Core's public API, `Oracle::connect()`) and `driver` (the Driver contract of
+spec #32, `new ExtensionManager()->connect($config)`). Each file names its
+TestCase with `uses()`; `tests/Functional/TestCase.php` and
+`tests/Driver/TestCase.php` extend `tests/TestCase.php`.
+
+The Extension's stub, `packages/php-oracle-ext/oracledb.stub.php`, has a copy
+in `packages/php-oracle/stubs/` for PHPStan; change both together (CI fails
+when they differ).
 
 Core's suite fails on any PHP warning, notice or deprecation and runs with
 `zend.exception_ignore_args=Off` (`phpunit.xml.dist`). Both suites reach Oracle
-through `ORACLE_CONNECT_STRING`, `ORACLE_USER` and `ORACLE_PASSWORD`, which ddev
-sets. One Core test waits 61 s for the Pool's idle ping; `--exclude-group slow`
-skips it. CI (`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and
-ZTS.
+through `ORACLE_CONNECT_STRING`, `ORACLE_ADMIN_USER` and `ORACLE_ADMIN_PASSWORD`.
+Their defaults (`phpunit.xml.dist`, and the Pool's tests in `pool.rs`) are a
+local `gvenzl/oracle-free` on port 1521 started with `ORACLE_PASSWORD=oracle`;
+ddev points them at its `oracle` service. The TLS tests run only when
+`ORACLE_TLS_CONNECT_STRING` and `ORACLE_MTLS_CONNECT_STRING` are set, and the
+DRCP tests need DRCP started; ddev's `oracle` container starts both
+(`.ddev/oracle-startdb/`), and CI does the same. One Core test waits 61 s for
+the Pool's idle ping; `--exclude-group slow` skips it. CI
+(`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and ZTS.
 
 The database image allows 200 processes, about 90 of them its own. CI raises
-the limit to 400 before the fixtures (`fixtures/sql/processes.sql`), because
-Core's suite holds about 60 Sessions by its end (one for every Pool it
-created) and a burst of logons on top made the listener refuse new ones with
-ORA-12516. `ddev fixtures` does not do this: the new limit needs an instance
-restart, which ends every Session on the shared database. If you hit
-ORA-12516 locally (several suites at once), raise it yourself while nothing
-else uses the database; it lasts until the next `ddev restart`:
+the limit to 400 first, because Core's suite holds about 60 Sessions by its
+end (one for every Pool it created) and a burst of logons on top made the
+listener refuse new ones with ORA-12516. If you hit ORA-12516 locally
+(several suites at once), raise it while nothing else uses the database (it
+restarts the instance) and it lasts until the next `ddev restart`:
 
 ```bash
-ddev exec -s oracle sqlplus -s -l / as sysdba @/fixtures/sql/processes.sql 400
+ddev exec -s oracle bash -c "sqlplus -s -l / as sysdba <<'SQL'
+alter system set processes = 400 scope = spfile;
+shutdown immediate
+startup
+SQL"
 ```
 
 Core `require`s `ext-oracledb`, but Composer runs without the Extension

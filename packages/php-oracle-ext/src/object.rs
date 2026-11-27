@@ -187,7 +187,7 @@ pub fn lookup_name(what: &Path<'_>, name: &str) -> Result<String, Error> {
 ///
 /// The crate caches a type under the name it was asked for, and asks for
 /// the type of a column (or of a REF CURSOR's column) by its quoted
-/// canonical name. So a type first named otherwise (`fx_point`, a synonym)
+/// canonical name. So a type first named otherwise (`point`, a synonym)
 /// is asked for by that name too, on its first use: a column of it then
 /// costs no description of its own.
 ///

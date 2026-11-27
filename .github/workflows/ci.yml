@@ -80,15 +80,9 @@ jobs:
           --health-start-period 30s
           --health-retries 30
     env:
-      ORACLE_CONNECT_STRING: localhost:1521/FREEPDB1
-      ORACLE_USER: rajska
-      ORACLE_PASSWORD: rajska
+      # The rest of the connection is the suites' default (phpunit.xml.dist).
       ORACLE_TLS_CONNECT_STRING: tcps://localhost:2484/FREEPDB1
       ORACLE_MTLS_CONNECT_STRING: tcps://localhost:2485/FREEPDB1
-      # The CDB root, where the DRCP statistics (V$CPOOL_CC_STATS) are.
-      ORACLE_ADMIN_CONNECT_STRING: localhost:1521/FREE
-      ORACLE_ADMIN_USER: system
-      ORACLE_ADMIN_PASSWORD: oracle
       # The Extension under test: this checkout's, or the minimum's.
       EXTENSION_DIR: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext
       EXTENSION: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/target/debug/libphp_oracledb.so
@@ -107,8 +101,6 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          # oci8 only for the test harness's IndependentSession, never a Backend.
-          extensions: oci8
           tools: composer
           coverage: xdebug
         env:
@@ -135,14 +127,20 @@ jobs:
           cargo build --locked
           php -d extension="$EXTENSION" --ri oracledb
 
-      # Before anything logs on: it restarts the instance. 200 processes,
-      # ~90 of them background ones, left too little room for the suites
-      # (ORA-12516); fixtures/sql/processes.sql says why.
+      # Before anything logs on: it restarts the instance. The image allows
+      # 200 processes, about 90 of them its own, and Core's suite holds about
+      # 60 Sessions by its end (one per Pool it created): a burst of logons
+      # on top made the listener refuse new ones (ORA-12516).
       - name: Raise the database's process limit
         run: |
           oracle="${{ job.services.oracle.id }}"
-          docker cp fixtures/sql/processes.sql "$oracle:/tmp/processes.sql"
-          docker exec "$oracle" sqlplus -s -l / as sysdba @/tmp/processes.sql 400
+          docker exec -i "$oracle" sqlplus -s -l / as sysdba <<'SQL'
+          whenever sqlerror exit failure
+          alter system set processes = 400 scope = spfile;
+          shutdown immediate
+          startup
+          alter system register;
+          SQL
           for attempt in $(seq 1 60); do
             if echo "select 'pdb' || '_open' from dual;" \
               | docker exec -i "$oracle" sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba \
@@ -154,23 +152,12 @@ jobs:
           echo "FREEPDB1 did not come back after the restart." >&2
           exit 1
 
-      - name: Install the fixtures
+      - name: Start DRCP
         run: |
-          oracle="${{ job.services.oracle.id }}"
-          docker cp fixtures/sql "$oracle:/tmp/fixtures"
-          docker exec -i "$oracle" bash -euo pipefail <<EOF
-          cd /tmp/fixtures
-          sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba <<'SQL'
+          docker exec -i "${{ job.services.oracle.id }}" sqlplus -s -l / as sysdba <<'SQL'
           whenever sqlerror exit failure
-          create user $ORACLE_USER identified by "$ORACLE_PASSWORD"
-            default tablespace users quota unlimited on users;
-          grant db_developer_role to $ORACLE_USER;
-          exit
+          exec dbms_connection_pool.start_pool()
           SQL
-          sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba @grants.sql $ORACLE_USER
-          sqlplus -s -l sys/oracle@//localhost/FREE as sysdba @drcp.sql
-          sqlplus -s -l $ORACLE_USER/$ORACLE_PASSWORD@//localhost/FREEPDB1 @install.sql
-          EOF
 
       - name: Start the TCPS listeners
         run: |
@@ -178,7 +165,6 @@ jobs:
           docker cp fixtures/tls "$oracle:/tmp/rajska-tls-src"
           docker exec "$oracle" bash /tmp/rajska-tls-src/listeners.sh
 
-      # After the fixtures: the Pool's tests log on as the suites' user.
       # The minimum's own suite passed when it was released.
       - name: Extension suite
         if: matrix.ref == ''
@@ -187,6 +173,9 @@ jobs:
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
+
+      - name: Check Core's copy of the stub
+        run: diff packages/php-oracle-ext/oracledb.stub.php packages/php-oracle/stubs/oracledb.stub.php
 
       - name: Install Core's dependencies
         working-directory: packages/php-oracle

@@ -19,7 +19,7 @@ build on it.
 /
 ├── GLOSSARY-MAP.md                    ← lists the contexts and how they relate
 ├── docs/adr/                          ← system-wide decisions (span packages)
-├── fixtures/sql/
+├── fixtures/tls/
 ├── spikes/
 └── packages/
     ├── php-oracle/                    ← Core

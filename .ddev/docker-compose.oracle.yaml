@@ -12,15 +12,11 @@ services:
       com.ddev.approot: ${DDEV_APPROOT}
     environment:
       ORACLE_PASSWORD: oracle
-      APP_USER: rajska
-      APP_USER_PASSWORD: rajska
     ports:
       - "127.0.0.1:1521:1521"
     volumes:
-      - ${DDEV_APPROOT}/fixtures/sql:/fixtures/sql:ro
       - ${DDEV_APPROOT}/fixtures/tls:/fixtures/tls:ro
-      # Necessário para os comandos em .ddev/commands/oracle/.
-      - .:/mnt/ddev_config:ro
+      - ./oracle-startdb:/container-entrypoint-startdb.d:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh"]
       interval: 10s

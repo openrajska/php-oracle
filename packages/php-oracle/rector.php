@@ -2,6 +2,7 @@
 
 declare(strict_types = 1);
 
+use Pest\Rector\Rules\Pest2ToPest3\UsesToExtendRector;
 use Pest\Rector\Set\PestSetList;
 use Rajska\Oracle\Rector\KeepBindDirectionRector;
 use Rector\Config\RectorConfig;
@@ -13,7 +14,8 @@ return RectorConfig::configure()
         __DIR__ . '/bench',
     ])
     ->withSkip([
-        __DIR__ . '/tests/Harness/Probes',
+        // Each test file names its TestCase with uses().
+        UsesToExtendRector::class,
     ])
     ->withImportNames()
     ->withPreparedSets(
