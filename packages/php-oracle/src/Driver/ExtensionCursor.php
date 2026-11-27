@@ -122,10 +122,6 @@ final class ExtensionCursor implements Cursor
     #[Override]
     public function close(): void
     {
-        try {
-            $this->native->close();
-        } catch (Exception $exception) {
-            throw ExceptionTranslator::translate($exception, $this->sql);
-        }
+        $this->native->close();
     }
 }

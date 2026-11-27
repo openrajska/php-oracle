@@ -209,11 +209,8 @@ final readonly class PendingFunction
      */
     public function vector(): SparseVector | array | null
     {
+        // The server refuses a function that returns another type (PLS-00382).
         $value = ($this->run)(new Out\Vector())->value();
-
-        if ($value !== null && !\is_array($value) && !$value instanceof SparseVector) {
-            throw new UsageException("The return value of {$this->call->name} is " . get_debug_type($value) . ', not a VECTOR.', 0, null, $this->call->name);
-        }
 
         /** @var SparseVector|list<float|int>|null $value */
         return $value;

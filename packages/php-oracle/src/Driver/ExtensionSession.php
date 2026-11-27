@@ -107,11 +107,7 @@ final class ExtensionSession implements Session
     #[Override]
     public function close(): void
     {
-        try {
-            $this->native->close();
-        } catch (Exception $exception) {
-            throw ExceptionTranslator::translate($exception);
-        }
+        $this->native->close();
     }
 
     /**
