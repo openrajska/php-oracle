@@ -575,7 +575,8 @@ fn log(message: String) {
 mod tests {
     //! What a real database cannot provoke from PHP: a fork, several threads
     //! of one process, and MSHUTDOWN. They need the database of the Core
-    //! suite: ORACLE_CONNECT_STRING, ORACLE_USER and ORACLE_PASSWORD.
+    //! suite, with the same variables and defaults as its phpunit.xml.dist:
+    //! ORACLE_CONNECT_STRING, ORACLE_ADMIN_USER and ORACLE_ADMIN_PASSWORD.
 
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicI64, Ordering};
@@ -588,11 +589,11 @@ mod tests {
     /// A key of its own per call, so no two tests share a Pool.
     fn key() -> PoolKey {
         static NEXT: AtomicI64 = AtomicI64::new(1);
-        let env = |name| std::env::var(name).unwrap_or_else(|_| panic!("set {name}"));
+        let env = |name, default: &str| std::env::var(name).unwrap_or_else(|_| default.to_string());
         PoolKey {
-            dsn: env("ORACLE_CONNECT_STRING"),
-            user: env("ORACLE_USER"),
-            password: env("ORACLE_PASSWORD"),
+            dsn: env("ORACLE_CONNECT_STRING", "localhost:1521/FREEPDB1"),
+            user: env("ORACLE_ADMIN_USER", "system"),
+            password: env("ORACLE_ADMIN_PASSWORD", "oracle"),
             proxy_user: None,
             wallet_location: None,
             wallet_password: None,
