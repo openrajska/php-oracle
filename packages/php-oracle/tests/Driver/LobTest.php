@@ -30,7 +30,7 @@ const ALL_LOBS = <<<'SQL'
  * lob_reads: row 1 small, row 2 empty, row 3 NULL, row 4 a 16 MiB CLOB and
  * BLOB (largeText(), largeBinary()).
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table lob_reads (
             id number(10) primary key,
@@ -106,7 +106,7 @@ test('an empty lob has size 0 and reads empty with no round trip', function (str
     $lob = lob(array_values($this->rows($connection, "select $column from lob_reads where id = 2")[0])[0]);
     $chunk = null;
 
-    $trips = $this->roundTrips($sid, static function () use ($lob, &$chunk): void {
+    $trips = roundTrips($sid, static function () use ($lob, &$chunk): void {
         $chunk = $lob->readChunk();
     });
 
@@ -141,7 +141,7 @@ test('a 16 mib lob reads back exactly at one round trip per chunk', function (st
 
     do {
         $chunk = '';
-        $trips[] = $this->roundTrips($sid, static function () use ($lob, &$chunk): void {
+        $trips[] = roundTrips($sid, static function () use ($lob, &$chunk): void {
             $chunk = $lob->readChunk();
         });
         $contents .= $chunk;
@@ -317,7 +317,7 @@ dataset('prefetchSizes', function () {
 test('inline lobs within the prefetch size cost no round trip of their own', function (string $sql, int $extra): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
-    $query = fn (Options $options): int => $this->roundTrips($sid, fn (): array => $this->rows($connection, $sql, [], $options));
+    $query = fn (Options $options): int => roundTrips($sid, fn (): array => $this->rows($connection, $sql, [], $options));
     $query(locator());
     $query(inline());
 
@@ -372,7 +372,7 @@ test('a lob within the prefetch size reads with no round trip', function (string
     $lobs = array_map(lob(...), $cursor->fetchBatch()[0] ?? []);
     $contents = [];
 
-    $trips = $this->roundTrips($sid, static function () use ($lobs, &$contents): void {
+    $trips = roundTrips($sid, static function () use ($lobs, &$contents): void {
         $contents = array_map(read(...), $lobs);
     });
 
@@ -418,7 +418,7 @@ test('lob columns of a cursor under lob mode locator cost no fetch round trip of
     $fetch = function (string $sql) use ($kind, $connection, $sid): int {
         [$cursor, $parent] = cursorOf($kind, $connection, $sql, locator());
 
-        return $this->roundTrips($sid, static fn (): array => drain($cursor));
+        return roundTrips($sid, static fn (): array => drain($cursor));
     };
 
     $withLobs = $fetch(ALL_LOBS);
@@ -433,12 +433,12 @@ test('lob columns of a cursor under lob mode inline cost what they cost in a que
     $query = function (Options $options) use ($connection, $sid): int {
         $this->rows($connection, ALL_LOBS, [], $options);
 
-        return $this->roundTrips($sid, fn (): array => $this->rows($connection, ALL_LOBS, [], $options));
+        return roundTrips($sid, fn (): array => $this->rows($connection, ALL_LOBS, [], $options));
     };
     $fetch = function (Options $options) use ($kind, $connection, $sid): int {
         [$cursor, $parent] = cursorOf($kind, $connection, ALL_LOBS, $options);
 
-        return $this->roundTrips($sid, static fn (): array => drain($cursor));
+        return roundTrips($sid, static fn (): array => drain($cursor));
     };
 
     $cursorExtra = $fetch(inline()) - $fetch(locator());

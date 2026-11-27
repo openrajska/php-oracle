@@ -17,7 +17,7 @@ use Rajska\Oracle\Tracing;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create function session_slow(p_value number, p_seconds number) return number is
         begin
@@ -34,7 +34,7 @@ test('the server version is five part matches version full and costs no round tr
     $sid = $this->sid($connection);
     $version = null;
 
-    $trips = $this->roundTrips($sid, static function () use ($connection, &$version): void {
+    $trips = roundTrips($sid, static function () use ($connection, &$version): void {
         $version = $connection->serverVersion();
     });
 
@@ -53,7 +53,7 @@ test('config tracing shows in v session after the first round trip', function ()
 
     $sid = $this->sid($connection);
 
-    expect(tracing($this->otherSession(), $sid))->toBe([
+    expect(tracing(otherSession(), $sid))->toBe([
         'MODULE' => 'billing',
         'ACTION' => 'close month',
         'CLIENT_IDENTIFIER' => 'user-42',
@@ -70,13 +70,13 @@ test('trace costs no round trip and replaces the whole set with the next one', f
     ));
     $sid = $this->sid($connection);
 
-    $trips = $this->roundTrips($sid, static fn () => $connection->trace(new Tracing(module: 'reports', clientInfo: 'worker 8')));
-    $pending = tracing($this->otherSession(), $sid)['MODULE'];
+    $trips = roundTrips($sid, static fn () => $connection->trace(new Tracing(module: 'reports', clientInfo: 'worker 8')));
+    $pending = tracing(otherSession(), $sid)['MODULE'];
     $this->sid($connection);
 
     expect($trips)->toBe(0)
         ->and($pending)->toBe('billing')
-        ->and(tracing($this->otherSession(), $sid))->toBe([
+        ->and(tracing(otherSession(), $sid))->toBe([
             'MODULE' => 'reports',
             'ACTION' => null,
             'CLIENT_IDENTIFIER' => null,
@@ -122,7 +122,7 @@ test('a query of up to fetch size rows takes one round trip', function (int $cou
     $sid = $this->sid($connection);
     $rows = [];
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $count, $fetchSize, $autocommit, &$rows): void {
+    $trips = roundTrips($sid, function () use ($connection, $count, $fetchSize, $autocommit, &$rows): void {
         $rows = $this->rows($connection, 'select level n from dual connect by level <= :n', ['n' => $count], $this->options(fetchSize: $fetchSize, autocommit: $autocommit));
     });
 
@@ -164,7 +164,7 @@ test('a cursor reads fetch size rows per round trip', function (Closure $open, i
     $sid = $this->sid($connection);
     $sizes = [];
 
-    $trips = $this->roundTrips($sid, function () use ($open, $connection, &$sizes): void {
+    $trips = roundTrips($sid, function () use ($open, $connection, &$sizes): void {
         $cursor = $open($connection, $this->options(fetchSize: 10));
         assert($cursor instanceof Cursor);
         while (($batch = $cursor->fetchBatch()) !== []) {
@@ -259,7 +259,7 @@ test('a call timeout during a server sleep breaks the connection', function (): 
 
 test('on a killed session tracing and the call timeout give way to connection lost', function (): void {
     $connection = $this->connect(...$this->ownPool() + ['maxConnections' => 2]);
-    $this->kill($this->sid($connection));
+    kill($this->sid($connection));
     $connection->trace(new Tracing(module: 'after the kill'));
     $started = microtime(true);
 
@@ -281,7 +281,7 @@ test('a repeated statement parses once unless the statement cache is off', funct
     $sid = $this->sid($connection);
     $sql = 'select :n * 2 doubled from dual';
 
-    $parsed = parses($this->otherSession(), $sid, function () use ($connection, $sql): void {
+    $parsed = parses(otherSession(), $sid, function () use ($connection, $sql): void {
         foreach ([1, 2, 3] as $n) {
             $this->rows($connection, $sql, ['n' => $n]);
         }

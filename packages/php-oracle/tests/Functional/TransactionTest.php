@@ -18,7 +18,7 @@ use TypeError;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table tx_rows (
             id number(10) primary key,
@@ -41,10 +41,7 @@ beforeAll(function (): void {
             return l_count;
         end;
         SQL);
-});
 
-beforeEach(function (): void {
-    schema()->run('truncate table tx_rows');
     $this->connection = $this->connect();
 });
 
@@ -63,7 +60,7 @@ dataset('writes', function () {
 test('under autocommit each verb commits at once', function (Closure $write): void {
     $write($this->connection);
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 })->with('writes');
 
 test('inside begin each verb stays in the transaction', function (Closure $write): void {
@@ -71,7 +68,7 @@ test('inside begin each verb stays in the transaction', function (Closure $write
 
     $write($this->connection);
 
-    expect(committed($this->otherSession()))->toBeEmpty();
+    expect(committed(otherSession()))->toBeEmpty();
 })->with('writes');
 
 test('commit makes the work since begin visible to other sessions', function (): void {
@@ -80,7 +77,7 @@ test('commit makes the work since begin visible to other sessions', function ():
 
     $this->connection->commit();
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 });
 
 test('rollback undoes the work since begin', function (): void {
@@ -113,7 +110,7 @@ test('after a transaction ends the connection is back in autocommit', function (
 
     $this->connection->run('insert into tx_rows (id) values (1)');
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 })->with('transactionEnds');
 
 test('select for update under autocommit keeps no lock', function (): void {
@@ -121,7 +118,7 @@ test('select for update under autocommit keeps no lock', function (): void {
 
     $this->connection->select('select id from tx_rows where id = 1 for update')->all();
 
-    expect($this->locked('tx_rows', 1))->toBeFalse();
+    expect(locked('tx_rows', 1))->toBeFalse();
 });
 
 test('select for update inside begin keeps the lock', function (): void {
@@ -130,7 +127,7 @@ test('select for update inside begin keeps the lock', function (): void {
 
     $this->connection->select('select id from tx_rows where id = 1 for update')->all();
 
-    expect($this->locked('tx_rows', 1))->toBeTrue();
+    expect(locked('tx_rows', 1))->toBeTrue();
 });
 
 test('a function runs in the transaction open when its terminal is called', function (): void {
@@ -139,13 +136,13 @@ test('a function runs in the transaction open when its terminal is called', func
 
     $pending->number();
 
-    expect(committed($this->otherSession()))->toBeEmpty();
+    expect(committed(otherSession()))->toBeEmpty();
 });
 
 test('begin costs no round trip', function (): void {
     $sid = $this->sid($this->connection);
 
-    $trips = $this->roundTrips($sid, $this->connection->begin(...));
+    $trips = roundTrips($sid, $this->connection->begin(...));
 
     expect($trips)->toBe(0);
 });
@@ -155,7 +152,7 @@ test('commit and rollback cost one round trip each', function (string $end): voi
     $this->connection->begin();
     $this->connection->run('insert into tx_rows (id) values (1)');
 
-    $trips = $this->roundTrips($sid, $this->connection->$end(...));
+    $trips = roundTrips($sid, $this->connection->$end(...));
 
     expect($trips)->toBe(1);
 })->with(['commit', 'rollback']);
@@ -215,7 +212,7 @@ test('a misused transaction verb throws usage exception before any round trip', 
     $sid = $this->sid($this->connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($misuse, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($misuse, &$thrown): void {
         try {
             $misuse($this->connection);
         } catch (Throwable $throwable) {
@@ -233,7 +230,7 @@ test('a misused commit leaves the connection in autocommit', function (): void {
 
     $this->connection->run('insert into tx_rows (id) values (1)');
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 });
 
 test('a misused begin leaves the transaction open', function (): void {
@@ -242,7 +239,7 @@ test('a misused begin leaves the transaction open', function (): void {
 
     $this->connection->run('insert into tx_rows (id) values (1)');
 
-    expect(committed($this->otherSession()))->toBeEmpty();
+    expect(committed(otherSession()))->toBeEmpty();
 });
 
 test('transaction commits when the closure returns and gives back its value', function (): void {
@@ -250,14 +247,14 @@ test('transaction commits when the closure returns and gives back its value', fu
 
     $result = $this->connection->transaction(function (Connection $connection) use (&$inside): string {
         $connection->run('insert into tx_rows (id) values (1)');
-        $inside = committed($this->otherSession());
+        $inside = committed(otherSession());
 
         return 'done';
     });
 
     expect($result)->toBe('done')
         ->and($inside)->toBeEmpty()
-        ->and(committed($this->otherSession()))->toBe([1]);
+        ->and(committed(otherSession()))->toBe([1]);
 });
 
 test('transaction rolls back and rethrows whatever the closure throws', function (Throwable $thrown): void {
@@ -289,7 +286,7 @@ test('a failed rollback becomes previous of the rethrown exception', function ()
     try {
         $connection->transaction(function (Connection $connection) use ($thrown): never {
             $connection->run('insert into tx_rows (id) values (1)');
-            $this->kill($this->sid($connection));
+            kill($this->sid($connection));
 
             throw $thrown;
         });
@@ -299,7 +296,7 @@ test('a failed rollback becomes previous of the rethrown exception', function ()
 
     expect($caught)->toBe($thrown)
         ->and($thrown->getPrevious())->toBeInstanceOf(ConnectionLostException::class)
-        ->and(committed($this->otherSession()))->toBeEmpty();
+        ->and(committed(otherSession()))->toBeEmpty();
 });
 
 test('a closure that closes the connection rethrows with nothing chained', function (): void {
@@ -319,7 +316,7 @@ test('a closure that closes the connection rethrows with nothing chained', funct
 
     expect($caught)->toBe($thrown)
         ->and($thrown->getPrevious())->toBeNull()
-        ->and(committed($this->otherSession()))->toBeEmpty();
+        ->and(committed(otherSession()))->toBeEmpty();
 });
 
 /**
@@ -351,7 +348,7 @@ test('a commit the server refuses throws and commits nothing', function (Closure
     }
 
     expect($thrown?->getCode())->toBe(2091)
-        ->and(committed($this->otherSession()))->toBeEmpty();
+        ->and(committed(otherSession()))->toBeEmpty();
 })->with('refusedCommits');
 
 test('after a refused commit the connection is back in autocommit', function (Closure $transaction): void {
@@ -359,7 +356,7 @@ test('after a refused commit the connection is back in autocommit', function (Cl
 
     $this->connection->run('insert into tx_rows (id) values (3)');
 
-    expect(committed($this->otherSession()))->toBe([3]);
+    expect(committed(otherSession()))->toBe([3]);
 })->with('refusedCommits');
 
 test('rollback to a savepoint through run undoes only the later work', function (): void {
@@ -371,7 +368,7 @@ test('rollback to a savepoint through run undoes only the later work', function 
     $this->connection->run('rollback to savepoint before_two');
     $this->connection->commit();
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 });
 
 test('closing the connection inside begin rolls back', function (): void {
@@ -382,8 +379,8 @@ test('closing the connection inside begin rolls back', function (): void {
 
     $connection->close();
 
-    expect($this->locked('tx_rows', 1))->toBeFalse()
-        ->and($this->otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+    expect(locked('tx_rows', 1))->toBeFalse()
+        ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
 });
 
 test('destroying the connection inside begin rolls back', function (): void {
@@ -394,8 +391,8 @@ test('destroying the connection inside begin rolls back', function (): void {
 
     unset($connection);
 
-    expect($this->locked('tx_rows', 1))->toBeFalse()
-        ->and($this->otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+    expect(locked('tx_rows', 1))->toBeFalse()
+        ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
 });
 
 /**

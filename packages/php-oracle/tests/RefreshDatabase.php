@@ -7,20 +7,20 @@ namespace Rajska\Oracle\Tests;
 use Override;
 
 /**
- * Empties the process's schema before each test file, as Laravel's
- * `migrate:fresh` does: a file finds only the objects it creates.
+ * Empties the process's schema before each test, as Laravel's
+ * `migrate:fresh` does: a test finds only the objects its file creates.
  */
 trait RefreshDatabase
 {
     #[Override]
-    public static function setUpBeforeClass(): void
+    protected function setUp(): void
     {
-        parent::setUpBeforeClass();
+        parent::setUp();
 
         // Some objects go with their table (a nested table's storage, an
         // identity column's sequence, a JSON collection table's synonym):
         // dropping them again fails with the codes left alone.
-        schema()->run(<<<'SQL'
+        $this->schema()->run(<<<'SQL'
             begin
                 for o in (
                     select object_type, object_name

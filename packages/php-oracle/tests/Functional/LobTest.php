@@ -28,7 +28,7 @@ const TEXT = "A\u{e7}\u{e3}o \u{65e5}\u{672c}";
  * (largeText(), largeBinary()). lob_clob, lob_nclob and lob_blob return
  * TEXT (DEADBEEF for the BLOB), NULL when p_null, empty when p_empty.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table lobs (id number(10) primary key, label varchar2(50) not null, text_value clob, binary_value blob)');
     schema()->run("insert into lobs values (1, 'small', unistr('Hello, LOB! A\\00e7\\00e3o \\65e5\\672c'), hextoraw('DEADBEEF'))");
     schema()->run("insert into lobs values (2, 'empty', empty_clob(), empty_blob())");
@@ -90,9 +90,7 @@ beforeAll(function (): void {
             return case when p_empty then empty_blob() else to_blob(hextoraw('DEADBEEF')) end;
         end;
         SQL);
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 

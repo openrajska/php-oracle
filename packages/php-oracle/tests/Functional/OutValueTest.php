@@ -26,7 +26,7 @@ const TEMPORALS = "begin
     :ds := interval '1 02:00:00' day to second; :nothing := null;
 end;";
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create type out_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type out_tags as varray(10) of varchar2(100)');
     schema()->run(<<<'SQL'
@@ -43,9 +43,7 @@ beforeAll(function (): void {
         select level, case when level = 1 then to_clob(unistr('Hello, LOB! A\00e7\00e3o \65e5\672c')) end from dual connect by level <= 4
         SQL);
     schema()->run('create global temporary table out_inserts (id number(10), code char(5)) on commit delete rows');
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 

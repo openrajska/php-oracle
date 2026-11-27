@@ -13,12 +13,8 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
-    schema()->run('create table output_rows (id number(10) primary key, note varchar2(100))');
-});
-
 beforeEach(function (): void {
-    schema()->run('truncate table output_rows');
+    schema()->run('create table output_rows (id number(10) primary key, note varchar2(100))');
 });
 
 test('output reads every line in order and then nothing', function (): void {
@@ -36,9 +32,10 @@ test('reading 2500 lines costs three round trips', function (): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
     $connection->enableOutput();
+    $connection->output();
     $connection->run("begin for i in 1 .. 2500 loop dbms_output.put_line('line ' || i); end loop; end;");
 
-    $trips = $this->roundTrips($sid, $connection->output(...));
+    $trips = roundTrips($sid, $connection->output(...));
 
     expect($trips)->toBe(3);
 });
@@ -164,7 +161,7 @@ test('output enabled through raw sql stays with the session', function (): void 
 test('on a killed session output throws connection lost', function (): void {
     $connection = $this->connect(standalone: true);
     $connection->enableOutput();
-    $this->kill($this->sid($connection));
+    kill($this->sid($connection));
 
     $read = $connection->output(...);
 
@@ -174,7 +171,7 @@ test('on a killed session output throws connection lost', function (): void {
 test('releasing a killed session with output enabled stays silent', function (bool $close): void {
     $connection = Oracle::connect($this->config(standalone: true));
     $connection->enableOutput();
-    $this->kill($this->sid($connection));
+    kill($this->sid($connection));
     expect(fn (): array => $connection->output())->toThrow(ConnectionLostException::class);
 
     release($connection, $close);
@@ -194,8 +191,8 @@ test('output calls never commit an open transaction', function (): void {
     $connection->disableOutput();
     $connection->enableOutput();
 
-    expect($this->otherSession()->select('select note from output_rows where id = 1')->value())->toBe('committed')
-        ->and($this->locked('output_rows', 1))->toBeTrue('The transaction is still open.');
+    expect(otherSession()->select('select note from output_rows where id = 1')->value())->toBe('committed')
+        ->and(locked('output_rows', 1))->toBeTrue('The transaction is still open.');
 });
 
 test('releasing a connection with output enabled rolls its transaction back', function (bool $close): void {
@@ -207,8 +204,8 @@ test('releasing a connection with output enabled rolls its transaction back', fu
 
     release($connection, $close);
 
-    expect($this->otherSession()->select('select note from output_rows where id = 1')->value())->toBe('committed')
-        ->and($this->locked('output_rows', 1))->toBeFalse();
+    expect(otherSession()->select('select note from output_rows where id = 1')->value())->toBe('committed')
+        ->and(locked('output_rows', 1))->toBeFalse();
 })->with(['close()' => [true], 'dropped' => [false]]);
 
 /**
@@ -219,7 +216,7 @@ test('releasing a connection with output enabled rolls its transaction back', fu
  */
 function pooled(): array
 {
-    return ['maxConnections' => 1, 'connectTimeout' => 30.062];
+    return ['standalone' => false, 'maxConnections' => 1, 'connectTimeout' => 30.062];
 }
 
 /**

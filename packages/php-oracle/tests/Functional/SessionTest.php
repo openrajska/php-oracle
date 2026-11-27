@@ -17,7 +17,7 @@ const CPU_BOUND = 'select count(*) from session_rows a, session_rows b';
 
 const ONE_SECOND = 'begin session_sleep(1); end;';
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table session_rows (id number(10) primary key)');
     schema()->run('insert into session_rows (id) select level from dual connect by level <= 10000');
     schema()->run(<<<'SQL'

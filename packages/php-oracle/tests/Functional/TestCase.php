@@ -29,18 +29,20 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * A Connection to the process's schema, closed after the test; named
-     * arguments override config fields.
+     * A standalone Connection to the process's schema, closed after the
+     * test: no Session outlives the test, as Laravel purges its connections
+     * between tests. Named arguments override config fields; a test of the
+     * Pool passes `standalone: false`.
      */
-    protected function connect(mixed ...$fields): Connection
+    public function connect(mixed ...$fields): Connection
     {
-        $connection = Oracle::connect(self::config(...$fields));
+        $connection = Oracle::connect(self::config(...['standalone' => true, ...$fields]));
         $this->connections[] = $connection;
 
         return $connection;
     }
 
-    protected static function sid(Connection $connection): int
+    public static function sid(Connection $connection): int
     {
         $sid = $connection->select("select sys_context('userenv', 'sid') from dual")->value();
         self::assertIsString($sid);

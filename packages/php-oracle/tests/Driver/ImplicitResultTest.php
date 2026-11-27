@@ -20,7 +20,7 @@ uses(TestCase::class);
  * Five categories with multibyte names, and 10 items: item n is in category
  * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table implicit_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
         create table implicit_items (

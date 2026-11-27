@@ -22,7 +22,7 @@ uses(TestCase::class);
  * lob_binds: rows 1 and 2 to update, row 4 a 16 MiB CLOB and BLOB
  * (largeText(), largeBinary()) to compare with. Tests roll their writes back.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table lob_binds (
             id number(10) primary key,
@@ -299,7 +299,7 @@ test('a string that is not utf8 fails before any round trip', function (): void 
     $connection = $this->connect();
     $sid = $this->sid($connection);
 
-    $trips = $this->roundTrips($sid, function () use ($connection): void {
+    $trips = roundTrips($sid, function () use ($connection): void {
         try {
             $connection->execute('begin :v := :v; end;', ['v' => new In\Clob("ok \xff")], $this->options());
         } catch (UsageException) {

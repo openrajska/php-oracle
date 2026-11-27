@@ -24,7 +24,7 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table jv_vectors (
             id number(10) primary key,
@@ -343,7 +343,7 @@ test('vector in checks its values before any round trip', function (In\Vector $b
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
         try {
             $connection->execute('select :v from dual', ['v' => $bind], $this->options());
         } catch (UsageException $usageException) {

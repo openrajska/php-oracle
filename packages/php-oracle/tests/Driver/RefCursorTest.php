@@ -26,7 +26,7 @@ uses(TestCase::class);
  * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25, created
  * 2026-01-01 00:00 + (n - 1) hours.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table ref_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
         create table ref_items (

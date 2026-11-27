@@ -30,7 +30,7 @@ enum Priority: int
     case High = 2;
 }
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table bind_rows (id number(10) primary key, code varchar2(10) not null unique, qty number(10) not null)');
     schema()->run(<<<'SQL'
         create procedure bind_echo(p_value number) is
@@ -44,10 +44,7 @@ beforeAll(function (): void {
             return p_value;
         end;
         SQL);
-});
 
-beforeEach(function (): void {
-    schema()->run('truncate table bind_rows');
     $this->connection = $this->connect();
 });
 

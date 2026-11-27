@@ -4,11 +4,8 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests;
 
-use Override;
 use PHPUnit\Framework\TestCase as BaseTestCase;
-use Rajska\Oracle\Connection;
 use Rajska\Oracle\ConnectionConfig;
-use Rajska\Oracle\Exceptions\QueryException;
 use Rajska\Oracle\Oracle;
 use RuntimeException;
 
@@ -20,10 +17,8 @@ use RuntimeException;
  */
 abstract class TestCase extends BaseTestCase
 {
+    use InteractsWithDatabase;
     use RefreshDatabase;
-
-    /** The Session the tests watch from: another user of the database. */
-    private static Connection | null $observer = null;
 
     /**
      * A config for the process's schema; named arguments override fields.
@@ -41,76 +36,6 @@ abstract class TestCase extends BaseTestCase
 
         // @phpstan-ignore argument.type (the named fields go through as given)
         return new ConnectionConfig(...['dsn' => self::env('ORACLE_CONNECT_STRING'), 'user' => $schema, 'password' => $schema, ...$fields]);
-    }
-
-    #[Override]
-    public static function tearDownAfterClass(): void
-    {
-        self::$observer?->close();
-        self::$observer = null;
-        parent::tearDownAfterClass();
-    }
-
-    /**
-     * Another Session, as a second user sees the database: committed rows
-     * only.
-     */
-    protected function otherSession(): Connection
-    {
-        return self::$observer ??= Oracle::connect(self::config(standalone: true));
-    }
-
-    /**
-     * Whether another transaction holds the row: `FOR UPDATE NOWAIT` fails
-     * with ORA-00054. Under Autocommit the query keeps no lock itself.
-     */
-    protected function locked(string $table, int $id): bool
-    {
-        try {
-            $this->otherSession()->select("select id from $table where id = :id for update nowait", ['id' => $id])->all();
-
-            return false;
-        } catch (QueryException $queryException) {
-            return $queryException->getCode() === 54 ? true : throw $queryException;
-        }
-    }
-
-    /**
-     * Kills a Session as a DBA would: `immediate` ends it at once, otherwise
-     * its next call gets ORA-00028 first.
-     */
-    protected function kill(int $sid, bool $immediate = true): void
-    {
-        $serial = $this->otherSession()->select('select serial# from v$session where sid = :sid', ['sid' => $sid])->value();
-        \assert(\is_int($serial));
-        $this->otherSession()->run("alter system kill session '$sid,$serial'" . ($immediate ? ' immediate' : ''));
-    }
-
-    /**
-     * The Round trips the Session with this SID made while $action ran,
-     * read from V$SESSTAT by another Session: reading costs it nothing.
-     *
-     * @param callable(): mixed $action
-     */
-    protected function roundTrips(int $sid, callable $action): int
-    {
-        $before = $this->roundTripsSoFar($sid);
-        $action();
-
-        return $this->roundTripsSoFar($sid) - $before;
-    }
-
-    private function roundTripsSoFar(int $sid): int
-    {
-        $count = $this->otherSession()->select(<<<'SQL_WRAP'
-        select s.value
-          from v$sesstat s
-          join v$statname n on n.statistic# = s.statistic#
-         where n.name = 'SQL*Net roundtrips to/from client'
-           and s.sid = :sid
-        SQL_WRAP, ['sid' => $sid])->value();
-
-        return \is_int($count) ? $count : throw new RuntimeException("No Session with SID $sid.");
     }
 
     /**

@@ -18,12 +18,10 @@ use Rajska\Oracle\Tracing;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table connection_items (id number(10) primary key, name varchar2(100) not null)');
     schema()->run("insert into connection_items (id, name) select level, 'Item ' || level from dual connect by level <= 3");
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 

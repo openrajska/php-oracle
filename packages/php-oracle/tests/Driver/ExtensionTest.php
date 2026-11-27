@@ -31,12 +31,10 @@ uses(TestCase::class);
 
 const SECRET = 'distinctive-bound-value-35';
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table native_rows (id number(10) primary key)');
     schema()->run('insert into native_rows select level from dual connect by level <= 10000');
-});
 
-beforeEach(function (): void {
     $this->natives = [];
 });
 
@@ -134,7 +132,7 @@ test('an unknown key in an execute or trace array fails with kind usage before a
     assert(\is_string($sid));
     $exception = null;
 
-    $trips = $this->roundTrips((int) $sid, static function () use ($call, $native, &$exception): void {
+    $trips = roundTrips((int) $sid, static function () use ($call, $native, &$exception): void {
         $exception = nativeException(static fn (): mixed => $call($native));
     });
 

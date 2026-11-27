@@ -29,16 +29,14 @@ const FIVE_ROWS = 'select level n from dual connect by level <= 5';
 /*
  * 30 items, three fetches of 10: item n is named 'Item 000n'.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table cursor_items (id number(10) primary key, name varchar2(100) not null, price number(10, 2) not null)');
     schema()->run(<<<'SQL'
         insert into cursor_items (id, name, price)
         select level, 'Item ' || lpad(level, 4, '0'), level * 1.25 from dual connect by level <= 30
         SQL);
     schema()->run('create table cursor_writes (id number)');
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
@@ -54,7 +52,7 @@ test('select gives the rows run gives', function (): void {
 test('select executes and brings the first batch in one round trip', function (): void {
     $sid = $this->sid($this->connection);
 
-    $trips = $this->roundTrips($sid, fn (): Cursor => $this->connection->select('select id from cursor_items order by id', [], new Options(fetchSize: 10)));
+    $trips = roundTrips($sid, fn (): Cursor => $this->connection->select('select id from cursor_items order by id', [], new Options(fetchSize: 10)));
 
     expect($trips)->toBe(1);
 });
@@ -63,7 +61,7 @@ test('reading a cursor fetches each further batch in one round trip', function (
     $sid = $this->sid($this->connection);
     $cursor = $this->connection->select('select id from cursor_items order by id', [], new Options(fetchSize: 10));
 
-    $trips = $this->roundTrips($sid, static fn (): array => $cursor->all());
+    $trips = roundTrips($sid, static fn (): array => $cursor->all());
 
     expect($trips)->toBe(2);
 });

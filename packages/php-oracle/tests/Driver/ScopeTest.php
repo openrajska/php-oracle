@@ -16,14 +16,9 @@ use RuntimeException;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table scope_long_rows (id number(10) primary key, text long)');
     schema()->run('create table scope_long_raw_rows (id number(10) primary key, bytes long raw)');
-});
-
-beforeEach(function (): void {
-    schema()->run('truncate table scope_long_rows');
-    schema()->run('truncate table scope_long_raw_rows');
 });
 
 test('long and long raw values up to 32767 bytes read back as written', function (int $bytes): void {
@@ -57,7 +52,7 @@ test('a long bind over 32767 bytes is unsupported before any round trip', functi
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
         try {
             $connection->execute('insert into scope_long_rows (id, text) values (1, :v)', ['v' => $bind], $this->options());
         } catch (UnsupportedException $unsupportedException) {

@@ -11,7 +11,7 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table tx_rows (id number(10) primary key, note varchar2(100))');
     schema()->run(<<<'SQL'
         create procedure add_tx_row(p_id number) is
@@ -28,10 +28,6 @@ beforeAll(function (): void {
             return l_count;
         end;
         SQL);
-});
-
-beforeEach(function (): void {
-    schema()->run('truncate table tx_rows');
 });
 
 /**
@@ -53,7 +49,7 @@ test('a write under autocommit is visible to another session at once', function 
     /** @var array<string, mixed> $binds */
     $connection->execute($sql, $binds, $this->options());
 
-    expect(committed($this->otherSession()))->toBe([1]);
+    expect(committed(otherSession()))->toBe([1]);
 })->with('writes');
 
 test('a failed statement under autocommit leaves nothing applied or locked', function (): void {
@@ -73,20 +69,20 @@ test('a failed statement under autocommit leaves nothing applied or locked', fun
     }
 
     expect($thrown?->getCode())->toBe(20043)
-        ->and($this->otherSession()->select('select id, note from tx_rows')->all())->toBe([['ID' => 1, 'NOTE' => null]])
-        ->and($this->locked('tx_rows', 1))->toBeFalse();
+        ->and(otherSession()->select('select id, note from tx_rows')->all())->toBe([['ID' => 1, 'NOTE' => null]])
+        ->and(locked('tx_rows', 1))->toBeFalse();
 });
 
 test('without autocommit a write is invisible until commit', function (): void {
     $connection = $this->connect();
     $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
 
-    $beforeCommit = committed($this->otherSession());
+    $beforeCommit = committed(otherSession());
 
     $connection->commit();
 
     expect($beforeCommit)->toBeEmpty()
-        ->and(committed($this->otherSession()))->toBe([1]);
+        ->and(committed(otherSession()))->toBe([1]);
 });
 
 test('without autocommit a rollback undoes the write', function (): void {
@@ -104,7 +100,7 @@ test('autocommit adds no round trip to a statement', function (bool $autocommit)
     $sid = $this->sid($connection);
     $connection->execute($insert, ['id' => 1], $this->options());
 
-    $trips = $this->roundTrips($sid, fn (): mixed => $connection->execute($insert, ['id' => 2], $this->options(autocommit: $autocommit)));
+    $trips = roundTrips($sid, fn (): mixed => $connection->execute($insert, ['id' => 2], $this->options(autocommit: $autocommit)));
 
     expect($trips)->toBe(1);
 })->with(['with autocommit' => [true], 'without autocommit' => [false]]);
@@ -114,7 +110,7 @@ test('commit and rollback take one round trip each', function (string $end): voi
     $sid = $this->sid($connection);
     $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
 
-    $trips = $this->roundTrips($sid, $connection->$end(...));
+    $trips = roundTrips($sid, $connection->$end(...));
 
     expect($trips)->toBe(1);
 })->with(['commit', 'rollback']);

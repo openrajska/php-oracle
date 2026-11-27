@@ -21,7 +21,7 @@ use RuntimeException;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create package pool_counter as
             function bump return number;
@@ -39,15 +39,12 @@ beforeAll(function (): void {
         end;
         SQL);
     schema()->run('create table pool_rows (id number(10) primary key, note varchar2(100))');
-});
 
-beforeEach(function (): void {
-    schema()->run('truncate table pool_rows');
     schema()->run('insert into pool_rows (id) values (1)');
 });
 
 test('a standalone connection starts clean and logs off', function (): void {
-    $fields = $this->ownPool() + ['standalone' => true];
+    $fields = ['standalone' => true] + $this->ownPool();
     $first = $this->connect(...$fields);
     $this->value($first, 'select pool_counter.bump from dual');
     $session = $this->session($first);
@@ -55,13 +52,13 @@ test('a standalone connection starts clean and logs off', function (): void {
     $first->close();
 
     $second = $this->connect(...$fields);
-    expect(eventually(fn (): bool => $this->otherSession()->select('select count(*) from v$session where audsid = :audsid', ['audsid' => $session])->value() === 0))->toBeTrue()
+    expect(eventually(fn (): bool => otherSession()->select('select count(*) from v$session where audsid = :audsid', ['audsid' => $session])->value() === 0))->toBeTrue()
         ->and($this->session($second))->not->toBe($session)
         ->and($this->value($second, 'select pool_counter.bump from dual'))->toBe(1);
 });
 
 test('standalone connections are not held to max connections', function (): void {
-    $fields = $this->ownPool() + ['standalone' => true, 'maxConnections' => 1, 'acquireTimeout' => 0.25];
+    $fields = ['standalone' => true, 'maxConnections' => 1, 'acquireTimeout' => 0.25] + $this->ownPool();
     $first = $this->connect(...$fields);
 
     $second = $this->connect(...$fields);
@@ -168,7 +165,7 @@ test('a session idle for 60 seconds is pinged on acquire and dropped if the ping
     $live = $this->connect(...$fields);
     $killed = $this->connect(...$fields);
     $liveSid = $this->sid($live);
-    $this->kill($this->sid($killed));
+    kill($this->sid($killed));
     $live->close();
     $killed->close();
     sleep(61);
@@ -207,7 +204,7 @@ test('a release with no transaction open makes no round trip', function (Closure
     $sid = $this->sid($connection);
     $work($connection);
 
-    $trips = $this->roundTrips($sid, $connection->close(...));
+    $trips = roundTrips($sid, $connection->close(...));
 
     expect($trips)->toBe(0);
 })->with('nothingOpen');
@@ -274,15 +271,15 @@ dataset('releases', function () {
 });
 
 test('a release rolls back whatever the server keeps open and never commits', function (Closure $work, bool $standalone, Closure $release): void {
-    $fields = $this->ownPool() + ['maxConnections' => 1, 'standalone' => $standalone];
+    $fields = ['maxConnections' => 1, 'standalone' => $standalone] + $this->ownPool();
     $this->connect(...$fields)->close();
     $connection = $this->driver()->connect($this->config(...$fields));
     $work($connection);
 
     $release($connection);
 
-    expect($this->locked('pool_rows', 1))->toBeFalse()
-        ->and($this->otherSession()->select('select id, note from pool_rows order by id')->all())->toBe([['ID' => 1, 'NOTE' => null]]);
+    expect(locked('pool_rows', 1))->toBeFalse()
+        ->and(otherSession()->select('select id, note from pool_rows order by id')->all())->toBe([['ID' => 1, 'NOTE' => null]]);
 })->with('leftOpen')->with('releases');
 
 test('a live cursor delays the release and freeing it then rolls back', function (): void {
@@ -293,13 +290,13 @@ test('a live cursor delays the release and freeing it then rolls back', function
     assert($cursor !== null);
 
     unset($connection);
-    $lockedWhileTheCursorLives = $this->locked('pool_rows', 1);
+    $lockedWhileTheCursorLives = locked('pool_rows', 1);
     $rest = [...$cursor->fetchBatch(), ...$cursor->fetchBatch(), ...$cursor->fetchBatch()];
     unset($cursor);
 
     expect($lockedWhileTheCursorLives)->toBeTrue()
         ->and($rest)->toBe([['N' => 1], ['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5]])
-        ->and($this->locked('pool_rows', 1))->toBeFalse();
+        ->and(locked('pool_rows', 1))->toBeFalse();
 });
 
 test('package state survives a pooled release', function (): void {
@@ -325,7 +322,7 @@ test('a killed session makes the connection broken and never comes back', functi
     $session = $this->session($connection);
     $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], $this->options(fetchSize: 2))->cursor();
     assert($cursor !== null);
-    $this->kill($this->sid($connection), $immediate);
+    kill($this->sid($connection), $immediate);
     $lost = null;
 
     try {

@@ -26,11 +26,9 @@ const NOWHERE = '192.0.2.1:1521/FREEPDB1';
 /** The pass phrase of the encrypted wallet key (fixtures/tls/make.sh). */
 const WALLET_PASSWORD = 'rajska_wallet1';
 
-beforeAll(function (): void {
-    schema()->run('create table drcp_rows (id number(10) primary key, code varchar2(10))');
-});
-
 beforeEach(function (): void {
+    schema()->run('create table drcp_rows (id number(10) primary key, code varchar2(10))');
+
     $this->tnsAdmin = getenv('TNS_ADMIN');
     $this->directories = [];
 });

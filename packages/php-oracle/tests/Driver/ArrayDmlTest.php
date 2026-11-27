@@ -25,7 +25,7 @@ uses(TestCase::class);
 
 const INSERT = 'insert into batch_rows (id, code, qty) values (:id, :code, :qty)';
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create type dml_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type dml_polygon as object (name varchar2(50))');
     schema()->run('create type dml_tags as varray(10) of varchar2(100)');
@@ -92,17 +92,12 @@ beforeAll(function (): void {
     schema()->run('create table tx_rows (id number(10) primary key, qty number(10), note varchar2(100))');
 });
 
-beforeEach(function (): void {
-    schema()->run('truncate table batch_rows');
-    schema()->run('truncate table tx_rows');
-});
-
 test('a thousand valid rows take one round trip and commit under autocommit', function (): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
     $arrayDml = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, &$arrayDml): void {
+    $trips = roundTrips($sid, function () use ($connection, &$arrayDml): void {
         $arrayDml = many($connection, INSERT, valid(1000));
     });
 
@@ -110,7 +105,7 @@ test('a thousand valid rows take one round trip and commit under autocommit', fu
     expect($trips)->toBe(1)
         ->and($arrayDml->rowCount())->toBe(1000)
         ->and($arrayDml->outValues())->toBeEmpty()
-        ->and(committed($this->otherSession()))->toBe(1000);
+        ->and(committed(otherSession()))->toBe(1000);
 });
 
 test('rows bind by name whatever the order and case of their keys', function (): void {
@@ -121,7 +116,7 @@ test('rows bind by name whatever the order and case of their keys', function ():
         ['QTY' => 20, 'Id' => 2, 'code' => 'two'],
     ]);
 
-    expect($this->otherSession()->select('select id, code, qty from batch_rows order by id')->all())
+    expect(otherSession()->select('select id, code, qty from batch_rows order by id')->all())
         ->toBe([['ID' => 1, 'CODE' => 'one', 'QTY' => 10], ['ID' => 2, 'CODE' => 'two', 'QTY' => 20]]);
 });
 
@@ -135,7 +130,7 @@ test('failing rows under autocommit give one array dml exception and apply nothi
         ->and($thrown->getMessage())->toStartWith('3 of 10 rows failed; first: row 3: ORA-00001: ')
         ->and($thrown->sql())->toBe(INSERT)
         ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(0)
-        ->and(committed($this->otherSession()))->toBe(0);
+        ->and(committed(otherSession()))->toBe(0);
 });
 
 test('failing rows inside a transaction keep the earlier work uncommitted', function (): void {
@@ -147,7 +142,7 @@ test('failing rows inside a transaction keep the earlier work uncommitted', func
     expect(failures($thrown))->toBe([[3, 1], [5, 1400], [7, 2290]])
         ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(0)
         ->and($this->value($connection, 'select count(*) from tx_rows'))->toBe(1)
-        ->and($this->otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
+        ->and(otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
 });
 
 test('only duplicates still give an array dml exception', function (): void {
@@ -160,7 +155,7 @@ test('only duplicates still give an array dml exception', function (): void {
 
     expect($thrown::class)->toBe(ArrayDmlFailedException::class)
         ->and(failures($thrown))->toBe([[1, 1], [3, 1]])
-        ->and(committed($this->otherSession()))->toBe(0);
+        ->and(committed(otherSession()))->toBe(0);
 });
 
 test('a block failing at a row leaves nothing applied', function (bool $autocommit): void {
@@ -286,7 +281,7 @@ test('nulls take their column type', function (): void {
         ['id' => 3, 'qty' => null, 'note' => null],
     ]);
 
-    expect($this->otherSession()->select('select id, qty, note from tx_rows order by id')->all())
+    expect(otherSession()->select('select id, qty, note from tx_rows order by id')->all())
         ->toBe([['ID' => 1, 'QTY' => null, 'NOTE' => null], ['ID' => 2, 'QTY' => 5, 'NOTE' => null], ['ID' => 3, 'QTY' => null, 'NOTE' => null]]);
 });
 
@@ -349,7 +344,7 @@ test('a refused array dml fails before any round trip', function (string $sql, a
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, static function () use ($connection, $sql, $rows, &$thrown): void {
+    $trips = roundTrips($sid, static function () use ($connection, $sql, $rows, &$thrown): void {
         try {
             // @phpstan-ignore argument.type (what a caller without static analysis may pass)
             many($connection, $sql, $rows);
@@ -367,7 +362,7 @@ test('a placeholder written twice is refused before any round trip', function ()
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, static function () use ($connection, &$thrown): void {
+    $trips = roundTrips($sid, static function () use ($connection, &$thrown): void {
         try {
             many($connection, 'insert into batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
         } catch (UnsupportedException $unsupportedException) {
@@ -384,7 +379,7 @@ test('no rows make no round trip', function (): void {
     $sid = $this->sid($connection);
     $arrayDml = null;
 
-    $trips = $this->roundTrips($sid, static function () use ($connection, &$arrayDml): void {
+    $trips = roundTrips($sid, static function () use ($connection, &$arrayDml): void {
         $arrayDml = many($connection, INSERT, []);
     });
 
@@ -407,7 +402,7 @@ test('implicit results are refused once the block ran and its rows are undone', 
 
     expect($thrown?->getMessage())->toBe("runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row. The block's rows are undone.")
         ->and($this->value($connection, 'select count(*) from tx_rows'))->toBe(0)
-        ->and($this->otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
+        ->and(otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
 })->with(['under autocommit' => [true], 'inside a transaction' => [false]]);
 
 test('under autocommit a plsql block takes one more round trip for its commit', function (): void {
@@ -418,23 +413,23 @@ test('under autocommit a plsql block takes one more round trip for its commit', 
     many($connection, INSERT, valid(1));
     many($connection, $block, [['id' => 1000]]);
 
-    $dml = $this->roundTrips($sid, static fn (): ArrayDml => many($connection, INSERT, valid(100, from: 2)));
-    $plsql = $this->roundTrips($sid, static fn (): ArrayDml => many($connection, $block, $ids));
+    $dml = roundTrips($sid, static fn (): ArrayDml => many($connection, INSERT, valid(100, from: 2)));
+    $plsql = roundTrips($sid, static fn (): ArrayDml => many($connection, $block, $ids));
 
     expect($dml)->toBe(1)
         ->and($plsql)->toBe(2)
-        ->and($this->otherSession()->select('select count(*) from tx_rows')->value())->toBe(101);
+        ->and(otherSession()->select('select count(*) from tx_rows')->value())->toBe(101);
 });
 
 test('inside a transaction an array dml takes one more round trip for its savepoint', function (): void {
     $connection = $this->connect();
     $sid = $this->sid($connection);
 
-    $trips = $this->roundTrips($sid, static fn (): ArrayDml => many($connection, INSERT, valid(100), autocommit: false));
+    $trips = roundTrips($sid, static fn (): ArrayDml => many($connection, INSERT, valid(100), autocommit: false));
 
     expect($trips)->toBe(2)
         ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(100)
-        ->and(committed($this->otherSession()))->toBe(0);
+        ->and(committed(otherSession()))->toBe(0);
 });
 
 /**

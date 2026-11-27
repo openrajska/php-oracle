@@ -20,7 +20,7 @@ uses(TestCase::class);
  * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25.
  * implicit_results(n) returns items 1 .. n, then every category.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table implicit_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
         create table implicit_items (
@@ -55,9 +55,7 @@ beforeAll(function (): void {
             dbms_sql.return_result(l_categories);
         end;
         SQL);
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
@@ -97,7 +95,7 @@ test('implicit results inherit the executions options', function (): void {
     [$items] = $this->connection->procedure('implicit_results', ['p_limit' => 7], $options)->results();
     $rows = [];
 
-    $trips = $this->roundTrips($sid, static function () use ($items, &$rows): void {
+    $trips = roundTrips($sid, static function () use ($items, &$rows): void {
         $rows = $items->all();
     });
 

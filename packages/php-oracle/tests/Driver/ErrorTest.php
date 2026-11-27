@@ -13,12 +13,9 @@ uses(TestCase::class);
 
 const INVALID_UNIT = 'create or replace procedure invalid_unit is begin no_such_thing; end;';
 
-beforeAll(function (): void {
-    schema()->run('create table error_rows (id number(10) primary key, code varchar2(10) not null unique, note varchar2(100))');
-});
-
 beforeEach(function (): void {
-    schema()->run('truncate table error_rows');
+    schema()->run('create table error_rows (id number(10) primary key, code varchar2(10) not null unique, note varchar2(100))');
+
     schema()->run("insert into error_rows (id, code) values (1, 'one')");
 });
 
@@ -120,7 +117,7 @@ test('a session dead after the last call is released without a throw and not ret
     $connection = $this->driver()->connect($this->config(...$fields));
     $session = $this->session($connection);
     $connection->execute("update error_rows set note = 'uncommitted' where id = 1", [], $this->options(autocommit: false));
-    $this->kill($this->sid($connection));
+    kill($this->sid($connection));
 
     if ($destroy) {
         unset($connection);

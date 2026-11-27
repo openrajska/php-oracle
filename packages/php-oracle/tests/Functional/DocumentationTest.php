@@ -9,7 +9,7 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table customers (
             id number generated always as identity primary key,

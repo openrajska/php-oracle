@@ -18,7 +18,7 @@ use Throwable;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table statement_items (
             id number(10) primary key,
@@ -32,10 +32,6 @@ beforeAll(function (): void {
     schema()->run('create table statement_long_raws (bytes long raw)');
     schema()->run('create type statement_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type statement_numbers as table of number');
-});
-
-beforeEach(function (): void {
-    schema()->run('truncate table statement_rows');
 });
 
 test('bind values never reach the sql text', function (): void {
@@ -52,8 +48,8 @@ test('bind values never reach the sql text', function (): void {
         $connection->execute($sql, ['v' => $value], $this->options());
     }
 
-    $texts = array_column($this->otherSession()->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag])->all(), 'SQL_TEXT');
-    $leaks = $this->otherSession()->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value])->all();
+    $texts = array_column(otherSession()->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag])->all(), 'SQL_TEXT');
+    $leaks = otherSession()->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value])->all();
     expect($texts)->toContain(...$statements)
         ->and($leaks)->toBeEmpty();
 });

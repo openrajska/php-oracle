@@ -20,11 +20,9 @@ use Throwable;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
-    schema()->run('create table bind_lobs (id number(10) primary key, text_value clob)');
-});
-
 beforeEach(function (): void {
+    schema()->run('create table bind_lobs (id number(10) primary key, text_value clob)');
+
     // Not TRUNCATE: re-running the cached LOB query of a pooled Session
     // after it fails with ORA-01002, a bug of ours still open.
     schema()->run('delete from bind_lobs');
@@ -213,7 +211,7 @@ test('a bind mistake fails before any round trip naming the fix', function (arra
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $sql, $binds, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, $sql, $binds, &$thrown): void {
         try {
             // @phpstan-ignore argument.type (the mistake is the point)
             $connection->execute($sql, $binds, $this->options());

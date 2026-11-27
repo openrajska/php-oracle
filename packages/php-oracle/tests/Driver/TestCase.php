@@ -35,29 +35,34 @@ abstract class TestCase extends BaseTestCase
         parent::tearDown();
     }
 
-    protected function driver(): Manager
+    public function driver(): Manager
     {
         return new ExtensionManager();
     }
 
-    protected function connect(mixed ...$fields): Session
+    /**
+     * A standalone Session, closed after the test, as Laravel purges its
+     * connections between tests; named arguments override config fields.
+     */
+    public function connect(mixed ...$fields): Session
     {
-        $connection = $this->driver()->connect(self::config(...$fields));
+        $connection = $this->driver()->connect(self::config(...['standalone' => true, ...$fields]));
         $this->connections[] = $connection;
 
         return $connection;
     }
 
     /**
-     * Config fields that give a test a Pool of its own: a Pool lives as long
-     * as the process, so one test's Sessions would otherwise be another's.
-     * Only `connectTimeout` changes, by a millisecond per call.
+     * Config fields that give a test a Pool of its own (connect() is
+     * standalone otherwise): a Pool lives as long as the process, so one
+     * test's Sessions would otherwise be another's. Only `connectTimeout`
+     * changes, by a millisecond per call.
      *
-     * @return array{connectTimeout: float}
+     * @return array{standalone: false, connectTimeout: float}
      */
-    protected static function ownPool(): array
+    public static function ownPool(): array
     {
-        return ['connectTimeout' => 30 + ++self::$pools / 1000];
+        return ['standalone' => false, 'connectTimeout' => 30 + ++self::$pools / 1000];
     }
 
     public static function options(
@@ -104,7 +109,7 @@ abstract class TestCase extends BaseTestCase
      *
      * @param array<string, mixed> $binds
      */
-    protected static function value(Session $connection, string $sql, array $binds = []): mixed
+    public static function value(Session $connection, string $sql, array $binds = []): mixed
     {
         $cursor = $connection->execute($sql, $binds, self::options(autocommit: false))->cursor();
         self::assertNotNull($cursor, "Not a query: $sql");
@@ -115,7 +120,7 @@ abstract class TestCase extends BaseTestCase
         return array_values($rows[0])[0];
     }
 
-    protected static function sid(Session $connection): int
+    public static function sid(Session $connection): int
     {
         $sid = self::value($connection, "select sys_context('userenv', 'sid') from dual");
         self::assertIsString($sid);
@@ -127,7 +132,7 @@ abstract class TestCase extends BaseTestCase
      * Which Session is behind a Connection: its AUDSID, unique per logon
      * (a SID is reused by the next Session in its slot).
      */
-    protected static function session(Session $connection): string
+    public static function session(Session $connection): string
     {
         $session = self::value($connection, "select sys_context('userenv', 'sessionid') from dual");
         self::assertIsString($session);

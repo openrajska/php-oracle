@@ -28,7 +28,7 @@ uses(TestCase::class);
  * item n is in category ((n - 1) mod 5) + 1, named 'Item 000n', priced
  * n * 1.25.
  */
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table ref_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
         create table ref_items (
@@ -99,9 +99,7 @@ beforeAll(function (): void {
             end;
         end;
         SQL);
-});
 
-beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
@@ -189,7 +187,7 @@ test('a nested cursor fetches with the executions fetch size', function (): void
     $halves = nested($parent->all()[0]['halves']);
     $rows = [];
 
-    $trips = $this->roundTrips($sid, static function () use ($halves, &$rows): void {
+    $trips = roundTrips($sid, static function () use ($halves, &$rows): void {
         $rows = $halves->all();
     });
 
@@ -210,7 +208,7 @@ test('a cursor bound back to the server fails before any round trip', function (
     $cursor = $this->connection->function('ref_cursors.categories_with_items')->cursor();
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($bind, $cursor, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($bind, $cursor, &$thrown): void {
         try {
             $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind($cursor)]);
         } catch (UnsupportedException $unsupportedException) {

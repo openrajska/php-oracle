@@ -3,23 +3,47 @@
 declare(strict_types = 1);
 
 use Rajska\Oracle\Connection;
-use Rajska\Oracle\Oracle;
-use Rajska\Oracle\Tests\TestCase;
 
 /**
- * The Connection a test file creates and seeds its objects through: one
- * standalone Session per process. Its DDL waits for a Session a previous test
- * killed, while Oracle rolls that transaction back and holds the table.
+ * The Connection the running test creates and seeds its objects through.
  */
 function schema(): Connection
 {
-    static $connection = null;
-    if (!$connection instanceof Connection) {
-        $connection = Oracle::connect(TestCase::config(standalone: true));
-        $connection->run('alter session set ddl_lock_timeout = 10');
-    }
+    return test()->schema();
+}
 
-    return $connection;
+/**
+ * Another Session, as a second user sees the database: committed rows only.
+ */
+function otherSession(): Connection
+{
+    return test()->otherSession();
+}
+
+/**
+ * Whether another transaction holds the row.
+ */
+function locked(string $table, int $id): bool
+{
+    return test()->locked($table, $id);
+}
+
+/**
+ * Kills a Session as a DBA would.
+ */
+function kill(int $sid, bool $immediate = true): void
+{
+    test()->kill($sid, $immediate);
+}
+
+/**
+ * The Round trips the Session with this SID made while $action ran.
+ *
+ * @param callable(): mixed $action
+ */
+function roundTrips(int $sid, callable $action): int
+{
+    return test()->roundTrips($sid, $action);
 }
 
 /**

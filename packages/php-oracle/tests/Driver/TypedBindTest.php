@@ -25,7 +25,7 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table typed_items (id number(10) primary key, name varchar2(100) not null, price number(10, 2) not null)');
     schema()->run("insert into typed_items values (1, 'Item 0001', 1.25)");
     schema()->run("insert into typed_items values (2, 'Item 0002', 2.5)");
@@ -475,7 +475,7 @@ test('a varchar of bytes that are not utf8 fails before any round trip', functio
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, &$thrown): void {
         try {
             $connection->execute('begin :v := :v; end;', ['v' => new In\Varchar("\xff")], $this->options());
         } catch (UsageException $usageException) {

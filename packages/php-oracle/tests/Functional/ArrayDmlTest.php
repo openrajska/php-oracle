@@ -15,7 +15,7 @@ uses(TestCase::class);
 
 const INSERT = 'insert into batch_rows (id, code, qty) values (:id, :code, :qty)';
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table batch_rows (
             id number(10) primary key,
@@ -24,11 +24,7 @@ beforeAll(function (): void {
         )
         SQL);
     schema()->run('create table array_dml_marks (id number(10) primary key)');
-});
 
-beforeEach(function (): void {
-    schema()->run('truncate table batch_rows');
-    schema()->run('truncate table array_dml_marks');
 
     $this->connection = $this->connect();
 });
@@ -38,7 +34,7 @@ test('run many runs the statement once per row and commits under autocommit', fu
 
     expect($arrayDml->affected())->toBe(3)
         ->and($arrayDml)->toHaveCount(3)
-        ->and($this->otherSession()->select('select count(*) from batch_rows')->value())->toBe(3);
+        ->and(otherSession()->select('select count(*) from batch_rows')->value())->toBe(3);
 });
 
 test('affected sums the rows every bind row touched', function (): void {
@@ -130,8 +126,8 @@ test('failing rows inside begin undo only that call', function (): void {
 
     $this->connection->commit();
 
-    expect($this->otherSession()->select('select id from batch_rows')->all())->toBe([['ID' => 5]])
-        ->and($this->otherSession()->select('select count(*) from array_dml_marks')->value())->toBe(1);
+    expect(otherSession()->select('select id from batch_rows')->all())->toBe([['ID' => 5]])
+        ->and(otherSession()->select('select count(*) from array_dml_marks')->value())->toBe(1);
 });
 
 /**

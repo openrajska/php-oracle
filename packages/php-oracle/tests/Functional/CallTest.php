@@ -25,7 +25,7 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table call_rows (id number(10) primary key)');
     schema()->run('insert into call_rows values (1)');
     schema()->run('create type call_point as object (x number, y number, label varchar2(30))');
@@ -270,7 +270,8 @@ beforeAll(function (): void {
             end;
         end;
         SQL);
-    if ((int) schema()->serverVersion() < 23) {
+    $this->connection = $this->connect();
+    if ((int) $this->connection->serverVersion() < 23) {
         return;
     }
     schema()->run(<<<'SQL'
@@ -298,10 +299,6 @@ beforeAll(function (): void {
             end;
         end;
         SQL);
-});
-
-beforeEach(function (): void {
-    $this->connection = $this->connect();
 });
 
 test('a procedure reads its out and in out parameters by name', function (): void {
@@ -655,7 +652,7 @@ test('an invalid name fails before any round trip', function (string $name, arra
     $sid = $this->sid($this->connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($verb, $name, $binds, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($verb, $name, $binds, &$thrown): void {
         try {
             $this->connection->{$verb}($name, $binds);
         } catch (UsageException $usageException) {

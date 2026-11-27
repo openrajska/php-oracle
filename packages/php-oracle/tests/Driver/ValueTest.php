@@ -18,7 +18,7 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create table value_items (id number(10) primary key)');
     schema()->run('insert into value_items values (1)');
     schema()->run('create table value_iot (id number(10) primary key, label varchar2(10)) organization index');
@@ -167,7 +167,7 @@ test('a tstz offset with seconds fails before any round trip', function (): void
     $localMeanTime = new DateTimeImmutable('1890-01-01 00:00:00', new DateTimeZone('America/Sao_Paulo'));
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $localMeanTime, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, $localMeanTime, &$thrown): void {
         try {
             $connection->execute('select :v from dual', ['v' => new In\TimestampTz($localMeanTime)], $this->options());
         } catch (UsageException $usageException) {

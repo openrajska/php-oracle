@@ -27,7 +27,7 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-beforeAll(function (): void {
+beforeEach(function (): void {
     schema()->run('create type obj_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type obj_point_list as table of obj_point');
     schema()->run('create type obj_number_list as table of number');
@@ -698,7 +698,7 @@ test('a mistake fails before any round trip naming the fix', function (Bindable 
     $sid = $this->sid($connection);
     $thrown = null;
 
-    $trips = $this->roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
+    $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
         try {
             $connection->execute(ECHO_BLOCK, ['i' => $bind, 'o' => new Out\Number()], $this->options());
         } catch (UsageException $usageException) {
@@ -783,12 +783,12 @@ test('describing a type costs round trips only on its first use in a session', f
         $this->options(),
     )->outValues()['o'];
 
-    $first = $this->roundTrips($sid, static fn (): mixed => $echo($connection, 'obj_number_matrix'));
-    $again = $this->roundTrips($sid, static fn (): mixed => $echo($connection, 'OBJ_NUMBER_MATRIX'));
+    $first = roundTrips($sid, static fn (): mixed => $echo($connection, 'obj_number_matrix'));
+    $again = roundTrips($sid, static fn (): mixed => $echo($connection, 'OBJ_NUMBER_MATRIX'));
     $connection->close();
     $next = $this->connect(...$pool);
-    $nextLoan = $this->roundTrips($sid, static fn (): mixed => $echo($next, 'Obj_Number_Matrix'));
-    $column = $this->roundTrips($sid, fn (): array => $this->rows($next, 'select obj_number_matrix(obj_number_list(1)) from dual'));
+    $nextLoan = roundTrips($sid, static fn (): mixed => $echo($next, 'Obj_Number_Matrix'));
+    $column = roundTrips($sid, fn (): array => $this->rows($next, 'select obj_number_matrix(obj_number_list(1)) from dual'));
 
     expect($this->sid($next))->toBe($sid)
         ->and($first)->toBeGreaterThan(1)
