@@ -110,3 +110,108 @@ Names PHP imposes (`getIterator()`, `stream_*`) are exempt.
 1. **A folder of many classes of one kind is plural.** `Binds/`, `Contracts/`,
    `Exceptions/`, `Concerns/`.
 2. **A component folder is singular.** `Statement/`, `Lob/`, `Driver/`.
+
+## Tests
+
+Before committing, check every test against these rules. They are not
+suggestions: a test that breaks one is rewritten.
+
+### Shape of a test
+
+    describe('<the subject, in plain words>', function (): void {
+        it('<what it does, as a sentence>', function (): void {
+            <arrange: the state the behavior needs>
+
+            <act: one call>
+
+            <assert: what changed>
+        });
+    });
+
+- One behavior per test. Two acts are two tests.
+- The three blocks are separated by a blank line, with no comments naming
+  them.
+
+### Names
+
+- A file groups its tests in `describe()` blocks, one per subject. The subject
+  is how a person would say it, in lower case and without code: `orders`,
+  `refunds`, `closing the connection`; never `Order::place()` or
+  `place()`.
+- A test is an `it()`, and its name completes the sentence "it …": what
+  happens, not which method runs. `it('refuses an order without stock')`,
+  never `it('test place order')`.
+- Pest prints both together: `orders → it refuses an order without stock`.
+  Read that line aloud; if it is not a sentence, rename.
+- A hook only one subject needs goes inside that subject's `describe()`.
+
+### What to test
+
+- Only the library's behavior: what a user of its public API, or of the
+  contract it implements, can observe.
+- Never test the database server, a dependency, the test framework, a test
+  helper, the packaging, or how a class is declared (`final`, enum values, a
+  parent class).
+- An error is tested with the behavior that raises it, never in a file of its
+  own and never through the exception's getters alone.
+- Never generate tests (parsing docs, scanning source files). Write each case.
+
+### Cases
+
+- When only the input varies, use one test with a dataset, not copies of the
+  test.
+- A dataset yields closures that build objects, so they are built inside the
+  test:
+
+      yield 'a valid email' => [fn () => new Email('a@b.c')];
+
+- A dataset lives in the one file that uses it. Never copy it.
+
+### Exceptions
+
+- Never `try`/`catch` in a test. Use `toThrow()`:
+
+      expect(fn () => $order->place())->toThrow(OutOfStock::class, 'No stock');
+
+- To check more than the class and the message, pass a typed closure:
+
+      expect($call)->toThrow(function (OutOfStock $e): void { expect($e->sku())->toBe('A1'); });
+
+### Data and connections
+
+- A test file creates every table and object it reads, in `beforeEach`. There
+  are no fixtures and no shared state between files.
+- The database is emptied before every test (`RefreshDatabase`).
+- A test opens its own connections and they close after it. Anything that
+  outlives a test (a pool, a cache) is used only by the test of that thing,
+  and asked for explicitly.
+
+### Structure
+
+- `tests/TestCase.php` is the root. Each module has `tests/<Module>/TestCase.php`
+  extending it.
+- Every file declares its TestCase with `uses(TestCase::class)`.
+- Helpers are public methods of traits the TestCase uses. Their procedural
+  shortcuts live in `tests/Pest.php` and call `test()->method()`.
+- No `Support/` folder and no helper classes.
+
+### Coverage
+
+- Coverage is 100%, reached only through behavior tests.
+- An uncovered line is one of three things:
+  1. a missing behavior test: write it;
+  2. dead code: delete it;
+  3. a dependency the test cannot control: pass it in (constructor or
+     parameter) and give the test its value.
+- Replace only a contract with a stub (`createStub(Contract::class)`). Never
+  mock a global function or a static call, and never mark a line ignored.
+
+### Checklist
+
+- [ ] Every test is an `it()` inside a `describe()`, and reads as a sentence.
+- [ ] Every test checks one behavior of the library.
+- [ ] Arrange, act and assert are separated by blank lines.
+- [ ] No `try`/`catch`, no generated tests, no copied datasets.
+- [ ] Every object the file reads is created in the file.
+- [ ] No connection or pool outlives its test.
+- [ ] Coverage is 100% without ignored lines.
