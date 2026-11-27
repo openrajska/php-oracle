@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Driver;
 
-use Composer\InstalledVersions;
 use Override;
 use Rajska\Oracle\ConnectionConfig;
 use Rajska\Oracle\Contracts\Driver\Manager;
@@ -24,7 +23,9 @@ use WeakMap;
  *
  * The first `connect()` of the process checks that the Extension is loaded
  * and that its version is in `>= MINIMUM, < BREAKING`, and remembers the
- * answer. Nothing runs at autoload or class load.
+ * answer. A version given to the constructor stands in for the loaded one,
+ * and is checked on every `connect()`. Nothing runs at autoload or class
+ * load.
  *
  * @internal
  *
@@ -67,12 +68,23 @@ final class ExtensionManager implements Manager
      */
     private static WeakMap | null $arrays = null;
 
+    /**
+     * @param false|string|null $version the Extension version to check in
+     *                                   place of the loaded one (false: not
+     *                                   loaded)
+     */
+    public function __construct(private readonly false | string | null $version = null)
+    {
+    }
+
     #[Override]
     public function connect(ConnectionConfig $config): Session
     {
-        self::$refusal ??= $this->refusal();
-        if (self::$refusal !== '') {
-            throw new ConfigurationException(self::$refusal);
+        $refusal = $this->version === null
+            ? self::$refusal ??= $this->refusal(phpversion('oracledb'))
+            : $this->refusal($this->version);
+        if ($refusal !== '') {
+            throw new ConfigurationException($refusal);
         }
 
         self::$arrays ??= new WeakMap();
@@ -123,12 +135,10 @@ final class ExtensionManager implements Manager
     }
 
     /**
-     * Why the loaded Extension cannot be used, or '' when it can.
+     * Why this Extension version cannot be used, or '' when it can.
      */
-    private function refusal(): string
+    private function refusal(false | string $version): string
     {
-        // Unqualified on purpose: the detection tests shadow it in this namespace.
-        $version = phpversion('oracledb');
         if ($version === false) {
             return 'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
                 . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).';
@@ -139,14 +149,9 @@ final class ExtensionManager implements Manager
             return '';
         }
 
-        $core = class_exists(InstalledVersions::class) && InstalledVersions::isInstalled('openrajska/php-oracle')
-            ? 'openrajska/php-oracle ' . InstalledVersions::getPrettyVersion('openrajska/php-oracle')
-            : 'openrajska/php-oracle';
-
         return \sprintf(
-            'oracledb %s is loaded, but %s needs >= %s, < %s. Upgrade it with `pie install openrajska/php-oracle-ext:%s`.',
+            'oracledb %s is loaded, but openrajska/php-oracle needs >= %s, < %s. Upgrade it with `pie install openrajska/php-oracle-ext:%s`.',
             $version,
-            $core,
             self::MINIMUM,
             self::BREAKING,
             self::CONSTRAINT,

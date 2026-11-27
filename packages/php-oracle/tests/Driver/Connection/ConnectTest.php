@@ -98,6 +98,43 @@ test('a tns alias whose entry sets a rejected key is rejected before any network
     'Easy Connect Plus from $TNS_ADMIN' => [true, 'nowhere_plus', NOWHERE . '?transport_connect_timeout=5', 'Easy Connect Plus'],
 ]);
 
+test('without the extension a connect says how to install it', function (): void {
+    $connect = fn (): Session => new ExtensionManager(false)->connect($this->config());
+
+    expect($connect)->toThrow(ConfigurationException::class, 'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, then check it is enabled for this SAPI');
+});
+
+/**
+ * @return iterable<string, array{string}>
+ */
+dataset('versionsOutsideTheRange', function () {
+    yield 'below the minimum' => ['0.0.9'];
+    yield 'a pre-release of the minimum' => ['0.1.0-beta.1'];
+    yield 'the next 0.x minor' => ['0.2.0'];
+    yield 'a pre-release of the next 0.x minor' => ['0.2.0-beta.1'];
+    yield 'the next major' => ['1.0.0'];
+});
+
+test('an extension outside the range is refused naming both versions the range and the upgrade command', function (string $version): void {
+    $connect = fn (): Session => new ExtensionManager($version)->connect($this->config());
+
+    expect($connect)->toThrow(function (ConfigurationException $exception) use ($version): void {
+        expect($exception->getMessage())->toMatch(
+            '/^oracledb ' . preg_quote($version, '/') . ' is loaded, but openrajska\/php-oracle needs >= 0\.1\.0, < 0\.2\.0\. '
+            . 'Upgrade it with `pie install openrajska\/php-oracle-ext:\^0\.1`\.$/',
+        );
+    });
+})->with('versionsOutsideTheRange');
+
+test('an extension inside the range connects', function (string $version): void {
+    $session = new ExtensionManager($version)->connect($this->config(standalone: true));
+
+    $serverVersion = $session->serverVersion();
+
+    expect($serverVersion)->not->toBeEmpty();
+    $session->close();
+})->with(['the minimum' => ['0.1.0'], 'a later patch' => ['0.1.17']]);
+
 test('every dsn form connects', function (string $form): void {
     $easy = TestCase::config()->dsn;
     $fields = match ($form) {
