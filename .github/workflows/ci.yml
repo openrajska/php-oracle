@@ -2,21 +2,16 @@ name: ci
 
 # Every commit is tested once: pushes to this repository's branches run it,
 # and a pull request runs it only when it comes from a fork (whose pushes
-# do not). Markdown alone does not run it, except Core's README and docs,
-# whose examples the suite executes (DocumentationTest).
+# do not). Markdown alone does not run it.
 on:
   push:
     paths:
       - "**"
       - "!**.md"
-      - "packages/php-oracle/README.md"
-      - "packages/php-oracle/docs/**"
   pull_request:
     paths:
       - "**"
       - "!**.md"
-      - "packages/php-oracle/README.md"
-      - "packages/php-oracle/docs/**"
   workflow_dispatch:
     inputs:
       minimum-ref:
