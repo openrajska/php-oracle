@@ -15,8 +15,8 @@ use Rajska\Oracle\Statement\ValueMapping;
 //   native: the Extension's classes alone (Rust + the zval conversion);
 //   driver: Core's Extension adapter (ExtensionManager / ExtensionSession);
 //   core:   Core's public API, as the benchmark cases call it.
-// Round trips are read from V$SESSTAT by an oci8 observer Session (needs the
-// grants of fixtures/sql/grants.sql), so oci8 must be loaded too:
+// Round trips are read from V$SESSTAT by an oci8 observer Session (schema.php
+// grants the view), so oci8 must be loaded too:
 //   php -d extension=oci8 -d extension=<oracledb> layers.php [rounds=5]
 // Medians over rounds × iterations in one process; read the proportions.
 require __DIR__ . '/bootstrap.php';
@@ -89,7 +89,7 @@ $work = [
             return [$e->out('o_num')->int(), $e->out('o_str')->string(), $e->out('o_date')->dateTime()];
         },
         'core procedure()' => static function (int $i) use ($core): array {
-            $e = $core->procedure('fx_scalar.echo_out', [...scalar_in($i), 'p_date' => new In\Date(new DateTimeImmutable(SCALAR_DATE)), 'o_num' => new Out\Number(), 'o_str' => new Out\Varchar(), 'o_date' => new Out\Date()]);
+            $e = $core->procedure('bench_echo_out', [...scalar_in($i), 'p_date' => new In\Date(new DateTimeImmutable(SCALAR_DATE)), 'o_num' => new Out\Number(), 'o_str' => new Out\Varchar(), 'o_date' => new Out\Date()]);
 
             return [$e->out('o_num')->int(), $e->out('o_str')->string(), $e->out('o_date')->dateTime()];
         },
@@ -115,21 +115,21 @@ $work = [
         'native, fetchSize 1000' => static fn (): int => $nativeRows($native->execute(SQL_FETCH, [], $nativeOptions(['fetchSize' => 1000]))),
     ]],
     'Fetch 10k, one column each' => [20, [
-        'native id NUMBER(10)' => static fn (): int => $nativeRows($native->execute('select id from fx_bench_rows', [], $nativeOptions())),
-        'native amount NUMBER(12,2)' => static fn (): int => $nativeRows($native->execute('select amount from fx_bench_rows', [], $nativeOptions())),
-        'native ratio BINARY_DOUBLE' => static fn (): int => $nativeRows($native->execute('select ratio from fx_bench_rows', [], $nativeOptions())),
-        'native code VARCHAR2' => static fn (): int => $nativeRows($native->execute('select code from fx_bench_rows', [], $nativeOptions())),
-        'native created_at DATE object' => static fn (): int => $nativeRows($native->execute('select created_at from fx_bench_rows', [], $nativeOptions())),
-        'native created_at DATE string' => static fn (): int => $nativeRows($native->execute('select created_at from fx_bench_rows', [], $nativeOptions(['temporals' => 'string']))),
-        'native updated_at TIMESTAMP object' => static fn (): int => $nativeRows($native->execute('select updated_at from fx_bench_rows', [], $nativeOptions())),
-        'native updated_at TIMESTAMP string' => static fn (): int => $nativeRows($native->execute('select updated_at from fx_bench_rows', [], $nativeOptions(['temporals' => 'string']))),
-        'native constant 1 (protocol floor)' => static fn (): int => $nativeRows($native->execute('select 1 from fx_bench_rows', [], $nativeOptions())),
+        'native id NUMBER(10)' => static fn (): int => $nativeRows($native->execute('select id from bench_rows', [], $nativeOptions())),
+        'native amount NUMBER(12,2)' => static fn (): int => $nativeRows($native->execute('select amount from bench_rows', [], $nativeOptions())),
+        'native ratio BINARY_DOUBLE' => static fn (): int => $nativeRows($native->execute('select ratio from bench_rows', [], $nativeOptions())),
+        'native code VARCHAR2' => static fn (): int => $nativeRows($native->execute('select code from bench_rows', [], $nativeOptions())),
+        'native created_at DATE object' => static fn (): int => $nativeRows($native->execute('select created_at from bench_rows', [], $nativeOptions())),
+        'native created_at DATE string' => static fn (): int => $nativeRows($native->execute('select created_at from bench_rows', [], $nativeOptions(['temporals' => 'string']))),
+        'native updated_at TIMESTAMP object' => static fn (): int => $nativeRows($native->execute('select updated_at from bench_rows', [], $nativeOptions())),
+        'native updated_at TIMESTAMP string' => static fn (): int => $nativeRows($native->execute('select updated_at from bench_rows', [], $nativeOptions(['temporals' => 'string']))),
+        'native constant 1 (protocol floor)' => static fn (): int => $nativeRows($native->execute('select 1 from bench_rows', [], $nativeOptions())),
     ]],
     'REF CURSOR 1k × 5' => [200, [
         'native' => static fn (): int => $nativeOutRows($native->execute(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS], $nativeOptions()), 'rc'),
         'driver' => static fn (): int => $driverRows($driver->execute(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS], $driverOptions)->outValues()['rc'][0]),
         'core run()' => static fn (): int => count($core->run(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS])->out('rc')->cursor()->all()),
-        'core function()' => static fn (): int => count($core->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()->all()),
+        'core function()' => static fn (): int => count($core->function('bench_items_cursor', ['p_limit' => CURSOR_ROWS])->cursor()->all()),
         'native, fast opt-ins' => static fn (): int => $nativeOutRows($native->execute(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS], $nativeOptions(['numbers' => 'float', 'temporals' => 'string'])), 'rc'),
     ]],
     'LOBs 1k × (CLOB + BLOB)' => [20, [

@@ -27,16 +27,16 @@ use Rajska\Oracle\Statement\RowShape;
 use Rajska\Oracle\Statement\TemporalMode;
 use Rajska\Oracle\Statement\ValueMapping;
 
-const SQL_SCALAR = "begin fx_scalar.echo_out(:p_num, :p_str, to_date(:p_date, 'YYYY-MM-DD HH24:MI:SS'), :o_num, :o_str, :o_date); end;";
-const SQL_FETCH = 'select id, qty, amount, ratio, code, label, note, created_at, updated_at from fx_bench_rows';
-const SQL_NUMBERS = 'select id, qty, amount, ratio from fx_bench_rows';
-const SQL_DATES = 'select created_at, updated_at from fx_bench_rows';
-const SQL_CURSOR = 'begin :rc := fx_cursor.items(:n); end;';
-const SQL_LOBS = 'select id, body, data from fx_bench_lobs order by id';
-const SQL_LARGE_LOB = 'select binary_value from fx_lobs where id = 4';
-const SQL_INSERT = 'insert into fx_batch_rows (id, code, qty) values (:id, :code, :qty)';
-const SQL_FORALL = 'begin forall i in indices of :ids insert into fx_batch_rows (id, code, qty) values (:ids(i), :codes(i), :qtys(i)); end;';
-const SQL_CLEANUP = 'delete from fx_batch_rows where id between 700001 and 701000';
+const SQL_SCALAR = "begin bench_echo_out(:p_num, :p_str, to_date(:p_date, 'YYYY-MM-DD HH24:MI:SS'), :o_num, :o_str, :o_date); end;";
+const SQL_FETCH = 'select id, qty, amount, ratio, code, label, note, created_at, updated_at from bench_rows';
+const SQL_NUMBERS = 'select id, qty, amount, ratio from bench_rows';
+const SQL_DATES = 'select created_at, updated_at from bench_rows';
+const SQL_CURSOR = 'begin :rc := bench_items_cursor(:n); end;';
+const SQL_LOBS = 'select id, body, data from bench_lobs order by id';
+const SQL_LARGE_LOB = 'select binary_value from bench_large_lob';
+const SQL_INSERT = 'insert into bench_batch_rows (id, code, qty) values (:id, :code, :qty)';
+const SQL_FORALL = 'begin forall i in indices of :ids insert into bench_batch_rows (id, code, qty) values (:ids(i), :codes(i), :qtys(i)); end;';
+const SQL_CLEANUP = 'delete from bench_batch_rows where id between 700001 and 701000';
 const SQL_DUAL = 'select 1 as one from dual';
 const SCALAR_DATE = '2026-03-14 15:09:26';
 const FETCH_ROWS = 10_000;
@@ -70,8 +70,8 @@ final class BenchContext
     {
         return new self(
             getenv('ORACLE_CONNECT_STRING') ?: 'oracle:1521/FREEPDB1',
-            getenv('ORACLE_USER') ?: 'rajska',
-            getenv('ORACLE_PASSWORD') ?: 'rajska',
+            getenv('ORACLE_USER') ?: 'bench',
+            getenv('ORACLE_PASSWORD') ?: 'bench',
         );
     }
 
@@ -302,13 +302,13 @@ function bench_cases(): array
         $cases[$id] = ['scenario' => explode('.', $id)[0], 'driver' => $driver, 'warmup' => $warmup, 'iters' => $iters, 'expect' => $expect, 'make' => $make] + ($after instanceof Closure ? ['after' => $after] : []);
     };
 
-    // (a) A Call with 3 scalar IN and 3 OUT binds: fx_scalar.echo_out.
+    // (a) A Call with 3 scalar IN and 3 OUT binds: bench_echo_out.
     $add('call.core.procedure', 'core', 1000, 10_000, 3, static function (BenchContext $x): Closure {
         $c = $x->core();
         $date = new In\Date(new DateTimeImmutable(SCALAR_DATE));
 
         return static function (int $i) use ($c, $date): array {
-            $e = $c->procedure('fx_scalar.echo_out', [
+            $e = $c->procedure('bench_echo_out', [
                 ...scalar_in($i),
                 'p_date' => $date,
                 'o_num' => new Out\Number(),
@@ -337,7 +337,7 @@ function bench_cases(): array
     $add('call.oci8.typed', 'oci8', 1000, 10_000, 3, static fn (BenchContext $x): Closure => static fn (int $i): array => oci8_scalar($x->oci8(), $i, true));
     $add('call.oci8.raw', 'oci8', 1000, 10_000, 3, static fn (BenchContext $x): Closure => static fn (int $i): array => oci8_scalar($x->oci8(), $i, false));
 
-    // (b) A query of 10k rows x 9 mixed columns: fx_bench_rows.
+    // (b) A query of 10k rows x 9 mixed columns: bench_rows.
     foreach (['all', 'row'] as $mode) {
         $add("fetch.core.$mode", 'core', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => $mode === 'all'
             ? static fn (): array => $x->core()->select(SQL_FETCH)->all()
@@ -387,14 +387,14 @@ function bench_cases(): array
     $add('dates.oci8.raw', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'raw'));
     $add('dates.oci8.exact', 'oci8', 5, 50, FETCH_ROWS, static fn (BenchContext $x): Closure => static fn (): array => oci8_drain(oci8_query($x->oci8(), SQL_DATES), 'all', 'exact'));
 
-    // (c) A Call returning a REF CURSOR of 1k rows x 5 columns: fx_cursor.items.
-    $add('cursor.core.function-all', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()->all());
-    $add('cursor.core.function-row', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): int => core_each($x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()));
+    // (c) A Call returning a REF CURSOR of 1k rows x 5 columns: bench_items_cursor.
+    $add('cursor.core.function-all', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->function('bench_items_cursor', ['p_limit' => CURSOR_ROWS])->cursor()->all());
+    $add('cursor.core.function-row', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): int => core_each($x->core()->function('bench_items_cursor', ['p_limit' => CURSOR_ROWS])->cursor()));
     $add('cursor.core.run-all', 'core', 50, 300, CURSOR_ROWS, static fn (BenchContext $x): Closure => static fn (): array => $x->core()->run(SQL_CURSOR, ['rc' => new Out\Cursor(), 'n' => CURSOR_ROWS])->out('rc')->cursor()->all());
     $add('cursor.core.fast-all', 'core', 50, 300, CURSOR_ROWS, static function (BenchContext $x): Closure {
         $options = new Options(values: fast());
 
-        return static fn (): array => $x->core()->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS], $options)->cursor()->all();
+        return static fn (): array => $x->core()->function('bench_items_cursor', ['p_limit' => CURSOR_ROWS], $options)->cursor()->all();
     });
     foreach (['raw-all', 'exact-all', 'float-all', 'raw-row', 'exact-row'] as $variant) {
         [$mapping, $mode] = explode('-', $variant);
@@ -416,7 +416,7 @@ function bench_cases(): array
         return [$bytes];
     });
 
-    // Array DML: 1k rows into fx_batch_rows, committed; deleted again untimed.
+    // Array DML: 1k rows into bench_batch_rows, committed; deleted again untimed.
     $add('insert.core.runmany', 'core', 5, 50, INSERT_ROWS, static function (BenchContext $x): Closure {
         $rows = insert_rows();
 

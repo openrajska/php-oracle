@@ -3,8 +3,8 @@
 # builds the Extension for ZTS (release), checks both drivers return the
 # same values, then runs FrankenPHP in worker mode under wrk (load.sh).
 #   packages/php-oracle/bench/zts/run.sh [tag]      (ddev bench-zts [tag])
-# Needs the ddev project running (Oracle on the ddev network) and the
-# fixtures installed in ORACLE_USER's schema (default rajska, `ddev fixtures`).
+# Needs the ddev project running (Oracle on the ddev network); schema.php
+# creates the objects the cases read.
 # Environment for load.sh: WORKERS, ROUNDS, DUR, CONC, WORKLOADS, DRIVERS.
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -19,11 +19,13 @@ in_image() {
     -v php-oracle-bench-zts-git:/usr/local/cargo/git \
     -v php-oracle-bench-zts-target:/var/cache/cargo-target \
     -e ORACLE_CONNECT_STRING=oracle:1521/FREEPDB1 \
-    -e ORACLE_USER="${ORACLE_USER:-rajska}" -e ORACLE_PASSWORD="${ORACLE_PASSWORD:-rajska}" \
+    -e ORACLE_USER="${ORACLE_USER:-bench}" -e ORACLE_PASSWORD="${ORACLE_PASSWORD:-bench}" \
+    -e ORACLE_ADMIN_USER -e ORACLE_ADMIN_PASSWORD \
     -e WORKERS -e ROUNDS -e DUR -e CONC -e WORKLOADS -e DRIVERS \
     "$image" sh -c "$1"
 }
 in_image 'cd /app/packages/php-oracle-ext && cargo build --release --locked --target-dir /var/cache/cargo-target/core-bench'
+in_image 'cd /app/packages/php-oracle/bench && PHP_INI_SCAN_DIR= php -c php.ini -d extension=/var/cache/cargo-target/core-bench/release/libphp_oracledb.so schema.php'
 in_image 'cd /app/packages/php-oracle/bench && PHP_INI_SCAN_DIR= php -c php.ini -d extension=oci8.so -d extension=/var/cache/cargo-target/core-bench/release/libphp_oracledb.so crosscheck.php >/dev/null && echo "crosscheck ok"'
 mkdir -p "$here/../output"
 in_image 'sh /app/packages/php-oracle/bench/zts/load.sh' | tee "$here/../output/frankenphp-$tag.txt"

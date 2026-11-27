@@ -10,7 +10,6 @@ every v1 verb, and compares each ratio with the spike's.
 ## Run it
 
 ```bash
-ddev fixtures        # once: the fx_* tables in the rajska schema
 ddev bench           # release build, crosscheck, then the matrix (about 7 min)
 ddev bench rounds=3 only=call,fetch   # a subset; scale=0.2 cuts iterations
 ddev bench tag=run1 && ddev bench tag=run2   # two runs, then pool them:
@@ -22,12 +21,15 @@ ddev bench-zts       # FrankenPHP worker mode, PHP ZTS, in Docker (about 10 min)
 
 - `ddev bench` builds the Extension in release (`lto = "fat"`, as it ships)
   into `/var/cache/cargo-target/bench` (`BENCH_TARGET_DIR` overrides it),
-  runs `crosscheck.php`, then `run.php`, which writes
+  runs `schema.php` (it creates the objects the cases read, afresh), then
+  `crosscheck.php`, then `run.php`, which writes
   `output/summary-<tag>.md` and `output/raw-<tag>.jsonl` (not committed).
   `run.php from=<tag>,<tag>` runs nothing: it pools those raw files into
   one summary.
-- Another schema: set `ORACLE_USER` / `ORACLE_PASSWORD` (it needs the
-  fixtures, and `fixtures/sql/grants.sql` for `layers`).
+- The cases run as the user `bench` (`ORACLE_USER` / `ORACLE_PASSWORD`
+  change it), which `schema.php` creates through the admin user
+  (`ORACLE_ADMIN_USER` / `ORACLE_ADMIN_PASSWORD`, default `system` /
+  `oracle`) when it is missing.
 - From a worktree, run the scripts the commands run:
   `bash .ddev/commands/web/bench` inside the web container,
   `packages/php-oracle/bench/zts/run.sh` on the host.
@@ -60,13 +62,13 @@ ddev bench-zts       # FrankenPHP worker mode, PHP ZTS, in Docker (about 10 min)
 
 | Scenario | Work per iteration |
 |---|---|
-| `call` | `fx_scalar.echo_out`: 3 IN (NUMBER, multibyte VARCHAR2, DATE) and 3 OUT, by `procedure()` or `run()` of the spike's block |
-| `fetch` | `fx_bench_rows`: 10,000 rows × 9 columns (integer and decimal NUMBER, BINARY_DOUBLE, ASCII and multibyte VARCHAR2, a nullable VARCHAR2, DATE, TIMESTAMP(6)), with `all()` or `foreach` |
+| `call` | `bench_echo_out`: 3 IN (NUMBER, multibyte VARCHAR2, DATE) and 3 OUT, by `procedure()` or `run()` of the spike's block |
+| `fetch` | `bench_rows`: 10,000 rows × 9 columns (integer and decimal NUMBER, BINARY_DOUBLE, ASCII and multibyte VARCHAR2, a nullable VARCHAR2, DATE, TIMESTAMP(6)), with `all()` or `foreach` |
 | `numbers`, `dates` | the NUMBER / BINARY_DOUBLE columns, or the DATE / TIMESTAMP columns, of the same 10,000 rows, under each `ValueMapping` mode |
-| `cursor` | `fx_cursor.items(1000)`: a REF CURSOR of 1,000 rows × 5 columns |
-| `lobs` | `fx_bench_lobs`: 1,000 rows with a 1,000-character CLOB and a 1,000-byte BLOB, read whole |
-| `largelob` | one 16 MiB BLOB (`fx_lobs` row 4), read whole |
-| `insert` | 1,000 rows into `fx_batch_rows`: `runMany()` against an oci8 loop and an oci8 `FORALL` block |
+| `cursor` | `bench_items_cursor(1000)`: a REF CURSOR of 1,000 rows × 5 columns |
+| `lobs` | `bench_lobs`: 1,000 rows with a 1,000-character CLOB and a 1,000-byte BLOB, read whole |
+| `largelob` | one 16 MiB BLOB (`bench_large_lob`), read whole |
+| `insert` | 1,000 rows into `bench_batch_rows`: `runMany()` against an oci8 loop and an oci8 `FORALL` block |
 | `connect`, `request`, `logon` | `Oracle::connect()` + `close()` through the Pool against `oci_pconnect()` + `oci_close()`; the same with a one-row query; `standalone` against `oci_new_connect()` |
 
 `bench/zts` runs the spike's FrankenPHP case: 8 worker threads, `wrk` at 1

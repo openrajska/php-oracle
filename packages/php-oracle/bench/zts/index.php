@@ -33,7 +33,7 @@ $i = 0;
 
 function core_scalar(Connection $connection, int $i): int
 {
-    $execution = $connection->procedure('fx_scalar.echo_out', [
+    $execution = $connection->procedure('bench_echo_out', [
         ...scalar_in($i),
         'p_date' => new In\Date(new DateTimeImmutable(SCALAR_DATE)),
         'o_num' => new Out\Number(),
@@ -81,7 +81,7 @@ $handler = static function () use ($context, $config, $heldConfig, &$held, &$i):
 
             return core_scalar($connection, $i);
         })(),
-        'cursor' => count($connection->function('fx_cursor.items', ['p_limit' => CURSOR_ROWS])->cursor()->all()),
+        'cursor' => count($connection->function('bench_items_cursor', ['p_limit' => CURSOR_ROWS])->cursor()->all()),
         'fetch' => count($connection->select(SQL_FETCH)->all()),
     };
     if ($driver === 'core-held') {

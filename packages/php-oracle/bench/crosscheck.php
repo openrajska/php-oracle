@@ -14,7 +14,7 @@ use Rajska\Oracle\Bench\Oci8Values;
 $context = BenchContext::fromEnvironment();
 $cases = bench_cases();
 $written = static function () use ($context): array {
-    $statement = oci8_query($context->oci8(), 'select id, code, qty from fx_batch_rows where id between 700001 and 701000 order by id');
+    $statement = oci8_query($context->oci8(), 'select id, code, qty from bench_batch_rows where id between 700001 and 701000 order by id');
 
     return oci8_drain($statement, 'all', 'exact');
 };

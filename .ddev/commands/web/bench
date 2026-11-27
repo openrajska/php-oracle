@@ -23,8 +23,10 @@ cd "$root/packages/php-oracle/bench"
 # bench/php.ini alone, no conf.d: the same settings for both drivers.
 export PHP_INI_SCAN_DIR=
 if [ "${1:-}" = layers ]; then
+    php -c php.ini -d extension="$extension" schema.php
     shift
     exec php -c php.ini -d extension=oci8 -d extension="$extension" layers.php "$@"
 fi
+php -c php.ini -d extension="$extension" schema.php
 php -c php.ini -d extension=oci8 -d extension="$extension" crosscheck.php
 exec php -c php.ini run.php extension="$extension" "$@"
