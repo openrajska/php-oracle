@@ -71,7 +71,7 @@ final readonly class Lob
      *
      * @return resource
      */
-    public function stream() // @phpstan-ignore typeCoverage.returnTypeCoverage (@pest-ignore-type: PHP has no native resource type)
+    public function stream() // @pest-ignore-type
     {
         $this->ensureOpen();
 
