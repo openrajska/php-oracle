@@ -40,26 +40,6 @@ beforeEach(function (): void {
     schema()->run('create type statement_numbers as table of number');
 });
 
-test('bind values never reach the sql text', function (): void {
-    $tag = 'sql-text-' . bin2hex(random_bytes(6));
-    $value = 'bound-value-' . bin2hex(random_bytes(6));
-    $statements = [
-        "select :v /* $tag */ from dual",
-        "update statement_items set name = name where name = :v /* $tag */",
-        "declare x varchar2(100) := :v; /* $tag */ begin null; end;",
-    ];
-    $connection = $this->connect();
-
-    foreach ($statements as $sql) {
-        $connection->execute($sql, ['v' => $value], $this->options());
-    }
-
-    $texts = array_column(otherSession()->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag])->all(), 'SQL_TEXT');
-    $leaks = otherSession()->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value])->all();
-    expect($texts)->toContain(...$statements)
-        ->and($leaks)->toBeEmpty();
-});
-
 /**
  * Each statement kind, the row count it reports and whether it gives a
  * Cursor.
@@ -73,18 +53,6 @@ dataset('statementKinds', function () {
     yield 'anonymous block' => ['begin update statement_rows set id = id + 1; end;', 0, false];
 });
 
-test('every statement kind returns a complete execution', function (string $sql, int $rowCount, bool $query): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute($sql, [], $this->options());
-
-    expect($execution->rowCount())->toBe($rowCount)
-        ->and($execution->cursor() instanceof Cursor)->toBe($query)
-        ->and($execution->outValues())->toBeEmpty()
-        ->and($execution->implicitResults())->toBeEmpty()
-        ->and($execution->warning())->toBeNull();
-})->with('statementKinds');
-
 /**
  * @return iterable<string, array{RowShape, KeyCase, list<array<int|string, int>>}>
  */
@@ -94,129 +62,12 @@ dataset('rowShapes', function () {
     yield 'list rows, in column order' => [RowShape::List, KeyCase::Native, [[1, 2, 3]]];
 });
 
-test('rows take the row shape and key case of the options', function (RowShape $rowShape, KeyCase $keyCase, array $expected): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select 1 as one, 2 as "Two", 3 as "three" from dual', options: $this->options(rowShape: $rowShape, keyCase: $keyCase));
-
-    expect($rows)->toBe($expected);
-})->with('rowShapes');
-
 /**
  * @return iterable<string, array{string, KeyCase}>
  */
 dataset('duplicateColumns', function () {
     yield 'the same name' => ['select 1 as a, 2 as a from dual', KeyCase::Native];
     yield 'names equal once lowercased' => ['select 1 as a, 2 as "a" from dual', KeyCase::Lower];
-});
-
-test('duplicate column names under assoc fail at cursor open with a hint', function (string $sql, KeyCase $keyCase): void {
-    $connection = $this->connect();
-    $thrown = null;
-
-    try {
-        $connection->execute($sql, [], $this->options(keyCase: $keyCase));
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
-
-    expect($thrown?->getMessage())->toContain('alias', 'RowShape::List')
-        ->and($thrown?->sql())->toBe($sql);
-})->with('duplicateColumns');
-
-test('duplicate column names read as list rows', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select 1 as a, 2 as a from dual', options: $this->options(rowShape: RowShape::List));
-
-    expect($rows)->toBe([[1, 2]]);
-});
-
-test('columns describe every scalar field before the first row also for an empty result', function (): void {
-    $connection = $this->connect();
-
-    $cursor = $connection->execute(<<<'SQL'
-        select i.id, i.price, i.name, i.created_at, i.rowid,
-               cast(null as number) unconstrained, cast(null as float(53)) float53,
-               cast(null as char(5)) ch, cast(null as nchar(5)) nch, cast(null as nvarchar2(10)) nv,
-               cast(null as raw(16)) r,
-               cast(null as timestamp(3)) ts, cast(null as timestamp with time zone) tstz,
-               cast(null as timestamp(9) with local time zone) tsltz,
-               cast(null as interval day(3) to second(2)) ids, cast(null as interval year(4) to month) iym,
-               cast(null as binary_float) bf, cast(null as binary_double) bd, true b,
-               cast(null as urowid) ur, empty_clob() cl, to_nclob('') ncl, empty_blob() bl
-          from statement_items i
-         where 1 = 0
-        SQL, [], $this->options())->cursor();
-
-    assert($cursor !== null);
-    expect($cursor->columns())->toBe([
-        column('ID', 'number', nullable: false, precision: 10, scale: 0),
-        column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
-        column('NAME', 'varchar', nullable: false, maxSize: 100),
-        column('CREATED_AT', 'date', nullable: false),
-        column('ROWID', 'rowid', nullable: false),
-        column('UNCONSTRAINED', 'number'),
-        column('FLOAT53', 'number', precision: 53),
-        column('CH', 'char', maxSize: 5),
-        column('NCH', 'nChar', maxSize: 5),
-        column('NV', 'nVarchar', maxSize: 10),
-        column('R', 'raw', maxSize: 16),
-        column('TS', 'timestamp', scale: 3),
-        column('TSTZ', 'timestampTz', scale: 6),
-        column('TSLTZ', 'timestampLtz', scale: 9),
-        column('IDS', 'intervalDs', precision: 3, scale: 2),
-        column('IYM', 'intervalYm', precision: 4),
-        column('BF', 'binaryFloat'),
-        column('BD', 'binaryDouble'),
-        column('B', 'boolean'),
-        column('UR', 'urowid'),
-        column('CL', 'clob'),
-        column('NCL', 'nClob'),
-        column('BL', 'blob'),
-    ])
-        ->and($cursor->fetchBatch())->toBeEmpty();
-});
-
-test('columns describe json vector object collection cursor and bfile fields', function (): void {
-    $schema = strtoupper($this->config()->user);
-    $connection = $this->connect();
-
-    $cursor = $connection->execute(<<<'SQL'
-        select cast(null as json) j,
-               to_vector('[1,2,3]', 3, float32) v, to_vector('[1,2]', *, *) flexible,
-               to_vector('[10,[1],[1.0]]', 10, float64, sparse) sparse,
-               statement_point(1, 2, 'p') point, statement_numbers(1, 2) numbers,
-               cursor(select 1 from dual) nested, bfilename('NO_SUCH_DIRECTORY', 'x') locator
-          from dual
-        SQL, [], $this->options())->cursor();
-
-    assert($cursor !== null);
-    expect($cursor->columns())->toBe([
-        column('J', 'json'),
-        column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
-        column('FLEXIBLE', 'vector'),
-        column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
-        column('POINT', 'object', objectType: "$schema.STATEMENT_POINT"),
-        column('NUMBERS', 'collection', objectType: "$schema.STATEMENT_NUMBERS"),
-        column('NESTED', 'cursor'),
-        column('LOCATOR', 'bfile'),
-    ]);
-    $cursor->close();
-});
-
-test('columns describe long columns and follow the key case', function (): void {
-    $connection = $this->connect();
-
-    $cursor = $connection->execute(
-        'select t.text, b.bytes from statement_longs t cross join statement_long_raws b',
-        [],
-        $this->options(keyCase: KeyCase::Lower),
-    )->cursor();
-
-    assert($cursor !== null);
-    expect($cursor->columns())->toBe([column('text', 'long'), column('bytes', 'longRaw')]);
-    $cursor->close();
 });
 
 /**
@@ -248,116 +99,277 @@ dataset('usesAfterClose', function () {
     yield "a LOB's readChunk()" => [static fn (Session $c): Closure => lob($c)->readChunk(...)];
 });
 
-test('after close every call and every result fails as use after close', function (Closure $prepare): void {
-    $connection = $this->connect(...$this->ownPool());
-    $use = $prepare($connection);
-    assert($use instanceof Closure);
-    $connection->close();
-    $thrown = null;
+describe('running statements', function (): void {
+    it('keeps bind values out of the sql text', function (): void {
+        $tag = 'sql-text-' . bin2hex(random_bytes(6));
+        $value = 'bound-value-' . bin2hex(random_bytes(6));
+        $statements = [
+            "select :v /* $tag */ from dual",
+            "update statement_items set name = name where name = :v /* $tag */",
+            "declare x varchar2(100) := :v; /* $tag */ begin null; end;",
+        ];
+        $connection = $this->connect();
 
-    try {
-        $use();
-    } catch (Throwable $throwable) {
-        $thrown = $throwable;
-    }
+        foreach ($statements as $sql) {
+            $connection->execute($sql, ['v' => $value], $this->options());
+        }
 
-    expect($thrown)->toBeInstanceOf(UsageException::class)
-        ->and($thrown?->getMessage())->toBe('The Connection is closed.');
-})->with('usesAfterClose');
+        $texts = array_column(otherSession()->select('select sql_text from v$sql where instr(sql_text, :tag) > 0', ['tag' => $tag])->all(), 'SQL_TEXT');
+        $leaks = otherSession()->select('select sql_text from v$sql where instr(sql_text, :value) > 0', ['value' => $value])->all();
+        expect($texts)->toContain(...$statements)
+            ->and($leaks)->toBeEmpty();
+    });
 
-test("after close the session's next owner is unaffected by what the last one left", function (Closure $prepare): void {
-    $fields = $this->ownPool() + ['maxConnections' => 1];
-    $connection = $this->connect(...$fields);
-    $session = $this->session($connection);
-    $use = $prepare($connection);
-    assert($use instanceof Closure);
-    $connection->close();
-    expect(fn () => $use())->toThrow(UsageException::class);
+    it('returns a complete execution for every statement kind', function (string $sql, int $rowCount, bool $query): void {
+        $connection = $this->connect();
 
-    $next = $this->connect(...$fields);
+        $execution = $connection->execute($sql, [], $this->options());
 
-    expect($this->session($next))->toBe($session)
-        ->and($this->rows($next, 'select level as n from dual connect by level <= 3', [], $this->options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
-})->with('usesAfterClose');
-
-test('a duplicate gives unique violation exception', function (): void {
-    $connection = $this->connect();
-    $sql = "insert into statement_codes (id, code) values (1, 'duplicate')";
-    $thrown = null;
-
-    try {
-        $connection->execute($sql, [], $this->options());
-    } catch (UniqueViolationException $uniqueViolationException) {
-        $thrown = $uniqueViolationException;
-    }
-
-    expect($thrown?->getCode())->toBe(1)
-        ->and($thrown?->getMessage())->toStartWith('ORA-00001')
-        ->and($thrown?->sql())->toBe($sql)
-        ->and($thrown?->call())->toBeNull();
+        expect($execution->rowCount())->toBe($rowCount)
+            ->and($execution->cursor() instanceof Cursor)->toBe($query)
+            ->and($execution->outValues())->toBeEmpty()
+            ->and($execution->implicitResults())->toBeEmpty()
+            ->and($execution->warning())->toBeNull();
+    })->with('statementKinds');
 });
 
-test('a unique violation on a fresh connection carries no ora 03301 line and no bound value', function (): void {
-    $connection = $this->connect(...$this->ownPool());
-    $insert = 'insert into statement_codes (id, code) values (:id, :code)';
-    $connection->execute($insert, ['id' => 2, 'code' => 'zq39secret'], $this->options(autocommit: false));
-    $thrown = null;
+describe('rows', function (): void {
+    it('take the row shape and key case of the options', function (RowShape $rowShape, KeyCase $keyCase, array $expected): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute($insert, ['id' => 3, 'code' => 'zq39secret'], $this->options(autocommit: false));
-    } catch (UniqueViolationException $uniqueViolationException) {
-        $thrown = $uniqueViolationException;
-    }
+        $rows = $this->rows($connection, 'select 1 as one, 2 as "Two", 3 as "three" from dual', options: $this->options(rowShape: $rowShape, keyCase: $keyCase));
 
-    expect($thrown?->getMessage())->toStartWith('ORA-00001')
-        ->not->toContain('ORA-03301')
-        ->not->toContain('zq39secret');
+        expect($rows)->toBe($expected);
+    })->with('rowShapes');
+
+    it('fail at cursor open with a hint when column names repeat under assoc', function (string $sql, KeyCase $keyCase): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute($sql, [], $this->options(keyCase: $keyCase));
+        } catch (UsageException $usageException) {
+            $thrown = $usageException;
+        }
+
+        expect($thrown?->getMessage())->toContain('alias', 'RowShape::List')
+            ->and($thrown?->sql())->toBe($sql);
+    })->with('duplicateColumns');
+
+    it('read repeated column names as list rows', function (): void {
+        $connection = $this->connect();
+
+        $rows = $this->rows($connection, 'select 1 as a, 2 as a from dual', options: $this->options(rowShape: RowShape::List));
+
+        expect($rows)->toBe([[1, 2]]);
+    });
 });
 
-test('a syntax error gives query exception with the server offset', function (string $sql, int $code, int $offset): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('column descriptions', function (): void {
+    it('describe every scalar field before the first row and for an empty result', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute($sql, [], $this->options());
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
+        $cursor = $connection->execute(<<<'SQL'
+            select i.id, i.price, i.name, i.created_at, i.rowid,
+                   cast(null as number) unconstrained, cast(null as float(53)) float53,
+                   cast(null as char(5)) ch, cast(null as nchar(5)) nch, cast(null as nvarchar2(10)) nv,
+                   cast(null as raw(16)) r,
+                   cast(null as timestamp(3)) ts, cast(null as timestamp with time zone) tstz,
+                   cast(null as timestamp(9) with local time zone) tsltz,
+                   cast(null as interval day(3) to second(2)) ids, cast(null as interval year(4) to month) iym,
+                   cast(null as binary_float) bf, cast(null as binary_double) bd, true b,
+                   cast(null as urowid) ur, empty_clob() cl, to_nclob('') ncl, empty_blob() bl
+              from statement_items i
+             where 1 = 0
+            SQL, [], $this->options())->cursor();
 
-    assert($thrown instanceof QueryException);
-    expect($thrown::class)->toBe(QueryException::class)
-        ->and($thrown->getCode())->toBe($code)
-        ->and($thrown->offset())->toBe($offset)
-        ->and($thrown->sql())->toBe($sql);
-})->with([
-    'a misspelled keyword' => ['select 1 fro dual', 923, 13],
-    'an unknown column' => ['select nosuchcolumn from dual', 904, 7],
-]);
+        assert($cursor !== null);
+        expect($cursor->columns())->toBe([
+            column('ID', 'number', nullable: false, precision: 10, scale: 0),
+            column('PRICE', 'number', nullable: false, precision: 10, scale: 2),
+            column('NAME', 'varchar', nullable: false, maxSize: 100),
+            column('CREATED_AT', 'date', nullable: false),
+            column('ROWID', 'rowid', nullable: false),
+            column('UNCONSTRAINED', 'number'),
+            column('FLOAT53', 'number', precision: 53),
+            column('CH', 'char', maxSize: 5),
+            column('NCH', 'nChar', maxSize: 5),
+            column('NV', 'nVarchar', maxSize: 10),
+            column('R', 'raw', maxSize: 16),
+            column('TS', 'timestamp', scale: 3),
+            column('TSTZ', 'timestampTz', scale: 6),
+            column('TSLTZ', 'timestampLtz', scale: 9),
+            column('IDS', 'intervalDs', precision: 3, scale: 2),
+            column('IYM', 'intervalYm', precision: 4),
+            column('BF', 'binaryFloat'),
+            column('BD', 'binaryDouble'),
+            column('B', 'boolean'),
+            column('UR', 'urowid'),
+            column('CL', 'clob'),
+            column('NCL', 'nClob'),
+            column('BL', 'blob'),
+        ])
+            ->and($cursor->fetchBatch())->toBeEmpty();
+    });
 
-test('a compilation error gives a warning every time it runs', function (): void {
-    $connection = $this->connect();
+    it('describe json vector object collection cursor and bfile fields', function (): void {
+        $schema = strtoupper($this->config()->user);
+        $connection = $this->connect();
 
-    $warnings = [
-        $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
-        $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
-    ];
+        $cursor = $connection->execute(<<<'SQL'
+            select cast(null as json) j,
+                   to_vector('[1,2,3]', 3, float32) v, to_vector('[1,2]', *, *) flexible,
+                   to_vector('[10,[1],[1.0]]', 10, float64, sparse) sparse,
+                   statement_point(1, 2, 'p') point, statement_numbers(1, 2) numbers,
+                   cursor(select 1 from dual) nested, bfilename('NO_SUCH_DIRECTORY', 'x') locator
+              from dual
+            SQL, [], $this->options())->cursor();
 
-    expect($warnings[0])->toContain('compilation errors')
-        ->and($warnings[1])->toContain('compilation errors');
+        assert($cursor !== null);
+        expect($cursor->columns())->toBe([
+            column('J', 'json'),
+            column('V', 'vector', vectorDimensions: 3, vectorFormat: 'float32'),
+            column('FLEXIBLE', 'vector'),
+            column('SPARSE', 'vector', vectorDimensions: 10, vectorFormat: 'float64', sparse: true),
+            column('POINT', 'object', objectType: "$schema.STATEMENT_POINT"),
+            column('NUMBERS', 'collection', objectType: "$schema.STATEMENT_NUMBERS"),
+            column('NESTED', 'cursor'),
+            column('LOCATOR', 'bfile'),
+        ]);
+        $cursor->close();
+    });
+
+    it('describe long columns and follow the key case', function (): void {
+        $connection = $this->connect();
+
+        $cursor = $connection->execute(
+            'select t.text, b.bytes from statement_longs t cross join statement_long_raws b',
+            [],
+            $this->options(keyCase: KeyCase::Lower),
+        )->cursor();
+
+        assert($cursor !== null);
+        expect($cursor->columns())->toBe([column('text', 'long'), column('bytes', 'longRaw')]);
+        $cursor->close();
+    });
 });
 
-test('a statement after a compilation error gives no warning', function (string $sql): void {
-    $connection = $this->connect();
-    $connection->execute(INVALID_UNIT, [], $this->options());
+describe('closing the connection', function (): void {
+    it('fails every call and every result as use after close', function (Closure $prepare): void {
+        $connection = $this->connect(...$this->ownPool());
+        $use = $prepare($connection);
+        assert($use instanceof Closure);
+        $connection->close();
+        $thrown = null;
 
-    $warning = $connection->execute($sql, [], $this->options())->warning();
+        try {
+            $use();
+        } catch (Throwable $throwable) {
+            $thrown = $throwable;
+        }
 
-    expect($warning)->toBeNull();
-})->with([
-    'a query' => ['select 1 from dual'],
-    'a block' => ['begin null; end;'],
-    'a valid unit' => ['create or replace procedure invalid_unit is begin null; end;'],
-]);
+        expect($thrown)->toBeInstanceOf(UsageException::class)
+            ->and($thrown?->getMessage())->toBe('The Connection is closed.');
+    })->with('usesAfterClose');
+
+    it('leaves the next owner of the session unaffected by what the last one left', function (Closure $prepare): void {
+        $fields = $this->ownPool() + ['maxConnections' => 1];
+        $connection = $this->connect(...$fields);
+        $session = $this->session($connection);
+        $use = $prepare($connection);
+        assert($use instanceof Closure);
+        $connection->close();
+        expect(fn () => $use())->toThrow(UsageException::class);
+
+        $next = $this->connect(...$fields);
+
+        expect($this->session($next))->toBe($session)
+            ->and($this->rows($next, 'select level as n from dual connect by level <= 3', [], $this->options(fetchSize: 1)))->toBe([['N' => 1], ['N' => 2], ['N' => 3]]);
+    })->with('usesAfterClose');
+});
+
+describe('failing statements', function (): void {
+    it('throws unique violation exception for a duplicate key', function (): void {
+        $connection = $this->connect();
+        $sql = "insert into statement_codes (id, code) values (1, 'duplicate')";
+        $thrown = null;
+
+        try {
+            $connection->execute($sql, [], $this->options());
+        } catch (UniqueViolationException $uniqueViolationException) {
+            $thrown = $uniqueViolationException;
+        }
+
+        expect($thrown?->getCode())->toBe(1)
+            ->and($thrown?->getMessage())->toStartWith('ORA-00001')
+            ->and($thrown?->sql())->toBe($sql)
+            ->and($thrown?->call())->toBeNull();
+    });
+
+    it('keeps the ora 03301 line and the bound value out of a unique violation', function (): void {
+        $connection = $this->connect(...$this->ownPool());
+        $insert = 'insert into statement_codes (id, code) values (:id, :code)';
+        $connection->execute($insert, ['id' => 2, 'code' => 'zq39secret'], $this->options(autocommit: false));
+        $thrown = null;
+
+        try {
+            $connection->execute($insert, ['id' => 3, 'code' => 'zq39secret'], $this->options(autocommit: false));
+        } catch (UniqueViolationException $uniqueViolationException) {
+            $thrown = $uniqueViolationException;
+        }
+
+        expect($thrown?->getMessage())->toStartWith('ORA-00001')
+            ->not->toContain('ORA-03301')
+            ->not->toContain('zq39secret');
+    });
+
+    it('throws query exception with the server offset for a syntax error', function (string $sql, int $code, int $offset): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute($sql, [], $this->options());
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
+
+        assert($thrown instanceof QueryException);
+        expect($thrown::class)->toBe(QueryException::class)
+            ->and($thrown->getCode())->toBe($code)
+            ->and($thrown->offset())->toBe($offset)
+            ->and($thrown->sql())->toBe($sql);
+    })->with([
+        'a misspelled keyword' => ['select 1 fro dual', 923, 13],
+        'an unknown column' => ['select nosuchcolumn from dual', 904, 7],
+    ]);
+});
+
+describe('compilation warnings', function (): void {
+    it('gives a warning every time a compilation error runs', function (): void {
+        $connection = $this->connect();
+
+        $warnings = [
+            $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
+            $connection->execute(INVALID_UNIT, [], $this->options())->warning(),
+        ];
+
+        expect($warnings[0])->toContain('compilation errors')
+            ->and($warnings[1])->toContain('compilation errors');
+    });
+
+    it('gives no warning for the statement after a compilation error', function (string $sql): void {
+        $connection = $this->connect();
+        $connection->execute(INVALID_UNIT, [], $this->options());
+
+        $warning = $connection->execute($sql, [], $this->options())->warning();
+
+        expect($warning)->toBeNull();
+    })->with([
+        'a query' => ['select 1 from dual'],
+        'a block' => ['begin null; end;'],
+        'a valid unit' => ['create or replace procedure invalid_unit is begin null; end;'],
+    ]);
+});
 
 /**
  * @return array<string, mixed>

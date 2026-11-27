@@ -15,11 +15,6 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-/*
- * Five categories with multibyte names, and 10 items: item n is in category
- * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25.
- * implicit_results(n) returns items 1 .. n, then every category.
- */
 beforeEach(function (): void {
     schema()->run('create table implicit_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
@@ -59,47 +54,49 @@ beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
-test('a blocks implicit results come in order next to its out values', function (): void {
-    $execution = $this->connection->run(
-        'begin implicit_results(:n); select count(*) into :total from implicit_items; end;',
-        ['n' => 2, 'total' => new Out\Number()],
-    );
+describe('implicit results', function (): void {
+    it('gives them in order next to the out values of the block', function (): void {
+        $execution = $this->connection->run(
+            'begin implicit_results(:n); select count(*) into :total from implicit_items; end;',
+            ['n' => 2, 'total' => new Out\Number()],
+        );
 
-    [$items, $categories] = $execution->results();
+        [$items, $categories] = $execution->results();
 
-    expect($execution->results())->toHaveCount(2)
-        ->and($execution->out('total')->int())->toBe(10)
-        ->and(array_column($items->all(), 'NAME'))->toBe(['Item 0001', 'Item 0002'])
-        ->and(array_column($categories->all(), 'NAME'))->toBe(['Plain', 'Ação', 'Café', 'Straße', '日本']);
-});
-
-test('implicit results read in any order', function (): void {
-    $execution = $this->connection->procedure('implicit_results', ['p_limit' => 2], new Options(fetchSize: 2));
-    [$items, $categories] = $execution->results();
-
-    $firstCategories = \array_slice($categories->all(), 0, 2);
-
-    expect($execution->results())->toBe([$items, $categories])
-        ->and($firstCategories)->toBe([['ID' => 1, 'NAME' => 'Plain'], ['ID' => 2, 'NAME' => 'Ação']])
-        ->and($items->all())->toBe([['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']]);
-});
-
-test('implicit results inherit the executions options', function (): void {
-    $sid = $this->sid($this->connection);
-    $options = new Options(
-        fetchSize: 3,
-        values: new ValueMapping(numbers: NumberMode::Float),
-        rowShape: RowShape::List,
-        keyCase: KeyCase::Lower,
-    );
-    [$items] = $this->connection->procedure('implicit_results', ['p_limit' => 7], $options)->results();
-    $rows = [];
-
-    $trips = roundTrips($sid, static function () use ($items, &$rows): void {
-        $rows = $items->all();
+        expect($execution->results())->toHaveCount(2)
+            ->and($execution->out('total')->int())->toBe(10)
+            ->and(array_column($items->all(), 'NAME'))->toBe(['Item 0001', 'Item 0002'])
+            ->and(array_column($categories->all(), 'NAME'))->toBe(['Plain', 'Ação', 'Café', 'Straße', '日本']);
     });
 
-    expect(array_map(static fn (Column $column): string => $column->name, $items->columns()))->toBe(['id', 'name', 'price'])
-        ->and($rows)->toBe([[1, 'Item 0001', 1.25], [2, 'Item 0002', 2.5], [3, 'Item 0003', 3.75], [4, 'Item 0004', 5], [5, 'Item 0005', 6.25], [6, 'Item 0006', 7.5], [7, 'Item 0007', 8.75]])
-        ->and($trips)->toBe(3);
+    it('reads them in any order', function (): void {
+        $execution = $this->connection->procedure('implicit_results', ['p_limit' => 2], new Options(fetchSize: 2));
+        [$items, $categories] = $execution->results();
+
+        $firstCategories = \array_slice($categories->all(), 0, 2);
+
+        expect($execution->results())->toBe([$items, $categories])
+            ->and($firstCategories)->toBe([['ID' => 1, 'NAME' => 'Plain'], ['ID' => 2, 'NAME' => 'Ação']])
+            ->and($items->all())->toBe([['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']]);
+    });
+
+    it('gives them the options of the execution', function (): void {
+        $sid = $this->sid($this->connection);
+        $options = new Options(
+            fetchSize: 3,
+            values: new ValueMapping(numbers: NumberMode::Float),
+            rowShape: RowShape::List,
+            keyCase: KeyCase::Lower,
+        );
+        [$items] = $this->connection->procedure('implicit_results', ['p_limit' => 7], $options)->results();
+        $rows = [];
+
+        $trips = roundTrips($sid, static function () use ($items, &$rows): void {
+            $rows = $items->all();
+        });
+
+        expect(array_map(static fn (Column $column): string => $column->name, $items->columns()))->toBe(['id', 'name', 'price'])
+            ->and($rows)->toBe([[1, 'Item 0001', 1.25], [2, 'Item 0002', 2.5], [3, 'Item 0003', 3.75], [4, 'Item 0004', 5], [5, 'Item 0005', 6.25], [6, 'Item 0006', 7.5], [7, 'Item 0007', 8.75]])
+            ->and($trips)->toBe(3);
+    });
 });

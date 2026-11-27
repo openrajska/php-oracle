@@ -16,10 +16,6 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-/*
- * Five categories with multibyte names, and 10 items: item n is in category
- * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25.
- */
 beforeEach(function (): void {
     schema()->run('create table implicit_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
@@ -57,48 +53,6 @@ beforeEach(function (): void {
         SQL);
 });
 
-test('implicit results come in order next to an out value', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute(
-        'begin implicit_results(:n); select count(*) into :total from implicit_items; end;',
-        ['n' => 4, 'total' => new Out\Number()],
-        $this->options(),
-    );
-
-    [$items, $categories] = results($execution, 2);
-    expect($execution->outValues())->toBe(['total' => [10]])
-        ->and(array_column($items->columns(), 'name'))->toBe(['ID', 'NAME', 'PRICE'])
-        ->and(array_column($categories->columns(), 'name'))->toBe(['ID', 'NAME']);
-});
-
-test('implicit results read interleaved', function (): void {
-    $execution = $this->connect()->execute('begin implicit_results(:n); end;', ['n' => 4], $this->options(fetchSize: 2));
-    [$items, $categories] = results($execution, 2);
-
-    $batches = [$categories->fetchBatch(), $items->fetchBatch(), $categories->fetchBatch(), $items->fetchBatch(), $items->fetchBatch(), $categories->fetchBatch(), $categories->fetchBatch()];
-
-    expect($batches)->toBe([
-        [['ID' => 1, 'NAME' => 'Plain'], ['ID' => 2, 'NAME' => 'Ação']],
-        [['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']],
-        [['ID' => 3, 'NAME' => 'Café'], ['ID' => 4, 'NAME' => 'Straße']],
-        [['ID' => 3, 'NAME' => 'Item 0003', 'PRICE' => '3.75'], ['ID' => 4, 'NAME' => 'Item 0004', 'PRICE' => 5]],
-        [],
-        [['ID' => 5, 'NAME' => '日本']],
-        [],
-    ]);
-});
-
-test('an implicit result reads on its own after its execution is dropped', function (): void {
-    $connection = $this->connect();
-    $categories = results($connection->execute('begin implicit_results(:n); end;', ['n' => 3], $this->options()), 2)[1];
-
-    $ids = array_column(drain($categories), 'ID');
-
-    expect($ids)->toBe([1, 2, 3, 4, 5])
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-});
-
 /**
  * @return iterable<string, array{string, array<string, mixed>}>
  */
@@ -108,48 +62,92 @@ dataset('withoutResults', function () {
     yield 'DML' => ['update implicit_categories set name = name where id = 0', []];
 });
 
-test('a statement with no return result gives no implicit results', function (string $sql, array $binds): void {
-    /** @var array<string, mixed> $binds */
-    $connection = $this->connect();
+describe('implicit results', function (): void {
+    it('gives the results in order next to an out value', function (): void {
+        $connection = $this->connect();
 
-    $results = $connection->execute($sql, $binds, $this->options())->implicitResults();
+        $execution = $connection->execute(
+            'begin implicit_results(:n); select count(*) into :total from implicit_items; end;',
+            ['n' => 4, 'total' => new Out\Number()],
+            $this->options(),
+        );
 
-    expect($results)->toBeEmpty();
-})->with('withoutResults');
+        [$items, $categories] = results($execution, 2);
+        expect($execution->outValues())->toBe(['total' => [10]])
+            ->and(array_column($items->columns(), 'name'))->toBe(['ID', 'NAME', 'PRICE'])
+            ->and(array_column($categories->columns(), 'name'))->toBe(['ID', 'NAME']);
+    });
 
-test('a raise after return result throws every time', function (): void {
-    $connection = $this->connect();
-    $codes = [];
+    it('reads the results interleaved', function (): void {
+        $execution = $this->connect()->execute('begin implicit_results(:n); end;', ['n' => 4], $this->options(fetchSize: 2));
+        [$items, $categories] = results($execution, 2);
 
-    for ($i = 0; $i < 500; ++$i) {
-        try {
-            $connection->execute("begin implicit_results(3); raise_application_error(-20056, 'after the results'); end;", [], $this->options());
-            $codes[] = 0;
-        } catch (QueryException $queryException) {
-            $codes[] = $queryException->getCode();
+        $batches = [$categories->fetchBatch(), $items->fetchBatch(), $categories->fetchBatch(), $items->fetchBatch(), $items->fetchBatch(), $categories->fetchBatch(), $categories->fetchBatch()];
+
+        expect($batches)->toBe([
+            [['ID' => 1, 'NAME' => 'Plain'], ['ID' => 2, 'NAME' => 'Ação']],
+            [['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'], ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5']],
+            [['ID' => 3, 'NAME' => 'Café'], ['ID' => 4, 'NAME' => 'Straße']],
+            [['ID' => 3, 'NAME' => 'Item 0003', 'PRICE' => '3.75'], ['ID' => 4, 'NAME' => 'Item 0004', 'PRICE' => 5]],
+            [],
+            [['ID' => 5, 'NAME' => '日本']],
+            [],
+        ]);
+    });
+
+    it('reads a result on its own after its execution is dropped', function (): void {
+        $connection = $this->connect();
+        $categories = results($connection->execute('begin implicit_results(:n); end;', ['n' => 3], $this->options()), 2)[1];
+
+        $ids = array_column(drain($categories), 'ID');
+
+        expect($ids)->toBe([1, 2, 3, 4, 5])
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    });
+
+    it('gives no results for a statement without return result', function (string $sql, array $binds): void {
+        /** @var array<string, mixed> $binds */
+        $connection = $this->connect();
+
+        $results = $connection->execute($sql, $binds, $this->options())->implicitResults();
+
+        expect($results)->toBeEmpty();
+    })->with('withoutResults');
+
+    it('throws every time a raise follows return result', function (): void {
+        $connection = $this->connect();
+        $codes = [];
+
+        for ($i = 0; $i < 500; ++$i) {
+            try {
+                $connection->execute("begin implicit_results(3); raise_application_error(-20056, 'after the results'); end;", [], $this->options());
+                $codes[] = 0;
+            } catch (QueryException $queryException) {
+                $codes[] = $queryException->getCode();
+            }
         }
-    }
 
-    expect(array_unique($codes))->toBe([20056])
-        ->and(array_column($this->rows($connection, 'select id from implicit_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
-});
+        expect(array_unique($codes))->toBe([20056])
+            ->and(array_column($this->rows($connection, 'select id from implicit_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
+    });
 
-test('implicit results inherit the executes options', function (): void {
-    $options = $this->options(
-        fetchSize: 3,
-        values: new ValueMapping(numbers: NumberMode::Float),
-        rowShape: RowShape::List,
-        keyCase: KeyCase::Lower,
-    );
+    it('gives the results the options of their execution', function (): void {
+        $options = $this->options(
+            fetchSize: 3,
+            values: new ValueMapping(numbers: NumberMode::Float),
+            rowShape: RowShape::List,
+            keyCase: KeyCase::Lower,
+        );
 
-    $execution = $this->connect()->execute('begin implicit_results(:n); end;', ['n' => 5], $options);
+        $execution = $this->connect()->execute('begin implicit_results(:n); end;', ['n' => 5], $options);
 
-    [$items, $categories] = results($execution, 2);
-    expect(array_column($items->columns(), 'name'))->toBe(['id', 'name', 'price'])
-        ->and($items->fetchBatch())->toBe([[1, 'Item 0001', 1.25], [2, 'Item 0002', 2.5], [3, 'Item 0003', 3.75]])
-        ->and($items->fetchBatch())->toBe([[4, 'Item 0004', 5], [5, 'Item 0005', 6.25]])
-        ->and(array_column($categories->columns(), 'name'))->toBe(['id', 'name'])
-        ->and($categories->fetchBatch())->toHaveCount(3);
+        [$items, $categories] = results($execution, 2);
+        expect(array_column($items->columns(), 'name'))->toBe(['id', 'name', 'price'])
+            ->and($items->fetchBatch())->toBe([[1, 'Item 0001', 1.25], [2, 'Item 0002', 2.5], [3, 'Item 0003', 3.75]])
+            ->and($items->fetchBatch())->toBe([[4, 'Item 0004', 5], [5, 'Item 0005', 6.25]])
+            ->and(array_column($categories->columns(), 'name'))->toBe(['id', 'name'])
+            ->and($categories->fetchBatch())->toHaveCount(3);
+    });
 });
 
 /**

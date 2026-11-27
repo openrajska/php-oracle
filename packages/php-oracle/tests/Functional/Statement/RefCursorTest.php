@@ -23,11 +23,6 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-/*
- * Five categories with multibyte names, and 250 items, more than one fetch:
- * item n is in category ((n - 1) mod 5) + 1, named 'Item 000n', priced
- * n * 1.25.
- */
 beforeEach(function (): void {
     schema()->run('create table ref_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
@@ -103,98 +98,6 @@ beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
-test('a procedure gives its ref cursors as cursors next to its scalars', function (): void {
-    $execution = report($this->connection);
-
-    $items = $execution->out('o_items')->cursor();
-
-    expect($execution->out('o_items')->cursor())->toBe($items)
-        ->and($execution->out('io_label')->string())->toBe('total!')
-        ->and($execution->out('o_total')->int())->toBe(250)
-        ->and($execution->out('io_names')->cursor()->all())->toBe([['NAME' => 'Plain'], ['NAME' => 'Ação']]);
-});
-
-test('ref cursors of one call read interleaved', function (): void {
-    $execution = report($this->connection);
-    $items = $execution->out('o_items')->cursor();
-    $categories = $execution->out('O_CATEGORIES')->cursor();
-    $ids = [];
-    $names = [];
-
-    foreach ($items as $item) {
-        $ids[] = $item['ID'];
-        if (\count($ids) === 1) {
-            foreach ($categories as $category) {
-                $names[] = $category['NAME'];
-            }
-        }
-    }
-
-    expect($ids)->toBe(range(1, 250))
-        ->and($names)->toBe(['Plain', 'Ação', 'Café', 'Straße', '日本']);
-});
-
-test('the cursor terminal gives a functions ref cursor', function (): void {
-    $categories = $this->connection->function('ref_cursors.categories_with_items')->cursor();
-
-    $items = [];
-    foreach ($categories as $category) {
-        $name = $category['NAME'];
-        assert(\is_string($name));
-        $items[$name] = array_column(nested($category['ITEMS'])->all(), 'ID');
-    }
-
-    expect($items)->toBe(['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]]);
-});
-
-test('ref cursors and nested cursors inherit the executions options', function (): void {
-    $options = new Options(
-        fetchSize: 3,
-        values: new ValueMapping(numbers: NumberMode::Float),
-        rowShape: RowShape::List,
-        keyCase: KeyCase::Lower,
-    );
-
-    $categories = $this->connection->function('ref_cursors.categories_with_items', options: $options)->cursor();
-
-    [$id, $name, $items] = $categories->getIterator()->current();
-    expect(array_map(static fn (Column $column): string => $column->name, $categories->columns()))->toBe(['id', 'name', 'items'])
-        ->and($categories->columns()[2]->type)->toBe(Type::Cursor)
-        ->and([$id, $name])->toBe([1, 'Plain'])
-        ->and(nested($items)->all())->toBe([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75], [16, 'Item 0016', 20]]);
-});
-
-test('a nested cursor fails once its parent closes', function (bool $started): void {
-    $parent = $this->connection->select(<<<'SQL'
-        select c.id, cursor(select i.id from ref_items i where i.category_id = c.id and i.id <= 20 order by i.id) as items
-          from ref_categories c
-         order by c.id
-        SQL);
-    $child = nested($parent->all()[0]['ITEMS']);
-    if ($started) {
-        $child->getIterator()->current();
-    }
-
-    $parent->close();
-
-    expect(fn (): array => $child->all())->toThrow(UsageException::class, 'The Cursor this one is nested in is closed, which closed this one too.');
-})->with(['started' => [true], 'unread' => [false]]);
-
-test('a nested cursor fetches with the executions fetch size', function (): void {
-    $sid = $this->sid($this->connection);
-    $options = new Options(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
-    $parent = $this->connection->select('select cursor(select level / 2 as half from dual connect by level <= 7) as halves from dual', options: $options);
-    $halves = nested($parent->all()[0]['halves']);
-    $rows = [];
-
-    $trips = roundTrips($sid, static function () use ($halves, &$rows): void {
-        $rows = $halves->all();
-    });
-
-    expect($rows)->toBe([['half' => 0.5], ['half' => 1], ['half' => 1.5], ['half' => 2], ['half' => 2.5], ['half' => 3], ['half' => 3.5]])
-        ->and($trips)->toBe(3);
-});
-
 /**
  * @return iterable<string, array{Closure(Cursor): mixed}>
  */
@@ -202,23 +105,6 @@ dataset('cursorsBoundBack', function () {
     yield 'as a plain value' => [static fn (Cursor $cursor): Cursor => $cursor];
     yield 'through InOut\Cursor' => [static fn (Cursor $cursor): InOut\Cursor => new InOut\Cursor($cursor)];
 });
-
-test('a cursor bound back to the server fails before any round trip', function (Closure $bind): void {
-    $sid = $this->sid($this->connection);
-    $cursor = $this->connection->function('ref_cursors.categories_with_items')->cursor();
-    $thrown = null;
-
-    $trips = roundTrips($sid, function () use ($bind, $cursor, &$thrown): void {
-        try {
-            $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind($cursor)]);
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
-    });
-
-    expect($thrown?->getMessage())->toContain("Bind 'c': passing a Cursor back to the server is not supported yet")
-        ->and($trips)->toBe(0);
-})->with('cursorsBoundBack');
 
 /**
  * @return iterable<string, array{Closure(Execution): mixed, string}>
@@ -234,23 +120,136 @@ dataset('cursorGetterMistakes', function () {
     ];
 });
 
-test('a getter of the wrong kind fails naming the right one', function (Closure $read, string $message): void {
-    $execution = $this->connection->run('begin open :c for select 1 from dual; :n := 5; end;', [
-        'c' => new Out\Cursor(),
-        'n' => new Out\Number(),
-    ]);
+describe('ref cursors', function (): void {
+    it('gives the ref cursors of a procedure as cursors next to its scalars', function (): void {
+        $execution = report($this->connection);
 
-    $call = static fn (): mixed => $read($execution);
+        $items = $execution->out('o_items')->cursor();
 
-    expect($call)->toThrow(UsageException::class, $message);
-})->with('cursorGetterMistakes');
+        expect($execution->out('o_items')->cursor())->toBe($items)
+            ->and($execution->out('io_label')->string())->toBe('total!')
+            ->and($execution->out('o_total')->int())->toBe(250)
+            ->and($execution->out('io_names')->cursor()->all())->toBe([['NAME' => 'Plain'], ['NAME' => 'Ação']]);
+    });
 
-test('value gives a ref cursor out value as a cursor', function (): void {
-    $execution = $this->connection->run('begin open :c for select 1 from dual; end;', ['c' => new Out\Cursor()]);
+    it('reads the ref cursors of one call interleaved', function (): void {
+        $execution = report($this->connection);
+        $items = $execution->out('o_items')->cursor();
+        $categories = $execution->out('O_CATEGORIES')->cursor();
+        $ids = [];
+        $names = [];
 
-    $cursor = $execution->out('c')->value();
+        foreach ($items as $item) {
+            $ids[] = $item['ID'];
+            if (\count($ids) === 1) {
+                foreach ($categories as $category) {
+                    $names[] = $category['NAME'];
+                }
+            }
+        }
 
-    expect(nested($cursor)->value())->toBe(1);
+        expect($ids)->toBe(range(1, 250))
+            ->and($names)->toBe(['Plain', 'Ação', 'Café', 'Straße', '日本']);
+    });
+
+    it('gives the ref cursor of a function as a cursor', function (): void {
+        $categories = $this->connection->function('ref_cursors.categories_with_items')->cursor();
+
+        $items = [];
+        foreach ($categories as $category) {
+            $name = $category['NAME'];
+            assert(\is_string($name));
+            $items[$name] = array_column(nested($category['ITEMS'])->all(), 'ID');
+        }
+
+        expect($items)->toBe(['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]]);
+    });
+
+    it('reads a ref cursor out value as a cursor through value', function (): void {
+        $execution = $this->connection->run('begin open :c for select 1 from dual; end;', ['c' => new Out\Cursor()]);
+
+        $cursor = $execution->out('c')->value();
+
+        expect(nested($cursor)->value())->toBe(1);
+    });
+
+    it('names the right getter when read with the wrong one', function (Closure $read, string $message): void {
+        $execution = $this->connection->run('begin open :c for select 1 from dual; :n := 5; end;', [
+            'c' => new Out\Cursor(),
+            'n' => new Out\Number(),
+        ]);
+
+        $call = static fn (): mixed => $read($execution);
+
+        expect($call)->toThrow(UsageException::class, $message);
+    })->with('cursorGetterMistakes');
+
+    it('fails before any round trip when a cursor is bound back to the server', function (Closure $bind): void {
+        $sid = $this->sid($this->connection);
+        $cursor = $this->connection->function('ref_cursors.categories_with_items')->cursor();
+        $thrown = null;
+
+        $trips = roundTrips($sid, function () use ($bind, $cursor, &$thrown): void {
+            try {
+                $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind($cursor)]);
+            } catch (UnsupportedException $unsupportedException) {
+                $thrown = $unsupportedException;
+            }
+        });
+
+        expect($thrown?->getMessage())->toContain("Bind 'c': passing a Cursor back to the server is not supported yet")
+            ->and($trips)->toBe(0);
+    })->with('cursorsBoundBack');
+});
+
+describe('nested cursors', function (): void {
+    it('gives them the options of the execution', function (): void {
+        $options = new Options(
+            fetchSize: 3,
+            values: new ValueMapping(numbers: NumberMode::Float),
+            rowShape: RowShape::List,
+            keyCase: KeyCase::Lower,
+        );
+
+        $categories = $this->connection->function('ref_cursors.categories_with_items', options: $options)->cursor();
+
+        [$id, $name, $items] = $categories->getIterator()->current();
+        expect(array_map(static fn (Column $column): string => $column->name, $categories->columns()))->toBe(['id', 'name', 'items'])
+            ->and($categories->columns()[2]->type)->toBe(Type::Cursor)
+            ->and([$id, $name])->toBe([1, 'Plain'])
+            ->and(nested($items)->all())->toBe([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75], [16, 'Item 0016', 20]]);
+    });
+
+    it('fails to read them once their parent closes', function (bool $started): void {
+        $parent = $this->connection->select(<<<'SQL'
+            select c.id, cursor(select i.id from ref_items i where i.category_id = c.id and i.id <= 20 order by i.id) as items
+              from ref_categories c
+             order by c.id
+            SQL);
+        $child = nested($parent->all()[0]['ITEMS']);
+        if ($started) {
+            $child->getIterator()->current();
+        }
+
+        $parent->close();
+
+        expect(fn (): array => $child->all())->toThrow(UsageException::class, 'The Cursor this one is nested in is closed, which closed this one too.');
+    })->with(['started' => [true], 'unread' => [false]]);
+
+    it('fetches them with the fetch size of the execution', function (): void {
+        $sid = $this->sid($this->connection);
+        $options = new Options(fetchSize: 3, values: new ValueMapping(numbers: NumberMode::Float), keyCase: KeyCase::Lower);
+        $parent = $this->connection->select('select cursor(select level / 2 as half from dual connect by level <= 7) as halves from dual', options: $options);
+        $halves = nested($parent->all()[0]['halves']);
+        $rows = [];
+
+        $trips = roundTrips($sid, static function () use ($halves, &$rows): void {
+            $rows = $halves->all();
+        });
+
+        expect($rows)->toBe([['half' => 0.5], ['half' => 1], ['half' => 1.5], ['half' => 2], ['half' => 2.5], ['half' => 3], ['half' => 3.5]])
+            ->and($trips)->toBe(3);
+    });
 });
 
 function report(Connection $connection): Execution

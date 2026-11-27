@@ -58,39 +58,6 @@ dataset('writes', function () {
     yield 'function()' => [static fn (Connection $c): float | int | string | null => $c->function('add_tx_row_count', ['p_id' => 1])->number()];
 });
 
-test('under autocommit each verb commits at once', function (Closure $write): void {
-    $write($this->connection);
-
-    expect(committed(otherSession()))->toBe([1]);
-})->with('writes');
-
-test('inside begin each verb stays in the transaction', function (Closure $write): void {
-    $this->connection->begin();
-
-    $write($this->connection);
-
-    expect(committed(otherSession()))->toBeEmpty();
-})->with('writes');
-
-test('commit makes the work since begin visible to other sessions', function (): void {
-    $this->connection->begin();
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    $this->connection->commit();
-
-    expect(committed(otherSession()))->toBe([1]);
-});
-
-test('rollback undoes the work since begin', function (): void {
-    $this->connection->begin();
-    $this->connection->run('insert into tx_rows (id) values (1)');
-    $this->connection->procedure('add_tx_row', ['p_id' => 2]);
-
-    $this->connection->rollback();
-
-    expect($this->connection->select('select count(*) from tx_rows')->value())->toBe(0);
-});
-
 /**
  * @return iterable<string, array{Closure(Connection): mixed}>
  */
@@ -105,58 +72,6 @@ dataset('transactionEnds', function () {
     }];
     yield 'transaction()' => [static fn (Connection $c) => $c->transaction(static fn (): null => null)];
 });
-
-test('after a transaction ends the connection is back in autocommit', function (Closure $transaction): void {
-    $transaction($this->connection);
-
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    expect(committed(otherSession()))->toBe([1]);
-})->with('transactionEnds');
-
-test('select for update under autocommit keeps no lock', function (): void {
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    $this->connection->select('select id from tx_rows where id = 1 for update')->all();
-
-    expect(locked('tx_rows', 1))->toBeFalse();
-});
-
-test('select for update inside begin keeps the lock', function (): void {
-    $this->connection->run('insert into tx_rows (id) values (1)');
-    $this->connection->begin();
-
-    $this->connection->select('select id from tx_rows where id = 1 for update')->all();
-
-    expect(locked('tx_rows', 1))->toBeTrue();
-});
-
-test('a function runs in the transaction open when its terminal is called', function (): void {
-    $pending = $this->connection->function('add_tx_row_count', ['p_id' => 1]);
-    $this->connection->begin();
-
-    $pending->number();
-
-    expect(committed(otherSession()))->toBeEmpty();
-});
-
-test('begin costs no round trip', function (): void {
-    $sid = $this->sid($this->connection);
-
-    $trips = roundTrips($sid, $this->connection->begin(...));
-
-    expect($trips)->toBe(0);
-});
-
-test('commit and rollback cost one round trip each', function (string $end): void {
-    $sid = $this->sid($this->connection);
-    $this->connection->begin();
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    $trips = roundTrips($sid, $this->connection->$end(...));
-
-    expect($trips)->toBe(1);
-})->with(['commit', 'rollback']);
 
 /**
  * Each misuse, its message, and the Round trips it costs: inside
@@ -209,136 +124,6 @@ dataset('misuses', function () {
     ];
 });
 
-test('a misused transaction verb throws usage exception before any round trip', function (Closure $misuse, string $message, int $expectedTrips = 0): void {
-    $sid = $this->sid($this->connection);
-    $thrown = null;
-
-    $trips = roundTrips($sid, function () use ($misuse, &$thrown): void {
-        try {
-            $misuse($this->connection);
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        }
-    });
-
-    assert($thrown instanceof UsageException);
-    expect($thrown->getMessage())->toContain($message)
-        ->and($trips)->toBe($expectedTrips);
-})->with('misuses');
-
-test('a misused commit leaves the connection in autocommit', function (): void {
-    expect(fn () => $this->connection->commit())->toThrow(UsageException::class);
-
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    expect(committed(otherSession()))->toBe([1]);
-});
-
-test('a misused begin leaves the transaction open', function (): void {
-    $this->connection->begin();
-    expect(fn () => $this->connection->begin())->toThrow(UsageException::class);
-
-    $this->connection->run('insert into tx_rows (id) values (1)');
-
-    expect(committed(otherSession()))->toBeEmpty();
-});
-
-test('transaction commits when the closure returns and gives back its value', function (): void {
-    $inside = null;
-
-    $result = $this->connection->transaction(function (Connection $connection) use (&$inside): string {
-        $connection->run('insert into tx_rows (id) values (1)');
-        $inside = committed(otherSession());
-
-        return 'done';
-    });
-
-    expect($result)->toBe('done')
-        ->and($inside)->toBeEmpty()
-        ->and(committed(otherSession()))->toBe([1]);
-});
-
-test('transaction rolls back and rethrows whatever the closure throws', function (Throwable $thrown): void {
-    $caught = null;
-
-    try {
-        $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
-            $connection->run('insert into tx_rows (id) values (1)');
-
-            throw $thrown;
-        });
-    } catch (Throwable $throwable) {
-        $caught = $throwable;
-    }
-
-    expect($caught)->toBe($thrown)
-        ->and($thrown->getPrevious())->toBeNull()
-        ->and($this->connection->select('select count(*) from tx_rows')->value())->toBe(0);
-})->with([
-    'an exception' => [new DomainException('the closure failed')],
-    'an error' => [new TypeError('the closure failed')],
-]);
-
-test('a failed rollback becomes previous of the rethrown exception', function (): void {
-    $connection = $this->connect(standalone: true);
-    $thrown = new DomainException('the closure failed');
-    $caught = null;
-
-    try {
-        $connection->transaction(function (Connection $connection) use ($thrown): never {
-            $connection->run('insert into tx_rows (id) values (1)');
-            kill($this->sid($connection));
-
-            throw $thrown;
-        });
-    } catch (DomainException $domainException) {
-        $caught = $domainException;
-    }
-
-    expect($caught)->toBe($thrown)
-        ->and($thrown->getPrevious())->toBeInstanceOf(ConnectionLostException::class)
-        ->and(committed(otherSession()))->toBeEmpty();
-});
-
-test('a failed rollback goes at the end of the previous chain of the rethrown exception', function (): void {
-    $connection = $this->connect();
-    $cause = new RuntimeException('the cause');
-    $thrown = new DomainException('the closure failed', 0, $cause);
-
-    $transaction = fn () => $connection->transaction(function (Connection $connection) use ($thrown): never {
-        $connection->run('insert into tx_rows (id) values (1)');
-        kill($this->sid($connection));
-
-        throw $thrown;
-    });
-
-    expect($transaction)->toThrow(function (DomainException $exception) use ($thrown, $cause): void {
-        expect($exception)->toBe($thrown)
-            ->and($exception->getPrevious())->toBe($cause)
-            ->and($cause->getPrevious())->toBeInstanceOf(ConnectionLostException::class);
-    });
-});
-
-test('a closure that closes the connection rethrows with nothing chained', function (): void {
-    $thrown = new DomainException('the closure failed');
-    $caught = null;
-
-    try {
-        $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
-            $connection->run('insert into tx_rows (id) values (1)');
-            $connection->close();
-
-            throw $thrown;
-        });
-    } catch (DomainException $domainException) {
-        $caught = $domainException;
-    }
-
-    expect($caught)->toBe($thrown)
-        ->and($thrown->getPrevious())->toBeNull()
-        ->and(committed(otherSession()))->toBeEmpty();
-});
-
 /**
  * A transaction whose commit the server refuses: the deferred CHECK on qty
  * fails at COMMIT.
@@ -358,61 +143,290 @@ dataset('refusedCommits', function () {
     yield 'transaction()' => [static fn (Connection $c) => $c->transaction($work)];
 });
 
-test('a commit the server refuses throws and commits nothing', function (Closure $transaction): void {
-    $thrown = null;
+describe('autocommit', function (): void {
+    it('commits each verb at once', function (Closure $write): void {
+        $write($this->connection);
 
-    try {
+        expect(committed(otherSession()))->toBe([1]);
+    })->with('writes');
+
+    it('keeps no lock after a select for update', function (): void {
+        $this->connection->run('insert into tx_rows (id) values (1)');
+
+        $this->connection->select('select id from tx_rows where id = 1 for update')->all();
+
+        expect(locked('tx_rows', 1))->toBeFalse();
+    });
+});
+
+describe('begin, commit and rollback', function (): void {
+    it('keeps every verb inside the transaction', function (Closure $write): void {
+        $this->connection->begin();
+
+        $write($this->connection);
+
+        expect(committed(otherSession()))->toBeEmpty();
+    })->with('writes');
+
+    it('shows the work to other sessions once it commits', function (): void {
+        $this->connection->begin();
+        $this->connection->run('insert into tx_rows (id) values (1)');
+
+        $this->connection->commit();
+
+        expect(committed(otherSession()))->toBe([1]);
+    });
+
+    it('undoes the work when it rolls back', function (): void {
+        $this->connection->begin();
+        $this->connection->run('insert into tx_rows (id) values (1)');
+        $this->connection->procedure('add_tx_row', ['p_id' => 2]);
+
+        $this->connection->rollback();
+
+        expect($this->connection->select('select count(*) from tx_rows')->value())->toBe(0);
+    });
+
+    it('goes back to autocommit when the transaction ends', function (Closure $transaction): void {
         $transaction($this->connection);
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
 
-    expect($thrown?->getCode())->toBe(2091)
-        ->and(committed(otherSession()))->toBeEmpty();
-})->with('refusedCommits');
+        $this->connection->run('insert into tx_rows (id) values (1)');
 
-test('after a refused commit the connection is back in autocommit', function (Closure $transaction): void {
-    expect(fn () => $transaction($this->connection))->toThrow(QueryException::class);
+        expect(committed(otherSession()))->toBe([1]);
+    })->with('transactionEnds');
 
-    $this->connection->run('insert into tx_rows (id) values (3)');
+    it('keeps the lock of a select for update', function (): void {
+        $this->connection->run('insert into tx_rows (id) values (1)');
+        $this->connection->begin();
 
-    expect(committed(otherSession()))->toBe([3]);
-})->with('refusedCommits');
+        $this->connection->select('select id from tx_rows where id = 1 for update')->all();
 
-test('rollback to a savepoint through run undoes only the later work', function (): void {
-    $this->connection->begin();
-    $this->connection->run('insert into tx_rows (id) values (1)');
-    $this->connection->run('savepoint before_two');
-    $this->connection->run('insert into tx_rows (id) values (2)');
+        expect(locked('tx_rows', 1))->toBeTrue();
+    });
 
-    $this->connection->run('rollback to savepoint before_two');
-    $this->connection->commit();
+    it('runs a function in the transaction open when its result is read', function (): void {
+        $pending = $this->connection->function('add_tx_row_count', ['p_id' => 1]);
+        $this->connection->begin();
 
-    expect(committed(otherSession()))->toBe([1]);
+        $pending->number();
+
+        expect(committed(otherSession()))->toBeEmpty();
+    });
+
+    it('undoes only the work after a savepoint', function (): void {
+        $this->connection->begin();
+        $this->connection->run('insert into tx_rows (id) values (1)');
+        $this->connection->run('savepoint before_two');
+        $this->connection->run('insert into tx_rows (id) values (2)');
+
+        $this->connection->run('rollback to savepoint before_two');
+        $this->connection->commit();
+
+        expect(committed(otherSession()))->toBe([1]);
+    });
 });
 
-test('closing the connection inside begin rolls back', function (): void {
-    $this->connection->run("insert into tx_rows (id, note) values (1, 'committed')");
-    $connection = Oracle::connect($this->config());
-    $connection->begin();
-    $connection->run("update tx_rows set note = 'changed' where id = 1");
+describe('round trips', function (): void {
+    it('costs nothing to begin', function (): void {
+        $sid = $this->sid($this->connection);
 
-    $connection->close();
+        $trips = roundTrips($sid, $this->connection->begin(...));
 
-    expect(locked('tx_rows', 1))->toBeFalse()
-        ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+        expect($trips)->toBe(0);
+    });
+
+    it('costs one round trip to commit or roll back', function (string $end): void {
+        $sid = $this->sid($this->connection);
+        $this->connection->begin();
+        $this->connection->run('insert into tx_rows (id) values (1)');
+
+        $trips = roundTrips($sid, $this->connection->$end(...));
+
+        expect($trips)->toBe(1);
+    })->with(['commit', 'rollback']);
 });
 
-test('destroying the connection inside begin rolls back', function (): void {
-    $this->connection->run("insert into tx_rows (id, note) values (1, 'committed')");
-    $connection = Oracle::connect($this->config());
-    $connection->begin();
-    $connection->run("update tx_rows set note = 'changed' where id = 1");
+describe('misuse', function (): void {
+    it('throws usage exception before any round trip', function (Closure $misuse, string $message, int $expectedTrips = 0): void {
+        $sid = $this->sid($this->connection);
+        $thrown = null;
 
-    unset($connection);
+        $trips = roundTrips($sid, function () use ($misuse, &$thrown): void {
+            try {
+                $misuse($this->connection);
+            } catch (Throwable $throwable) {
+                $thrown = $throwable;
+            }
+        });
 
-    expect(locked('tx_rows', 1))->toBeFalse()
-        ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+        assert($thrown instanceof UsageException);
+        expect($thrown->getMessage())->toContain($message)
+            ->and($trips)->toBe($expectedTrips);
+    })->with('misuses');
+
+    it('leaves the connection in autocommit after a misused commit', function (): void {
+        expect(fn () => $this->connection->commit())->toThrow(UsageException::class);
+
+        $this->connection->run('insert into tx_rows (id) values (1)');
+
+        expect(committed(otherSession()))->toBe([1]);
+    });
+
+    it('leaves the transaction open after a misused begin', function (): void {
+        $this->connection->begin();
+        expect(fn () => $this->connection->begin())->toThrow(UsageException::class);
+
+        $this->connection->run('insert into tx_rows (id) values (1)');
+
+        expect(committed(otherSession()))->toBeEmpty();
+    });
+});
+
+describe('transactions in a closure', function (): void {
+    it('commits when the closure returns and gives back its value', function (): void {
+        $inside = null;
+
+        $result = $this->connection->transaction(function (Connection $connection) use (&$inside): string {
+            $connection->run('insert into tx_rows (id) values (1)');
+            $inside = committed(otherSession());
+
+            return 'done';
+        });
+
+        expect($result)->toBe('done')
+            ->and($inside)->toBeEmpty()
+            ->and(committed(otherSession()))->toBe([1]);
+    });
+
+    it('rolls back and rethrows whatever the closure throws', function (Throwable $thrown): void {
+        $caught = null;
+
+        try {
+            $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
+                $connection->run('insert into tx_rows (id) values (1)');
+
+                throw $thrown;
+            });
+        } catch (Throwable $throwable) {
+            $caught = $throwable;
+        }
+
+        expect($caught)->toBe($thrown)
+            ->and($thrown->getPrevious())->toBeNull()
+            ->and($this->connection->select('select count(*) from tx_rows')->value())->toBe(0);
+    })->with([
+        'an exception' => [new DomainException('the closure failed')],
+        'an error' => [new TypeError('the closure failed')],
+    ]);
+
+    it('chains a failed rollback as previous of the rethrown exception', function (): void {
+        $connection = $this->connect(standalone: true);
+        $thrown = new DomainException('the closure failed');
+        $caught = null;
+
+        try {
+            $connection->transaction(function (Connection $connection) use ($thrown): never {
+                $connection->run('insert into tx_rows (id) values (1)');
+                kill($this->sid($connection));
+
+                throw $thrown;
+            });
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
+        }
+
+        expect($caught)->toBe($thrown)
+            ->and($thrown->getPrevious())->toBeInstanceOf(ConnectionLostException::class)
+            ->and(committed(otherSession()))->toBeEmpty();
+    });
+
+    it('chains a failed rollback at the end of an existing previous chain', function (): void {
+        $connection = $this->connect();
+        $cause = new RuntimeException('the cause');
+        $thrown = new DomainException('the closure failed', 0, $cause);
+
+        $transaction = fn () => $connection->transaction(function (Connection $connection) use ($thrown): never {
+            $connection->run('insert into tx_rows (id) values (1)');
+            kill($this->sid($connection));
+
+            throw $thrown;
+        });
+
+        expect($transaction)->toThrow(function (DomainException $exception) use ($thrown, $cause): void {
+            expect($exception)->toBe($thrown)
+                ->and($exception->getPrevious())->toBe($cause)
+                ->and($cause->getPrevious())->toBeInstanceOf(ConnectionLostException::class);
+        });
+    });
+
+    it('rethrows with nothing chained when the closure closes the connection', function (): void {
+        $thrown = new DomainException('the closure failed');
+        $caught = null;
+
+        try {
+            $this->connection->transaction(static function (Connection $connection) use ($thrown): never {
+                $connection->run('insert into tx_rows (id) values (1)');
+                $connection->close();
+
+                throw $thrown;
+            });
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
+        }
+
+        expect($caught)->toBe($thrown)
+            ->and($thrown->getPrevious())->toBeNull()
+            ->and(committed(otherSession()))->toBeEmpty();
+    });
+});
+
+describe('refused commits', function (): void {
+    it('throws and commits nothing', function (Closure $transaction): void {
+        $thrown = null;
+
+        try {
+            $transaction($this->connection);
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
+
+        expect($thrown?->getCode())->toBe(2091)
+            ->and(committed(otherSession()))->toBeEmpty();
+    })->with('refusedCommits');
+
+    it('goes back to autocommit', function (Closure $transaction): void {
+        expect(fn () => $transaction($this->connection))->toThrow(QueryException::class);
+
+        $this->connection->run('insert into tx_rows (id) values (3)');
+
+        expect(committed(otherSession()))->toBe([3]);
+    })->with('refusedCommits');
+});
+
+describe('closing the connection', function (): void {
+    it('rolls back an open transaction', function (): void {
+        $this->connection->run("insert into tx_rows (id, note) values (1, 'committed')");
+        $connection = Oracle::connect($this->config());
+        $connection->begin();
+        $connection->run("update tx_rows set note = 'changed' where id = 1");
+
+        $connection->close();
+
+        expect(locked('tx_rows', 1))->toBeFalse()
+            ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+    });
+
+    it('rolls back an open transaction when the connection is destroyed', function (): void {
+        $this->connection->run("insert into tx_rows (id, note) values (1, 'committed')");
+        $connection = Oracle::connect($this->config());
+        $connection->begin();
+        $connection->run("update tx_rows set note = 'changed' where id = 1");
+
+        unset($connection);
+
+        expect(locked('tx_rows', 1))->toBeFalse()
+            ->and(otherSession()->select('select note from tx_rows')->value())->toBe('committed');
+    });
 });
 
 /**

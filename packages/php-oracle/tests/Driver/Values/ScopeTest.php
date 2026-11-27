@@ -21,19 +21,6 @@ beforeEach(function (): void {
     schema()->run('create table scope_long_raw_rows (id number(10) primary key, bytes long raw)');
 });
 
-test('long and long raw values up to 32767 bytes read back as written', function (int $bytes): void {
-    $connection = $this->connect();
-    $text = str_repeat('ç', intdiv($bytes, 2)) . str_repeat('x', $bytes % 2);
-    $binary = substr(str_repeat("\x00\xff\x7f", $bytes), 0, $bytes);
-
-    $connection->execute('insert into scope_long_rows (id, text) values (1, :text)', ['text' => new In\Varchar($text)], $this->options());
-    $connection->execute('insert into scope_long_rows (id, text) values (2, :text)', ['text' => $text], $this->options());
-    $connection->execute('insert into scope_long_raw_rows (id, bytes) values (1, :bytes)', ['bytes' => new In\Raw($binary)], $this->options());
-
-    expect($this->rows($connection, 'select text from scope_long_rows order by id'))->toBe([['TEXT' => $text], ['TEXT' => $text]])
-        ->and($this->rows($connection, 'select bytes from scope_long_raw_rows'))->toBe([['BYTES' => $binary]]);
-})->with([1, 4000, 32767]);
-
 /**
  * Writing more than 32767 bytes into a LONG or LONG RAW column takes a
  * LONG bind, which v1 does not have.
@@ -46,26 +33,6 @@ dataset('longBinds', function () {
     yield 'Varchar IN OUT' => [new InOut\Varchar(str_repeat('a', 32768)), 'over 32767 bytes; bind it with In\Clob'];
     yield 'Raw' => [new In\Raw(str_repeat("\x00", 32768)), 'over 32767; bind them with In\Blob'];
 });
-
-test('a long bind over 32767 bytes is unsupported before any round trip', function (Bindable $bind, string $fix): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $thrown = null;
-
-    $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
-        try {
-            $connection->execute('insert into scope_long_rows (id, text) values (1, :v)', ['v' => $bind], $this->options());
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
-    });
-
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain("Bind 'v'")
-        ->toContain($fix)
-        ->toContain('more than 32767 bytes')
-        ->and($trips)->toBe(0);
-})->with('longBinds');
 
 /**
  * The column types v1 describes but does not read: the query, the type its
@@ -80,71 +47,110 @@ dataset('unreadableColumns', function () {
     yield 'SYS.ANYDATA' => ['select sys.anydata.convertnumber(5) v from dual', 'object', 'SYS.ANYDATA', 'SYS.ANYDATA'];
 });
 
-test('a column type v1 does not read is described and only fetching it fails', function (string $kind, string $sql, string $type, string | null $objectType, string $name): void {
-    $connection = $this->connect();
-    [$cursor, $parent] = cursorOf($kind, $connection, $sql);
+describe('long columns', function (): void {
+    it('reads back long and long raw values up to 32767 bytes as written', function (int $bytes): void {
+        $connection = $this->connect();
+        $text = str_repeat('ç', intdiv($bytes, 2)) . str_repeat('x', $bytes % 2);
+        $binary = substr(str_repeat("\x00\xff\x7f", $bytes), 0, $bytes);
 
-    $column = $cursor->columns()[0];
-    $thrown = fetchFailure($cursor);
-    $parent?->close();
+        $connection->execute('insert into scope_long_rows (id, text) values (1, :text)', ['text' => new In\Varchar($text)], $this->options());
+        $connection->execute('insert into scope_long_rows (id, text) values (2, :text)', ['text' => $text], $this->options());
+        $connection->execute('insert into scope_long_raw_rows (id, bytes) values (1, :bytes)', ['bytes' => new In\Raw($binary)], $this->options());
 
-    expect([$column['name'], $column['type'], $column['objectType']])->toBe(['V', $type, $objectType])
-        ->and($thrown->getMessage())->toContain('Column V')
-        ->toContain($name)
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-})->with(['query', 'REF CURSOR', 'nested CURSOR()'])->with('unreadableColumns');
+        expect($this->rows($connection, 'select text from scope_long_rows order by id'))->toBe([['TEXT' => $text], ['TEXT' => $text]])
+            ->and($this->rows($connection, 'select bytes from scope_long_raw_rows'))->toBe([['BYTES' => $binary]]);
+    })->with([1, 4000, 32767]);
 
-test('an empty result of a column type v1 does not read fetches nothing', function (string $sql, string $type, string | null $objectType): void {
-    $cursor = $this->connect()->execute("$sql where 1 = 0", [], $this->options())->cursor();
-    assert($cursor !== null);
+    it('refuses a long bind over 32767 bytes before any round trip', function (Bindable $bind, string $fix): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $thrown = null;
 
-    $rows = $cursor->fetchBatch();
+        $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
+            try {
+                $connection->execute('insert into scope_long_rows (id, text) values (1, :v)', ['v' => $bind], $this->options());
+            } catch (UnsupportedException $unsupportedException) {
+                $thrown = $unsupportedException;
+            }
+        });
 
-    expect([$cursor->columns()[0]['type'], $cursor->columns()[0]['objectType']])->toBe([$type, $objectType])
-        ->and($rows)->toBeEmpty();
-})->with('unreadableColumns');
-
-test('a null anydata reads as null', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select case when 1 = 0 then sys.anydata.convertnumber(5) end v from dual');
-
-    expect($rows)->toBe([['V' => null]]);
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain("Bind 'v'")
+            ->toContain($fix)
+            ->toContain('more than 32767 bytes')
+            ->and($trips)->toBe(0);
+    })->with('longBinds');
 });
 
-test('an anydata fetch failure never shows the value', function (): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('unreadable column types', function (): void {
+    it('describes the column and fails only on fetch', function (string $kind, string $sql, string $type, string | null $objectType, string $name): void {
+        $connection = $this->connect();
+        [$cursor, $parent] = cursorOf($kind, $connection, $sql);
 
-    try {
-        $this->rows($connection, 'select sys.anydata.convertvarchar2(:v) v from dual', ['v' => 'secret']);
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $column = $cursor->columns()[0];
+        $thrown = fetchFailure($cursor);
+        $parent?->close();
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain('SYS.ANYDATA')
-        ->not->toContain('secret');
+        expect([$column['name'], $column['type'], $column['objectType']])->toBe(['V', $type, $objectType])
+            ->and($thrown->getMessage())->toContain('Column V')
+            ->toContain($name)
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    })->with(['query', 'REF CURSOR', 'nested CURSOR()'])->with('unreadableColumns');
+
+    it('fetches nothing from an empty result', function (string $sql, string $type, string | null $objectType): void {
+        $cursor = $this->connect()->execute("$sql where 1 = 0", [], $this->options())->cursor();
+        assert($cursor !== null);
+
+        $rows = $cursor->fetchBatch();
+
+        expect([$cursor->columns()[0]['type'], $cursor->columns()[0]['objectType']])->toBe([$type, $objectType])
+            ->and($rows)->toBeEmpty();
+    })->with('unreadableColumns');
 });
 
-test('an anydata bind fails naming the opaque type', function (Bindable $bind): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('anydata', function (): void {
+    it('reads a null as null', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute('begin :v := :v; end;', ['v' => $bind], $this->options());
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $rows = $this->rows($connection, 'select case when 1 = 0 then sys.anydata.convertnumber(5) end v from dual');
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain("Bind 'v'")
-        ->toContain('SYS.ANYDATA is an opaque type')
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-})->with([
-    'IN' => [new In\Struct('SYS.ANYDATA', [])],
-    'OUT' => [new Out\Struct('sys.anydata')],
-]);
+        expect($rows)->toBe([['V' => null]]);
+    });
+
+    it('never shows the value when a fetch fails', function (): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $this->rows($connection, 'select sys.anydata.convertvarchar2(:v) v from dual', ['v' => 'secret']);
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain('SYS.ANYDATA')
+            ->not->toContain('secret');
+    });
+
+    it('fails naming the opaque type when bound', function (Bindable $bind): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute('begin :v := :v; end;', ['v' => $bind], $this->options());
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain("Bind 'v'")
+            ->toContain('SYS.ANYDATA is an opaque type')
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    })->with([
+        'IN' => [new In\Struct('SYS.ANYDATA', [])],
+        'OUT' => [new Out\Struct('sys.anydata')],
+    ]);
+});
 
 /**
  * A cursor over $sql of the given kind, and the parent a nested cursor

@@ -305,50 +305,6 @@ beforeEach(function (): void {
         SQL);
 });
 
-test('a procedure reads its out and in out parameters by name', function (): void {
-    $execution = $this->connection->procedure('call_pkg.echo', [
-        'p_num' => 21,
-        'o_doubled' => new Out\Number(),
-        'o_label' => new Out\Varchar(),
-        'io_text' => new InOut\Varchar('hi'),
-    ]);
-
-    expect($execution->out('o_doubled')->int())->toBe(42)
-        ->and($execution->out('o_label')->string())->toBe('default')
-        ->and($execution->out('IO_TEXT')->string())->toBe('hi!');
-});
-
-test('a repeated call binds its own values', function (): void {
-    $binds = ['o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar('hi')];
-    $this->connection->procedure('call_pkg.echo', ['p_num' => 21, ...$binds]);
-
-    $execution = $this->connection->procedure('call_pkg.echo', ['p_num' => 5, ...$binds]);
-
-    expect($execution->out('o_doubled')->int())->toBe(10);
-});
-
-test('a name that collides with a cached call is refused', function (): void {
-    $binds = ['o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar('hi')];
-    $this->connection->procedure('call_pkg.echo', ['p_num' => 21, ...$binds]);
-
-    $call = fn () => $this->connection->procedure("call_pkg.echo\0p_num", $binds);
-
-    expect($call)->toThrow(UsageException::class, "Call name 'call_pkg.echo\0p_num' is not valid");
-});
-
-test('a procedure gives a complete execution', function (): void {
-    $execution = $this->connection->procedure('call_pkg.grow', ['io_text' => new InOut\Varchar('a'), 'p_length' => 3]);
-
-    expect($execution->affected())->toBe(0)
-        ->and($execution->warning())->toBeNull()
-        ->and($execution->out('io_text')->string())->toBe('aaa')
-        ->and(fn () => $execution->rows())->toThrow(function (UsageException $usageException): void {
-            expect($usageException->getMessage())->toStartWith('The statement is not a query')
-                ->and($usageException->sql())->toBe('BEGIN call_pkg.grow(io_text => :b1, p_length => :b2); END;')
-                ->and($usageException->call())->toBe('call_pkg.grow');
-        });
-});
-
 /**
  * A function, its binds, the terminal that reads it, what it returns, and
  * the options of the Call.
@@ -403,16 +359,6 @@ dataset('terminals', function () {
     yield 'vector' => ['call_json.f_vector', [], static fn (PendingFunction $f): SparseVector | array | null => $f->vector(), [1.5, 2.0]];
 });
 
-test('each terminal returns the value mapped to its type', function (string $function, array $binds, Closure $terminal, mixed $expected, Options | null $options = null): void {
-    skipWithoutJson($this->connection->serverVersion(), $function);
-    /** @var array<string, mixed> $binds */
-    $pending = $this->connection->function($function, $binds, $options);
-
-    $value = $terminal($pending);
-
-    expect($value)->toBe($expected);
-})->with('terminals');
-
 /**
  * @return iterable<string, array{0: string, 1: array<string, mixed>, 2: Closure(PendingFunction): mixed}>
  */
@@ -443,33 +389,6 @@ dataset('nullTerminals', function () {
     yield 'vector' => ['call_json.f_vector', ['p_null' => true], static fn (PendingFunction $f): SparseVector | array | null => $f->vector()];
 });
 
-test('each terminal returns null for null', function (string $function, array $binds, Closure $terminal): void {
-    skipWithoutJson($this->connection->serverVersion(), $function);
-    /** @var array<string, mixed> $binds */
-    $pending = $this->connection->function($function, $binds);
-
-    $value = $terminal($pending);
-
-    expect($value)->toBeNull();
-})->with('nullTerminals');
-
-test('the vector terminal returns a sparse vector as sparse vector', function (): void {
-    skipWithoutJson($this->connection->serverVersion(), 'call_json');
-
-    $vector = $this->connection->function('call_json.f_sparse')->vector();
-
-    assert($vector instanceof SparseVector);
-    expect([$vector->dimensions, $vector->values])->toBe([10, [3 => -1]]);
-});
-
-test('the rowid terminal returns the rowid text', function (): void {
-    $rowid = $this->connection->select('select rowidtochar(rowid) from call_rows where id = 1')->value();
-
-    $value = $this->connection->function('call_pkg.f_rowid')->rowid();
-
-    expect($value)->toBe($rowid);
-});
-
 /**
  * @return iterable<string, array{string, string, string}>
  */
@@ -482,12 +401,6 @@ dataset('temporalTerminals', function () {
     yield 'intervalYm' => ['intervalYm', 'call_pkg.f_interval_ym', '+2Y5M0DT0H0M0S.000000'];
 });
 
-test('a temporal terminal returns php date objects in php zone', function (string $terminal, string $function, string $expected): void {
-    $value = inTimeZone('America/Sao_Paulo', fn (): mixed => $this->connect()->function($function)->{$terminal}());
-
-    expect(temporalText($value))->toBe($expected);
-})->with('temporalTerminals');
-
 /**
  * @return iterable<string, array{string, string, string}>
  */
@@ -498,26 +411,6 @@ dataset('temporalTexts', function () {
     yield 'timestampLtz' => ['timestampLtz', 'call_pkg.f_timestamp_ltz', '2026-03-01 10:00:00.000000000 -03:00'];
 });
 
-test('under temporal mode string a temporal terminal returns iso text', function (string $terminal, string $function, string $expected): void {
-    $options = new Options(values: new ValueMapping(temporals: TemporalMode::String));
-
-    $value = inTimeZone('America/Sao_Paulo', fn (): mixed => $this->connect()->function($function, [], $options)->{$terminal}());
-
-    expect($value)->toBe($expected);
-})->with('temporalTexts');
-
-test('an object terminal of the wrong kind fails naming the fix', function (): void {
-    $pending = $this->connection->function('call_objects.split_csv', ['p_csv' => 'a']);
-
-    $read = fn () => $pending->struct('call_string_varray');
-
-    expect($read)->toThrow(function (UsageException $usageException): void {
-        expect($usageException->getMessage())->toStartWith('The return value of call_objects.split_csv: ')
-            ->toEndWith('.CALL_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.')
-            ->and($usageException->call())->toBe('call_objects.split_csv');
-    });
-});
-
 /**
  * @return iterable<string, array{array<string, mixed>, string}>
  */
@@ -525,19 +418,6 @@ dataset('largestVarchars', function () {
     yield 'an OUT of 32767 ASCII bytes' => [['p_char' => 'x', 'p_length' => 32767], str_repeat('x', 32767)];
     yield 'an OUT of 16383 two-byte characters' => [['p_char' => 'ç', 'p_length' => 16383], str_repeat('ç', 16383)];
 });
-
-test('a call reads a varchar2 out value of the largest size', function (array $binds, string $expected): void {
-    /** @var array<string, mixed> $binds */
-    $execution = $this->connection->procedure('call_pkg.repeat_out', [...$binds, 'o_str' => new Out\Varchar()]);
-
-    expect($execution->out('o_str')->string())->toBe($expected);
-})->with('largestVarchars');
-
-test('an in out varchar2 grows to the largest size', function (string | null $start): void {
-    $execution = $this->connection->procedure('call_pkg.grow', ['io_text' => new InOut\Varchar($start), 'p_length' => 32767]);
-
-    expect($execution->out('io_text')->string())->toBe(str_repeat('a', 32767));
-})->with(['from NULL' => [null], 'from a value' => ['a']]);
 
 /**
  * @return iterable<string, array{Closure(Connection): mixed, string, string}>
@@ -555,69 +435,6 @@ dataset('failingCalls', function () {
     ];
 });
 
-test('a call still runs after more call shapes than the cache keeps', function (): void {
-    $this->connection->function('call_pkg.f_number', ['p_value' => 1])->number();
-    foreach (range(1, 256) as $i) {
-        $this->connection->function("never_called_$i");
-    }
-
-    $value = $this->connection->function('call_pkg.f_number', ['p_value' => 2])->number();
-
-    expect($value)->toBe(2);
-});
-
-test('an exception of another backend reaches the caller as it was thrown', function (): void {
-    $failure = new class ('the backend failed') extends RuntimeException implements OracleException {
-        #[Override]
-        public function sql(): string | null
-        {
-            return null;
-        }
-
-        #[Override]
-        public function call(): string | null
-        {
-            return null;
-        }
-    };
-    $driver = $this->createStub(Session::class);
-    $driver->method('execute')->willThrowException($failure);
-    $connection = new Connection($driver, $this->config());
-
-    $call = fn (): Execution => $connection->procedure('any_procedure');
-
-    expect($call)->toThrow(function (RuntimeException $exception) use ($failure): void {
-        expect($exception)->toBe($failure);
-    });
-});
-
-test('a failing call carries its name and generated block', function (Closure $call, string $name, string $sql): void {
-    $thrown = null;
-
-    try {
-        $call($this->connection);
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
-
-    expect($thrown?->getCode())->toBe(20046)
-        ->and($thrown?->getMessage())->toStartWith("ORA-20046: $name raised")
-        ->and($thrown?->sql())->toBe($sql)
-        ->and($thrown?->call())->toBe($name);
-})->with('failingCalls');
-
-test('out of an unknown name lists the calls out binds', function (): void {
-    $execution = $this->connection->procedure('call_pkg.echo', ['p_num' => 1, 'P_Label' => 'x', 'o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar(null)]);
-
-    $read = fn () => $execution->out('nothing');
-
-    expect($read)->toThrow(function (UsageException $usageException): void {
-        expect($usageException->getMessage())->toBe("No OUT bind is named 'nothing'; they are 'o_doubled', 'o_label', 'io_text'.")
-            ->and($usageException->sql())->toBe('BEGIN call_pkg.echo(p_num => :b1, P_Label => :b2, o_doubled => :b3, o_label => :b4, io_text => :b5); END;')
-            ->and($usageException->call())->toBe('call_pkg.echo');
-    });
-});
-
 /**
  * @return iterable<string, array{Closure(Connection): mixed, string}>
  */
@@ -625,19 +442,6 @@ dataset('badBinds', function () {
     yield 'procedure()' => [static fn (Connection $c): Execution => $c->procedure('call_pkg.fail', ['P_Value' => new DateTimeImmutable()]), 'call_pkg.fail'];
     yield 'function()' => [static fn (Connection $c): float | int | string | null => $c->function('call_pkg.f_fail', ['P_Value' => new DateTimeImmutable()])->number(), 'call_pkg.f_fail'];
 });
-
-test('a bind error names the parameter and the call', function (Closure $call, string $name): void {
-    $thrown = null;
-
-    try {
-        $call($this->connection);
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
-
-    expect($thrown?->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.")
-        ->and($thrown?->call())->toBe($name);
-})->with('badBinds');
 
 /**
  * A name under Oracle's naming rules; `{schema}` stands for the test's
@@ -651,15 +455,6 @@ dataset('names', function () {
     yield 'schema qualified, in a package' => ['{schema}.call_pkg.f_number', ['P_VALUE' => 3], 3];
     yield 'unquoted mixed case' => ['CALL_PKG.F_Number', ['p_value' => 7], 7];
 });
-
-test('a call name resolves under oracle naming rules', function (string $name, array $binds, int $expected): void {
-    $name = str_replace('{schema}', $this->config()->user, $name);
-
-    /** @var array<string, mixed> $binds */
-    $value = $this->connection->function($name, $binds)->number();
-
-    expect($value)->toBe($expected);
-})->with('names');
 
 /**
  * @return iterable<string, array{string, array<mixed>, string}>
@@ -688,23 +483,238 @@ dataset('invalidNames', function () {
     yield 'one parameter quoted and not' => ['call_pkg.echo', ['p_num' => 1, '"P_NUM"' => 2], "Parameters 'p_num' and '\"P_NUM\"' name the same parameter"];
 });
 
-test('an invalid name fails before any round trip', function (string $name, array $binds, string $message, string $verb): void {
-    $sid = $this->sid($this->connection);
-    $thrown = null;
+describe('procedures', function (): void {
+    it('reads its out and in out parameters by name', function (): void {
+        $execution = $this->connection->procedure('call_pkg.echo', [
+            'p_num' => 21,
+            'o_doubled' => new Out\Number(),
+            'o_label' => new Out\Varchar(),
+            'io_text' => new InOut\Varchar('hi'),
+        ]);
 
-    $trips = roundTrips($sid, function () use ($verb, $name, $binds, &$thrown): void {
+        expect($execution->out('o_doubled')->int())->toBe(42)
+            ->and($execution->out('o_label')->string())->toBe('default')
+            ->and($execution->out('IO_TEXT')->string())->toBe('hi!');
+    });
+
+    it('gives a complete execution', function (): void {
+        $execution = $this->connection->procedure('call_pkg.grow', ['io_text' => new InOut\Varchar('a'), 'p_length' => 3]);
+
+        expect($execution->affected())->toBe(0)
+            ->and($execution->warning())->toBeNull()
+            ->and($execution->out('io_text')->string())->toBe('aaa')
+            ->and(fn () => $execution->rows())->toThrow(function (UsageException $usageException): void {
+                expect($usageException->getMessage())->toStartWith('The statement is not a query')
+                    ->and($usageException->sql())->toBe('BEGIN call_pkg.grow(io_text => :b1, p_length => :b2); END;')
+                    ->and($usageException->call())->toBe('call_pkg.grow');
+            });
+    });
+
+    it('reads a varchar2 out value of the largest size', function (array $binds, string $expected): void {
+        /** @var array<string, mixed> $binds */
+        $execution = $this->connection->procedure('call_pkg.repeat_out', [...$binds, 'o_str' => new Out\Varchar()]);
+
+        expect($execution->out('o_str')->string())->toBe($expected);
+    })->with('largestVarchars');
+
+    it('grows an in out varchar2 to the largest size', function (string | null $start): void {
+        $execution = $this->connection->procedure('call_pkg.grow', ['io_text' => new InOut\Varchar($start), 'p_length' => 32767]);
+
+        expect($execution->out('io_text')->string())->toBe(str_repeat('a', 32767));
+    })->with(['from NULL' => [null], 'from a value' => ['a']]);
+
+    it('lists the out binds of the call for an unknown name', function (): void {
+        $execution = $this->connection->procedure('call_pkg.echo', ['p_num' => 1, 'P_Label' => 'x', 'o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar(null)]);
+
+        $read = fn () => $execution->out('nothing');
+
+        expect($read)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->getMessage())->toBe("No OUT bind is named 'nothing'; they are 'o_doubled', 'o_label', 'io_text'.")
+                ->and($usageException->sql())->toBe('BEGIN call_pkg.echo(p_num => :b1, P_Label => :b2, o_doubled => :b3, o_label => :b4, io_text => :b5); END;')
+                ->and($usageException->call())->toBe('call_pkg.echo');
+        });
+    });
+});
+
+describe('function results', function (): void {
+    it('returns the value mapped to the return type', function (string $function, array $binds, Closure $terminal, mixed $expected, Options | null $options = null): void {
+        skipWithoutJson($this->connection->serverVersion(), $function);
+        /** @var array<string, mixed> $binds */
+        $pending = $this->connection->function($function, $binds, $options);
+
+        $value = $terminal($pending);
+
+        expect($value)->toBe($expected);
+    })->with('terminals');
+
+    it('returns null for null', function (string $function, array $binds, Closure $terminal): void {
+        skipWithoutJson($this->connection->serverVersion(), $function);
+        /** @var array<string, mixed> $binds */
+        $pending = $this->connection->function($function, $binds);
+
+        $value = $terminal($pending);
+
+        expect($value)->toBeNull();
+    })->with('nullTerminals');
+
+    it('returns a sparse vector as a sparse vector', function (): void {
+        skipWithoutJson($this->connection->serverVersion(), 'call_json');
+
+        $vector = $this->connection->function('call_json.f_sparse')->vector();
+
+        assert($vector instanceof SparseVector);
+        expect([$vector->dimensions, $vector->values])->toBe([10, [3 => -1]]);
+    });
+
+    it('returns the rowid as text', function (): void {
+        $rowid = $this->connection->select('select rowidtochar(rowid) from call_rows where id = 1')->value();
+
+        $value = $this->connection->function('call_pkg.f_rowid')->rowid();
+
+        expect($value)->toBe($rowid);
+    });
+
+    it('returns dates as php objects in the php zone', function (string $terminal, string $function, string $expected): void {
+        $value = inTimeZone('America/Sao_Paulo', fn (): mixed => $this->connect()->function($function)->{$terminal}());
+
+        expect(temporalText($value))->toBe($expected);
+    })->with('temporalTerminals');
+
+    it('returns dates as iso text under temporal mode string', function (string $terminal, string $function, string $expected): void {
+        $options = new Options(values: new ValueMapping(temporals: TemporalMode::String));
+
+        $value = inTimeZone('America/Sao_Paulo', fn (): mixed => $this->connect()->function($function, [], $options)->{$terminal}());
+
+        expect($value)->toBe($expected);
+    })->with('temporalTexts');
+
+    it('fails naming the fix when read as the wrong kind of object', function (): void {
+        $pending = $this->connection->function('call_objects.split_csv', ['p_csv' => 'a']);
+
+        $read = fn () => $pending->struct('call_string_varray');
+
+        expect($read)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->getMessage())->toStartWith('The return value of call_objects.split_csv: ')
+                ->toEndWith('.CALL_STRING_VARRAY is a Collection type (nested table or VARRAY), not an Object type; use Collection, not Struct.')
+                ->and($usageException->call())->toBe('call_objects.split_csv');
+        });
+    });
+});
+
+describe('call names', function (): void {
+    it('resolves names under oracle naming rules', function (string $name, array $binds, int $expected): void {
+        $name = str_replace('{schema}', $this->config()->user, $name);
+
+        /** @var array<string, mixed> $binds */
+        $value = $this->connection->function($name, $binds)->number();
+
+        expect($value)->toBe($expected);
+    })->with('names');
+
+    it('fails before any round trip on an invalid name', function (string $name, array $binds, string $message, string $verb): void {
+        $sid = $this->sid($this->connection);
+        $thrown = null;
+
+        $trips = roundTrips($sid, function () use ($verb, $name, $binds, &$thrown): void {
+            try {
+                $this->connection->{$verb}($name, $binds);
+            } catch (UsageException $usageException) {
+                $thrown = $usageException;
+            }
+        });
+
+        expect($thrown?->getMessage())->toContain($message)
+            ->and($thrown?->call())->toBe($name)
+            ->and($thrown?->sql())->toBeNull()
+            ->and($trips)->toBe(0);
+    })->with('invalidNames')->with(['procedure', 'function']);
+});
+
+describe('the call cache', function (): void {
+    it('binds the values of each repeated call', function (): void {
+        $binds = ['o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar('hi')];
+        $this->connection->procedure('call_pkg.echo', ['p_num' => 21, ...$binds]);
+
+        $execution = $this->connection->procedure('call_pkg.echo', ['p_num' => 5, ...$binds]);
+
+        expect($execution->out('o_doubled')->int())->toBe(10);
+    });
+
+    it('refuses a name that collides with a cached call', function (): void {
+        $binds = ['o_doubled' => new Out\Number(), 'o_label' => new Out\Varchar(), 'io_text' => new InOut\Varchar('hi')];
+        $this->connection->procedure('call_pkg.echo', ['p_num' => 21, ...$binds]);
+
+        $call = fn () => $this->connection->procedure("call_pkg.echo\0p_num", $binds);
+
+        expect($call)->toThrow(UsageException::class, "Call name 'call_pkg.echo\0p_num' is not valid");
+    });
+
+    it('still runs a call after more call shapes than it keeps', function (): void {
+        $this->connection->function('call_pkg.f_number', ['p_value' => 1])->number();
+        foreach (range(1, 256) as $i) {
+            $this->connection->function("never_called_$i");
+        }
+
+        $value = $this->connection->function('call_pkg.f_number', ['p_value' => 2])->number();
+
+        expect($value)->toBe(2);
+    });
+});
+
+describe('failing calls', function (): void {
+    it('carries the call name and the generated block', function (Closure $call, string $name, string $sql): void {
+        $thrown = null;
+
         try {
-            $this->connection->{$verb}($name, $binds);
+            $call($this->connection);
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
+
+        expect($thrown?->getCode())->toBe(20046)
+            ->and($thrown?->getMessage())->toStartWith("ORA-20046: $name raised")
+            ->and($thrown?->sql())->toBe($sql)
+            ->and($thrown?->call())->toBe($name);
+    })->with('failingCalls');
+
+    it('names the parameter and the call on a bind error', function (Closure $call, string $name): void {
+        $thrown = null;
+
+        try {
+            $call($this->connection);
         } catch (UsageException $usageException) {
             $thrown = $usageException;
         }
-    });
 
-    expect($thrown?->getMessage())->toContain($message)
-        ->and($thrown?->call())->toBe($name)
-        ->and($thrown?->sql())->toBeNull()
-        ->and($trips)->toBe(0);
-})->with('invalidNames')->with(['procedure', 'function']);
+        expect($thrown?->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.")
+            ->and($thrown?->call())->toBe($name);
+    })->with('badBinds');
+
+    it('passes the exception of another backend to the caller as it was thrown', function (): void {
+        $failure = new class ('the backend failed') extends RuntimeException implements OracleException {
+            #[Override]
+            public function sql(): string | null
+            {
+                return null;
+            }
+
+            #[Override]
+            public function call(): string | null
+            {
+                return null;
+            }
+        };
+        $driver = $this->createStub(Session::class);
+        $driver->method('execute')->willThrowException($failure);
+        $connection = new Connection($driver, $this->config());
+
+        $call = fn (): Execution => $connection->procedure('any_procedure');
+
+        expect($call)->toThrow(function (RuntimeException $exception) use ($failure): void {
+            expect($exception)->toBe($failure);
+        });
+    });
+});
 
 /**
  * JSON and VECTOR need Oracle Database 23ai or later.

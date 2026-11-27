@@ -107,60 +107,6 @@ dataset('temporalClasses', function () {
     yield 'IntervalYm negative' => ['interval year to month', fn (): Bindable => new In\IntervalYm($months), '-1Y2M0DT0H0M0S.000000', fn (): Bindable => new Out\IntervalYm(), fn (): Bindable => new InOut\IntervalYm($months), 'io', '-1Y2M0DT0H0M0S.000000'];
 });
 
-test('each temporal class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, string $out, Bindable $outBind, Bindable $inOut, string $change, string $changed): void {
-    $connection = $this->connect();
-
-    $values = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
-        "declare
-               procedure p(i in $plsql, o out $plsql, io in out $plsql) is
-               begin
-                 o := i;
-                 io := $change;
-               end;
-             begin
-               p(:i, :o, :io);
-             end;",
-        ['i' => $in, 'o' => $outBind, 'io' => $inOut],
-        $this->options(),
-    )->outValues());
-
-    expect(array_map(static fn (array $list): array => array_map(temporalText(...), $list), $values))->toBe(['o' => [$out], 'io' => [$changed]]);
-})->with('temporalClasses');
-
-test('wall clock types store the wall clock and zoned types the instant', function (): void {
-    $connection = $this->connect();
-    $tokyo = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Tokyo'));
-
-    $stored = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
-        "declare
-               d date := :d;
-               t timestamp(9) := :t;
-               tz timestamp(9) with time zone := :tz;
-               ltz timestamp(9) with local time zone := :ltz;
-               f varchar2(40) := 'YYYY-MM-DD HH24:MI:SS.FF6';
-             begin
-               :d_out := to_char(cast(d as timestamp), f);
-               :t_out := to_char(t, f);
-               :tz_out := to_char(sys_extract_utc(tz), f);
-               :ltz_out := to_char(sys_extract_utc(ltz), f);
-             end;",
-        [
-            'd' => new In\Date($tokyo), 't' => new In\Timestamp($tokyo),
-            'tz' => new In\TimestampTz($tokyo), 'ltz' => new In\TimestampLtz($tokyo),
-            'd_out' => new Out\Varchar(), 't_out' => new Out\Varchar(),
-            'tz_out' => new Out\Varchar(), 'ltz_out' => new Out\Varchar(),
-        ],
-        $this->options(),
-    )->outValues());
-
-    expect($stored)->toBe([
-        'd_out' => ['2026-03-01 10:00:00.000000'],
-        't_out' => ['2026-03-01 10:00:00.123456'],
-        'tz_out' => ['2026-03-01 01:00:00.123456'],
-        'ltz_out' => ['2026-03-01 01:00:00.123456'],
-    ]);
-});
-
 /**
  * @return iterable<string, array{Closure(): Bindable, non-empty-string}>
  */
@@ -174,319 +120,385 @@ dataset('incompatibleIntervals', function () {
     yield 'IntervalYm with a fraction' => [static fn (): In\IntervalYm => new In\IntervalYm($fraction), 'An INTERVAL YEAR TO MONTH bind takes years and months only'];
 });
 
-test('an incompatible date interval fails when the bind is built', function (Closure $bind, string $message): void {
-    $thrown = null;
+describe('temporal binds', function (): void {
+    it('binds each temporal class in, out and in out through its plsql type', function (string $plsql, Bindable $in, string $out, Bindable $outBind, Bindable $inOut, string $change, string $changed): void {
+        $connection = $this->connect();
 
-    try {
-        $bind();
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
+        $values = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
+            "declare
+                   procedure p(i in $plsql, o out $plsql, io in out $plsql) is
+                   begin
+                     o := i;
+                     io := $change;
+                   end;
+                 begin
+                   p(:i, :o, :io);
+                 end;",
+            ['i' => $in, 'o' => $outBind, 'io' => $inOut],
+            $this->options(),
+        )->outValues());
 
-    assert($thrown instanceof UsageException && $message !== '');
-    expect($thrown->getMessage())->toStartWith($message);
-})->with('incompatibleIntervals');
+        expect(array_map(static fn (array $list): array => array_map(temporalText(...), $list), $values))->toBe(['o' => [$out], 'io' => [$changed]]);
+    })->with('temporalClasses');
 
-test('each class binds in out and in out through its plsql type', function (string $plsql, Bindable $in, mixed $out, Bindable $outBind, Bindable $inOut, string $change, mixed $changed): void {
-    $connection = $this->connect();
+    it('stores the wall clock for wall clock types and the instant for zoned types', function (): void {
+        $connection = $this->connect();
+        $tokyo = new DateTimeImmutable('2026-03-01 10:00:00.123456', new DateTimeZone('Asia/Tokyo'));
 
-    $values = $connection->execute(
-        "declare
-               procedure p(i in $plsql, o out $plsql, io in out $plsql) is
-               begin
-                 o := i;
-                 io := $change;
-               end;
-             begin
-               p(:i, :o, :io);
-             end;",
-        ['i' => $in, 'o' => $outBind, 'io' => $inOut],
-        $this->options(),
-    )->outValues();
+        $stored = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
+            "declare
+                   d date := :d;
+                   t timestamp(9) := :t;
+                   tz timestamp(9) with time zone := :tz;
+                   ltz timestamp(9) with local time zone := :ltz;
+                   f varchar2(40) := 'YYYY-MM-DD HH24:MI:SS.FF6';
+                 begin
+                   :d_out := to_char(cast(d as timestamp), f);
+                   :t_out := to_char(t, f);
+                   :tz_out := to_char(sys_extract_utc(tz), f);
+                   :ltz_out := to_char(sys_extract_utc(ltz), f);
+                 end;",
+            [
+                'd' => new In\Date($tokyo), 't' => new In\Timestamp($tokyo),
+                'tz' => new In\TimestampTz($tokyo), 'ltz' => new In\TimestampLtz($tokyo),
+                'd_out' => new Out\Varchar(), 't_out' => new Out\Varchar(),
+                'tz_out' => new Out\Varchar(), 'ltz_out' => new Out\Varchar(),
+            ],
+            $this->options(),
+        )->outValues());
 
-    expect(array_keys($values))->toBe(['o', 'io'])
-        ->and(comparable($values['o'][0]))->toBe(comparable($out))
-        ->and(comparable($values['io'][0]))->toBe(comparable($changed));
-})->with('classes');
-
-test('each class binds null', function (string $plsql, Bindable $in, Bindable $out, Bindable $inOut): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "declare
-               procedure p(i in $plsql, o out $plsql, io in out $plsql) is
-               begin
-                 o := i;
-               end;
-             begin
-               p(:i, :o, :io);
-             end;",
-        ['i' => $in, 'o' => $out, 'io' => $inOut],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['o' => [null], 'io' => [null]]);
-})->with('nulls');
-
-test('a rowid binds in out and in out', function (): void {
-    $connection = $this->connect();
-    $rowid = $this->value($connection, 'select rowidtochar(rowid) from typed_items where id = 1');
-    assert(\is_string($rowid));
-
-    $values = $connection->execute(
-        'declare
-               procedure p(i in rowid, o out rowid, io in out rowid) is
-               begin
-                 select name into :name from typed_items where rowid = i;
-                 o := i;
-                 io := io;
-               end;
-             begin
-               p(:i, :o, :io);
-             end;',
-        ['i' => new In\Rowid($rowid), 'o' => new Out\Rowid(), 'io' => new InOut\Rowid($rowid), 'name' => new Out\Varchar()],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['o' => [$rowid], 'io' => [$rowid], 'name' => ['Item 0001']]);
-});
-
-test('insert returning into gives the one row', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute(
-        'insert into typed_rows (id, name) values (:id, :name) returning id, name into :rid, :rname',
-        ['id' => 7, 'name' => 'seven', 'rid' => new Out\Number(), 'rname' => new Out\Varchar()],
-        $this->options(),
-    );
-
-    expect($execution->rowCount())->toBe(1)
-        ->and($execution->outValues())->toBe(['rid' => [7], 'rname' => ['seven']]);
-});
-
-test('update returning into gives every row and none when nothing matches', function (): void {
-    $connection = $this->connect();
-
-    $two = $connection->execute(
-        'update typed_items set price = price where id in (1, 2) returning id, name into :id, :name',
-        ['id' => new Out\Number(), 'name' => new Out\Varchar()],
-        $this->options(),
-    )->outValues();
-    $none = $connection->execute(
-        'update typed_items set price = price where id < 0 returning id into :id',
-        ['id' => new Out\Number()],
-        $this->options(),
-    )->outValues();
-
-    expect($two['id'])->toEqualCanonicalizing([1, 2])
-        ->and($two['name'])->toEqualCanonicalizing(['Item 0001', 'Item 0002'])
-        ->and($none)->toBe(['id' => []]);
-});
-
-test('returning reads the longest sql varchar2', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "update typed_items set price = price where id = 1 returning rpad('x', 4000, 'x') into :name",
-        ['name' => new Out\Varchar()],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['name' => [str_repeat('x', 4000)]]);
-});
-
-test('a varchar out holds 32767 bytes', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "begin
-               :ascii := rpad('a', 32767, 'a');
-               :multibyte := rpad(unistr('\\00e7'), 16383, unistr('\\00e7'));
-             end;",
-        ['ascii' => new Out\Varchar(), 'multibyte' => new Out\Varchar()],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['ascii' => [str_repeat('a', 32767)], 'multibyte' => [str_repeat('ç', 16383)]]);
-});
-
-test('a varchar in out grows to 32767 bytes', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "begin
-               :from_null := rpad(nvl(:from_null, 'b'), 32767, 'b');
-               :from_a := rpad(:from_a, 32767, 'b');
-             end;",
-        ['from_null' => new InOut\Varchar(null), 'from_a' => new InOut\Varchar('a')],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['from_null' => [str_repeat('b', 32767)], 'from_a' => ['a' . str_repeat('b', 32766)]]);
-});
-
-test('only a char bind matches a blank padded char', function (mixed $bind, int $matches): void {
-    $connection = $this->connect();
-
-    $count = $this->value($connection, "select count(*) from (select cast('AB' as char(5)) code from dual) where code = :code", ['code' => $bind]);
-
-    expect($count)->toBe($matches);
-})->with([
-    'In\Char' => [new In\Char('AB'), 1],
-    'a plain string' => ['AB', 0],
-    'In\Varchar' => [new In\Varchar('AB'), 0],
-]);
-
-test('a char out keeps the padding it has', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "declare c char(5) := 'AB'; n nchar(4) := n'\u{e7}'; begin :c := c; :n := n; end;",
-        ['c' => new Out\Char(), 'n' => new Out\NChar()],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['c' => ['AB   '], 'n' => ['ç   ']]);
-});
-
-test('nvarchar and nchar bind multibyte text in the national character set', function (string $text, string $class): void {
-    $connection = $this->connect();
-    $bind = ['v' => $class === 'NVarchar' ? new In\NVarchar($text) : new In\NChar($text)];
-
-    $read = $this->value($connection, 'select :v from dual', $bind);
-    $dump = $this->value($connection, 'select dump(:v, 1016) from dual', $bind);
-
-    expect($read)->toBe($text)
-        ->and($dump)->toBeString()
-        ->toContain('CharacterSet=AL16UTF16');
-})->with(['ç', '日本', '😀', 'ç日😀'])->with(['NVarchar', 'NChar']);
-
-test('nvarchar out and in out carry multibyte text', function (string $text): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        'begin :o := :i; :io := :io || :i; end;',
-        ['i' => new In\NVarchar($text), 'o' => new Out\NVarchar(), 'io' => new InOut\NVarchar($text)],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['o' => [$text], 'io' => [$text . $text]]);
-})->with(['ç', '日本', '😀', 'ç日😀']);
-
-test('a number string is exact under any nls', function (): void {
-    // Standalone: a pooled Session would keep the ALTER SESSION.
-    $connection = $this->connect(standalone: true);
-    $connection->execute("alter session set nls_numeric_characters = ',.'", [], $this->options());
-
-    $dump = $this->value($connection, 'select dump(:v) from dual', ['v' => new In\Number('12.30')]);
-    $negative = $this->value($connection, 'select :v from dual', ['v' => new In\Number('-.50')]);
-    $long = $this->value($connection, 'select :v from dual', ['v' => new In\Number('12345678901234567890.123456789')]);
-
-    expect($dump)->toBe('Typ=2 Len=3: 193,13,31')
-        ->and($negative)->toBe('-0.5')
-        ->and($long)->toBe('12345678901234567890.123456789');
-});
-
-test('out value keys keep the users case', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        'begin :TOTAL := 1; :name := 2; :Mixed := 3; end;',
-        ['total' => new Out\Number(), 'NAME' => new Out\Number(), 'mIxEd' => new InOut\Number(0)],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe(['total' => [1], 'NAME' => [2], 'mIxEd' => [3]]);
-});
-
-test('out values follow the column mapping', function (NumberMode $numbers, TemporalMode $temporals, LobMode $lobs): void {
-    $connection = $this->connect();
-    $options = new Options(true, null, 100, new ValueMapping($numbers, $temporals, $lobs), RowShape::Assoc, KeyCase::Native);
-
-    $values = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
-        "begin
-               :fraction := 12.5; :integral := 5; :huge := 1e30; :pls := 7;
-               :bf := 0.1f; :bd := 0.1d; :flag := true; :bytes := hextoraw('00ff');
-               :text := 'a'; :io := :io + 0.25;
-               :d := date '2026-03-01' + 1/24; :ts := timestamp '2026-03-01 10:00:00.123456789';
-               :tz := timestamp '2026-03-01 10:00:00.5 +05:45';
-               :ltz := cast(timestamp '2026-03-01 13:00:00 +00:00' as timestamp with local time zone);
-               :d_io := :d_io + 1; :ltz_io := :ltz_io;
-               :ds := interval '1 02:03:04.5' day to second; :ym := interval '1-2' year to month;
-               :lob := to_clob('a');
-             end;",
-        [
-            'fraction' => new Out\Number(), 'integral' => new Out\Number(), 'huge' => new Out\Number(),
-            'pls' => new Out\PlsInteger(), 'bf' => new Out\BinaryFloat(), 'bd' => new Out\BinaryDouble(),
-            'flag' => new Out\Boolean(), 'bytes' => new Out\Raw(), 'text' => new Out\Varchar(),
-            'io' => new InOut\Number(1),
-            'd' => new Out\Date(), 'ts' => new Out\Timestamp(), 'tz' => new Out\TimestampTz(),
-            'ltz' => new Out\TimestampLtz(), 'ds' => new Out\IntervalDs(), 'ym' => new Out\IntervalYm(),
-            'lob' => new Out\Clob(),
-            // These travel as TIMESTAMP and TSTZ, and come back as the type
-            // declared.
-            'd_io' => new InOut\Date(new DateTimeImmutable('2026-03-01 10:00:00.5')),
-            'ltz_io' => new InOut\TimestampLtz(new DateTimeImmutable('2026-03-01 13:00:00', new DateTimeZone('UTC'))),
-        ],
-        $options,
-    )->outValues());
-
-    $float = $numbers === NumberMode::Float;
-    $lob = $values['lob'][0];
-    $lobText = $lob instanceof Locator ? $lob->readChunk() : $lob;
-
-    expect($lob instanceof Locator)->toBe($lobs === LobMode::Locator)
-        ->and($lobText)->toBe('a')
-        ->and(array_map(static fn (array $list): array => array_map(temporalText(...), $list), array_intersect_key($values, array_flip(['d', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym']))))->toBe($temporals === TemporalMode::String ? [
-            'd' => ['2026-03-01 01:00:00'],
-            'ts' => ['2026-03-01 10:00:00.123456789'],
-            'tz' => ['2026-03-01 10:00:00.500000000 +05:45'],
-            'ltz' => ['2026-03-01 10:00:00.000000000 -03:00'],
-            'ds' => ['+0Y0M1DT2H3M4S.500000'],
-            'ym' => ['+1Y2M0DT0H0M0S.000000'],
-            'd_io' => ['2026-03-02 10:00:00'],
-            'ltz_io' => ['2026-03-01 10:00:00.000000000 -03:00'],
-        ] : [
-            'd' => ['+2026-03-01 01:00:00.000000 America/Sao_Paulo'],
-            'ts' => ['+2026-03-01 10:00:00.123456 America/Sao_Paulo'],
-            'tz' => ['+2026-03-01 10:00:00.500000 +05:45'],
-            'ltz' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
-            'ds' => ['+0Y0M1DT2H3M4S.500000'],
-            'ym' => ['+1Y2M0DT0H0M0S.000000'],
-            'd_io' => ['+2026-03-02 10:00:00.000000 America/Sao_Paulo'],
-            'ltz_io' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
-        ])
-        ->and(array_diff_key($values, array_flip(['lob', 'd', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym'])))->toBe([
-            'fraction' => [$float ? 12.5 : '12.5'],
-            'integral' => [5],
-            'huge' => ['1000000000000000000000000000000'],
-            'pls' => [7],
-            'bf' => [0.1],
-            'bd' => [0.1],
-            'flag' => [true],
-            'bytes' => ["\x00\xff"],
-            'text' => ['a'],
-            'io' => [$float ? 1.25 : '1.25'],
+        expect($stored)->toBe([
+            'd_out' => ['2026-03-01 10:00:00.000000'],
+            't_out' => ['2026-03-01 10:00:00.123456'],
+            'tz_out' => ['2026-03-01 01:00:00.123456'],
+            'ltz_out' => ['2026-03-01 01:00:00.123456'],
         ]);
-})->with(NumberMode::cases())->with(TemporalMode::cases())->with(LobMode::cases());
+    });
 
-test('a varchar of bytes that are not utf8 fails before any round trip', function (): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $thrown = null;
+    it('refuses an incompatible date interval when the bind is built', function (Closure $bind, string $message): void {
+        $thrown = null;
 
-    $trips = roundTrips($sid, function () use ($connection, &$thrown): void {
         try {
-            $connection->execute('begin :v := :v; end;', ['v' => new In\Varchar("\xff")], $this->options());
+            $bind();
         } catch (UsageException $usageException) {
             $thrown = $usageException;
         }
+
+        assert($thrown instanceof UsageException && $message !== '');
+        expect($thrown->getMessage())->toStartWith($message);
+    })->with('incompatibleIntervals');
+});
+
+describe('scalar binds', function (): void {
+    it('binds each class in, out and in out through its plsql type', function (string $plsql, Bindable $in, mixed $out, Bindable $outBind, Bindable $inOut, string $change, mixed $changed): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "declare
+                   procedure p(i in $plsql, o out $plsql, io in out $plsql) is
+                   begin
+                     o := i;
+                     io := $change;
+                   end;
+                 begin
+                   p(:i, :o, :io);
+                 end;",
+            ['i' => $in, 'o' => $outBind, 'io' => $inOut],
+            $this->options(),
+        )->outValues();
+
+        expect(array_keys($values))->toBe(['o', 'io'])
+            ->and(comparable($values['o'][0]))->toBe(comparable($out))
+            ->and(comparable($values['io'][0]))->toBe(comparable($changed));
+    })->with('classes');
+
+    it('binds null for each class', function (string $plsql, Bindable $in, Bindable $out, Bindable $inOut): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "declare
+                   procedure p(i in $plsql, o out $plsql, io in out $plsql) is
+                   begin
+                     o := i;
+                   end;
+                 begin
+                   p(:i, :o, :io);
+                 end;",
+            ['i' => $in, 'o' => $out, 'io' => $inOut],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['o' => [null], 'io' => [null]]);
+    })->with('nulls');
+
+    it('binds a rowid in, out and in out', function (): void {
+        $connection = $this->connect();
+        $rowid = $this->value($connection, 'select rowidtochar(rowid) from typed_items where id = 1');
+        assert(\is_string($rowid));
+
+        $values = $connection->execute(
+            'declare
+                   procedure p(i in rowid, o out rowid, io in out rowid) is
+                   begin
+                     select name into :name from typed_items where rowid = i;
+                     o := i;
+                     io := io;
+                   end;
+                 begin
+                   p(:i, :o, :io);
+                 end;',
+            ['i' => new In\Rowid($rowid), 'o' => new Out\Rowid(), 'io' => new InOut\Rowid($rowid), 'name' => new Out\Varchar()],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['o' => [$rowid], 'io' => [$rowid], 'name' => ['Item 0001']]);
     });
 
-    assert($thrown instanceof UsageException);
-    expect($thrown->getMessage())->toContain("Bind 'v'")
-        ->toContain('bind binary data with In\Raw or In\Blob')
-        ->and($trips)->toBe(0);
+    it('keeps a number string exact under any nls', function (): void {
+        // Standalone: a pooled Session would keep the ALTER SESSION.
+        $connection = $this->connect(standalone: true);
+        $connection->execute("alter session set nls_numeric_characters = ',.'", [], $this->options());
+
+        $dump = $this->value($connection, 'select dump(:v) from dual', ['v' => new In\Number('12.30')]);
+        $negative = $this->value($connection, 'select :v from dual', ['v' => new In\Number('-.50')]);
+        $long = $this->value($connection, 'select :v from dual', ['v' => new In\Number('12345678901234567890.123456789')]);
+
+        expect($dump)->toBe('Typ=2 Len=3: 193,13,31')
+            ->and($negative)->toBe('-0.5')
+            ->and($long)->toBe('12345678901234567890.123456789');
+    });
+
+    it('refuses a varchar of bytes that are not utf8 before any round trip', function (): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $thrown = null;
+
+        $trips = roundTrips($sid, function () use ($connection, &$thrown): void {
+            try {
+                $connection->execute('begin :v := :v; end;', ['v' => new In\Varchar("\xff")], $this->options());
+            } catch (UsageException $usageException) {
+                $thrown = $usageException;
+            }
+        });
+
+        assert($thrown instanceof UsageException);
+        expect($thrown->getMessage())->toContain("Bind 'v'")
+            ->toContain('bind binary data with In\Raw or In\Blob')
+            ->and($trips)->toBe(0);
+    });
+});
+
+describe('returning into', function (): void {
+    it('gives the one row of an insert', function (): void {
+        $connection = $this->connect();
+
+        $execution = $connection->execute(
+            'insert into typed_rows (id, name) values (:id, :name) returning id, name into :rid, :rname',
+            ['id' => 7, 'name' => 'seven', 'rid' => new Out\Number(), 'rname' => new Out\Varchar()],
+            $this->options(),
+        );
+
+        expect($execution->rowCount())->toBe(1)
+            ->and($execution->outValues())->toBe(['rid' => [7], 'rname' => ['seven']]);
+    });
+
+    it('gives every row of an update, and none when nothing matches', function (): void {
+        $connection = $this->connect();
+
+        $two = $connection->execute(
+            'update typed_items set price = price where id in (1, 2) returning id, name into :id, :name',
+            ['id' => new Out\Number(), 'name' => new Out\Varchar()],
+            $this->options(),
+        )->outValues();
+        $none = $connection->execute(
+            'update typed_items set price = price where id < 0 returning id into :id',
+            ['id' => new Out\Number()],
+            $this->options(),
+        )->outValues();
+
+        expect($two['id'])->toEqualCanonicalizing([1, 2])
+            ->and($two['name'])->toEqualCanonicalizing(['Item 0001', 'Item 0002'])
+            ->and($none)->toBe(['id' => []]);
+    });
+
+    it('reads the longest sql varchar2', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "update typed_items set price = price where id = 1 returning rpad('x', 4000, 'x') into :name",
+            ['name' => new Out\Varchar()],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['name' => [str_repeat('x', 4000)]]);
+    });
+});
+
+describe('varchar sizes', function (): void {
+    it('holds 32767 bytes in a varchar out', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "begin
+                   :ascii := rpad('a', 32767, 'a');
+                   :multibyte := rpad(unistr('\\00e7'), 16383, unistr('\\00e7'));
+                 end;",
+            ['ascii' => new Out\Varchar(), 'multibyte' => new Out\Varchar()],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['ascii' => [str_repeat('a', 32767)], 'multibyte' => [str_repeat('ç', 16383)]]);
+    });
+
+    it('grows a varchar in out to 32767 bytes', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "begin
+                   :from_null := rpad(nvl(:from_null, 'b'), 32767, 'b');
+                   :from_a := rpad(:from_a, 32767, 'b');
+                 end;",
+            ['from_null' => new InOut\Varchar(null), 'from_a' => new InOut\Varchar('a')],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['from_null' => [str_repeat('b', 32767)], 'from_a' => ['a' . str_repeat('b', 32766)]]);
+    });
+});
+
+describe('char and national text', function (): void {
+    it('matches a blank padded char only with a char bind', function (mixed $bind, int $matches): void {
+        $connection = $this->connect();
+
+        $count = $this->value($connection, "select count(*) from (select cast('AB' as char(5)) code from dual) where code = :code", ['code' => $bind]);
+
+        expect($count)->toBe($matches);
+    })->with([
+        'In\Char' => [new In\Char('AB'), 1],
+        'a plain string' => ['AB', 0],
+        'In\Varchar' => [new In\Varchar('AB'), 0],
+    ]);
+
+    it('keeps the padding of a char out', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "declare c char(5) := 'AB'; n nchar(4) := n'\u{e7}'; begin :c := c; :n := n; end;",
+            ['c' => new Out\Char(), 'n' => new Out\NChar()],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['c' => ['AB   '], 'n' => ['ç   ']]);
+    });
+
+    it('binds multibyte nvarchar and nchar text in the national character set', function (string $text, string $class): void {
+        $connection = $this->connect();
+        $bind = ['v' => $class === 'NVarchar' ? new In\NVarchar($text) : new In\NChar($text)];
+
+        $read = $this->value($connection, 'select :v from dual', $bind);
+        $dump = $this->value($connection, 'select dump(:v, 1016) from dual', $bind);
+
+        expect($read)->toBe($text)
+            ->and($dump)->toBeString()
+            ->toContain('CharacterSet=AL16UTF16');
+    })->with(['ç', '日本', '😀', 'ç日😀'])->with(['NVarchar', 'NChar']);
+
+    it('carries multibyte text in nvarchar out and in out', function (string $text): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            'begin :o := :i; :io := :io || :i; end;',
+            ['i' => new In\NVarchar($text), 'o' => new Out\NVarchar(), 'io' => new InOut\NVarchar($text)],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['o' => [$text], 'io' => [$text . $text]]);
+    })->with(['ç', '日本', '😀', 'ç日😀']);
+});
+
+describe('out values', function (): void {
+    it('keeps the case the user wrote in out value keys', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            'begin :TOTAL := 1; :name := 2; :Mixed := 3; end;',
+            ['total' => new Out\Number(), 'NAME' => new Out\Number(), 'mIxEd' => new InOut\Number(0)],
+            $this->options(),
+        )->outValues();
+
+        expect($values)->toBe(['total' => [1], 'NAME' => [2], 'mIxEd' => [3]]);
+    });
+
+    it('follows the column mapping', function (NumberMode $numbers, TemporalMode $temporals, LobMode $lobs): void {
+        $connection = $this->connect();
+        $options = new Options(true, null, 100, new ValueMapping($numbers, $temporals, $lobs), RowShape::Assoc, KeyCase::Native);
+
+        $values = inTimeZone('America/Sao_Paulo', fn (): array => $connection->execute(
+            "begin
+                   :fraction := 12.5; :integral := 5; :huge := 1e30; :pls := 7;
+                   :bf := 0.1f; :bd := 0.1d; :flag := true; :bytes := hextoraw('00ff');
+                   :text := 'a'; :io := :io + 0.25;
+                   :d := date '2026-03-01' + 1/24; :ts := timestamp '2026-03-01 10:00:00.123456789';
+                   :tz := timestamp '2026-03-01 10:00:00.5 +05:45';
+                   :ltz := cast(timestamp '2026-03-01 13:00:00 +00:00' as timestamp with local time zone);
+                   :d_io := :d_io + 1; :ltz_io := :ltz_io;
+                   :ds := interval '1 02:03:04.5' day to second; :ym := interval '1-2' year to month;
+                   :lob := to_clob('a');
+                 end;",
+            [
+                'fraction' => new Out\Number(), 'integral' => new Out\Number(), 'huge' => new Out\Number(),
+                'pls' => new Out\PlsInteger(), 'bf' => new Out\BinaryFloat(), 'bd' => new Out\BinaryDouble(),
+                'flag' => new Out\Boolean(), 'bytes' => new Out\Raw(), 'text' => new Out\Varchar(),
+                'io' => new InOut\Number(1),
+                'd' => new Out\Date(), 'ts' => new Out\Timestamp(), 'tz' => new Out\TimestampTz(),
+                'ltz' => new Out\TimestampLtz(), 'ds' => new Out\IntervalDs(), 'ym' => new Out\IntervalYm(),
+                'lob' => new Out\Clob(),
+                // These travel as TIMESTAMP and TSTZ, and come back as the type
+                // declared.
+                'd_io' => new InOut\Date(new DateTimeImmutable('2026-03-01 10:00:00.5')),
+                'ltz_io' => new InOut\TimestampLtz(new DateTimeImmutable('2026-03-01 13:00:00', new DateTimeZone('UTC'))),
+            ],
+            $options,
+        )->outValues());
+
+        $float = $numbers === NumberMode::Float;
+        $lob = $values['lob'][0];
+        $lobText = $lob instanceof Locator ? $lob->readChunk() : $lob;
+
+        expect($lob instanceof Locator)->toBe($lobs === LobMode::Locator)
+            ->and($lobText)->toBe('a')
+            ->and(array_map(static fn (array $list): array => array_map(temporalText(...), $list), array_intersect_key($values, array_flip(['d', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym']))))->toBe($temporals === TemporalMode::String ? [
+                'd' => ['2026-03-01 01:00:00'],
+                'ts' => ['2026-03-01 10:00:00.123456789'],
+                'tz' => ['2026-03-01 10:00:00.500000000 +05:45'],
+                'ltz' => ['2026-03-01 10:00:00.000000000 -03:00'],
+                'ds' => ['+0Y0M1DT2H3M4S.500000'],
+                'ym' => ['+1Y2M0DT0H0M0S.000000'],
+                'd_io' => ['2026-03-02 10:00:00'],
+                'ltz_io' => ['2026-03-01 10:00:00.000000000 -03:00'],
+            ] : [
+                'd' => ['+2026-03-01 01:00:00.000000 America/Sao_Paulo'],
+                'ts' => ['+2026-03-01 10:00:00.123456 America/Sao_Paulo'],
+                'tz' => ['+2026-03-01 10:00:00.500000 +05:45'],
+                'ltz' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
+                'ds' => ['+0Y0M1DT2H3M4S.500000'],
+                'ym' => ['+1Y2M0DT0H0M0S.000000'],
+                'd_io' => ['+2026-03-02 10:00:00.000000 America/Sao_Paulo'],
+                'ltz_io' => ['+2026-03-01 10:00:00.000000 America/Sao_Paulo'],
+            ])
+            ->and(array_diff_key($values, array_flip(['lob', 'd', 'ts', 'tz', 'ltz', 'd_io', 'ltz_io', 'ds', 'ym'])))->toBe([
+                'fraction' => [$float ? 12.5 : '12.5'],
+                'integral' => [5],
+                'huge' => ['1000000000000000000000000000000'],
+                'pls' => [7],
+                'bf' => [0.1],
+                'bd' => [0.1],
+                'flag' => [true],
+                'bytes' => ["\x00\xff"],
+                'text' => ['a'],
+                'io' => [$float ? 1.25 : '1.25'],
+            ]);
+    })->with(NumberMode::cases())->with(TemporalMode::cases())->with(LobMode::cases());
 });
 
 /**

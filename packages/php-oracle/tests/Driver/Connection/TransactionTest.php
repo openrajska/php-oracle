@@ -43,77 +43,81 @@ dataset('writes', function () {
     yield 'writing block' => ['begin insert into tx_rows (id) values (:id); end;', ['id' => 1]];
 });
 
-test('a write under autocommit is visible to another session at once', function (string $sql, array $binds): void {
-    $connection = $this->connect();
+describe('autocommit', function (): void {
+    it('shows a write to another session at once', function (string $sql, array $binds): void {
+        $connection = $this->connect();
 
-    /** @var array<string, mixed> $binds */
-    $connection->execute($sql, $binds, $this->options());
+        /** @var array<string, mixed> $binds */
+        $connection->execute($sql, $binds, $this->options());
 
-    expect(committed(otherSession()))->toBe([1]);
-})->with('writes');
+        expect(committed(otherSession()))->toBe([1]);
+    })->with('writes');
 
-test('a failed statement under autocommit leaves nothing applied or locked', function (): void {
-    $connection = $this->connect();
-    $connection->execute('insert into tx_rows (id) values (1)', [], $this->options());
+    it('leaves nothing applied or locked after a failed statement', function (): void {
+        $connection = $this->connect();
+        $connection->execute('insert into tx_rows (id) values (1)', [], $this->options());
 
-    $thrown = null;
+        $thrown = null;
 
-    try {
-        $connection->execute(
-            "begin update tx_rows set note = 'failed' where id = 1; insert into tx_rows (id) values (2); raise_application_error(-20043, 'fail'); end;",
-            [],
-            $this->options(),
-        );
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
+        try {
+            $connection->execute(
+                "begin update tx_rows set note = 'failed' where id = 1; insert into tx_rows (id) values (2); raise_application_error(-20043, 'fail'); end;",
+                [],
+                $this->options(),
+            );
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
 
-    expect($thrown?->getCode())->toBe(20043)
-        ->and(otherSession()->select('select id, note from tx_rows')->all())->toBe([['ID' => 1, 'NOTE' => null]])
-        ->and(locked('tx_rows', 1))->toBeFalse();
+        expect($thrown?->getCode())->toBe(20043)
+            ->and(otherSession()->select('select id, note from tx_rows')->all())->toBe([['ID' => 1, 'NOTE' => null]])
+            ->and(locked('tx_rows', 1))->toBeFalse();
+    });
+
+    it('adds no round trip to a statement', function (bool $autocommit): void {
+        $insert = 'insert into tx_rows (id) values (:id)';
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $connection->execute($insert, ['id' => 1], $this->options());
+
+        $trips = roundTrips($sid, fn (): mixed => $connection->execute($insert, ['id' => 2], $this->options(autocommit: $autocommit)));
+
+        expect($trips)->toBe(1);
+    })->with(['with autocommit' => [true], 'without autocommit' => [false]]);
 });
 
-test('without autocommit a write is invisible until commit', function (): void {
-    $connection = $this->connect();
-    $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
+describe('without autocommit', function (): void {
+    it('keeps a write invisible until commit', function (): void {
+        $connection = $this->connect();
+        $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
 
-    $beforeCommit = committed(otherSession());
+        $beforeCommit = committed(otherSession());
 
-    $connection->commit();
+        $connection->commit();
 
-    expect($beforeCommit)->toBeEmpty()
-        ->and(committed(otherSession()))->toBe([1]);
+        expect($beforeCommit)->toBeEmpty()
+            ->and(committed(otherSession()))->toBe([1]);
+    });
+
+    it('undoes the write on rollback', function (): void {
+        $connection = $this->connect();
+        $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
+
+        $connection->rollback();
+
+        expect($this->value($connection, 'select count(*) from tx_rows'))->toBe(0);
+    });
+
+    it('takes one round trip to commit or roll back', function (string $end): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
+
+        $trips = roundTrips($sid, $connection->$end(...));
+
+        expect($trips)->toBe(1);
+    })->with(['commit', 'rollback']);
 });
-
-test('without autocommit a rollback undoes the write', function (): void {
-    $connection = $this->connect();
-    $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
-
-    $connection->rollback();
-
-    expect($this->value($connection, 'select count(*) from tx_rows'))->toBe(0);
-});
-
-test('autocommit adds no round trip to a statement', function (bool $autocommit): void {
-    $insert = 'insert into tx_rows (id) values (:id)';
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $connection->execute($insert, ['id' => 1], $this->options());
-
-    $trips = roundTrips($sid, fn (): mixed => $connection->execute($insert, ['id' => 2], $this->options(autocommit: $autocommit)));
-
-    expect($trips)->toBe(1);
-})->with(['with autocommit' => [true], 'without autocommit' => [false]]);
-
-test('commit and rollback take one round trip each', function (string $end): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
-
-    $trips = roundTrips($sid, $connection->$end(...));
-
-    expect($trips)->toBe(1);
-})->with(['commit', 'rollback']);
 
 /**
  * The committed ids in tx_rows, as another Session sees them.

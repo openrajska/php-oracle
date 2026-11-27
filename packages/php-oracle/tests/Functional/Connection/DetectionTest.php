@@ -9,6 +9,20 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
+describe('a missing extension', function (): void {
+    it('still loads every class and says how to install the extension on connect', function (): void {
+        $result = child();
+
+        expect($result['classes'])->toBeGreaterThan(50)
+            ->and($result['connects'])->each->toBe([
+                'connected' => false,
+                'class' => ConfigurationException::class,
+                'message' => 'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
+                    . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).',
+            ]);
+    });
+});
+
 /**
  * A fresh PHP process without the Extension, as a new FPM worker missing it
  * would be: it loads every Core class, then connects twice, and prints what
@@ -44,18 +58,6 @@ const CHILD = <<<'PHP'
 
     echo json_encode(['classes' => $classes, 'connects' => $connects], JSON_THROW_ON_ERROR);
     PHP;
-
-test('without the extension classes still load and connect says how to install it', function (): void {
-    $result = child();
-
-    expect($result['classes'])->toBeGreaterThan(50)
-        ->and($result['connects'])->each->toBe([
-            'connected' => false,
-            'class' => ConfigurationException::class,
-            'message' => 'The oracledb extension is not loaded. Install it with `pie install openrajska/php-oracle-ext`, '
-                . 'then check it is enabled for this SAPI (`php --ri oracledb`; CLI and FPM read different php.ini files).',
-        ]);
-});
 
 /**
  * Runs CHILD, after the schema is in place: the child inherits the marker

@@ -13,8 +13,6 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-const INSERT = 'insert into batch_rows (id, code, qty) values (:id, :code, :qty)';
-
 beforeEach(function (): void {
     schema()->run(<<<'SQL'
         create table batch_rows (
@@ -29,106 +27,114 @@ beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
-test('run many runs the statement once per row and commits under autocommit', function (): void {
-    $arrayDml = $this->connection->runMany(INSERT, rows(3));
+describe('running many rows', function (): void {
+    it('runs the statement once per row and commits under autocommit', function (): void {
+        $arrayDml = $this->connection->runMany(INSERT, rows(3));
 
-    expect($arrayDml->affected())->toBe(3)
-        ->and($arrayDml)->toHaveCount(3)
-        ->and(otherSession()->select('select count(*) from batch_rows')->value())->toBe(3);
+        expect($arrayDml->affected())->toBe(3)
+            ->and($arrayDml)->toHaveCount(3)
+            ->and(otherSession()->select('select count(*) from batch_rows')->value())->toBe(3);
+    });
+
+    it('sums the rows every bind row touched', function (): void {
+        $this->connection->runMany(INSERT, rows(3));
+
+        $arrayDml = $this->connection->runMany('update batch_rows set qty = 0 where id >= :low', [['low' => 2], ['low' => 1]]);
+
+        expect($arrayDml)->toHaveCount(2)
+            ->and($arrayDml->affected())->toBe(5);
+    });
+
+    it('gives an empty result for no rows', function (): void {
+        $arrayDml = $this->connection->runMany(INSERT, []);
+
+        expect($arrayDml)->toBeEmpty()
+            ->and($arrayDml->affected())->toBe(0);
+    });
 });
 
-test('affected sums the rows every bind row touched', function (): void {
-    $this->connection->runMany(INSERT, rows(3));
+describe('out values', function (): void {
+    it('gives one value per row in order from returning into', function (): void {
+        $this->connection->runMany(INSERT, rows(3));
 
-    $arrayDml = $this->connection->runMany('update batch_rows set qty = 0 where id >= :low', [['low' => 2], ['low' => 1]]);
+        $arrayDml = $this->connection->runMany('update batch_rows set qty = qty + 1 where id >= :low returning id into :ids', [
+            ['low' => 3, 'ids' => new Out\Number()],
+            ['low' => 9, 'ids' => new Out\Number()],
+        ]);
 
-    expect($arrayDml)->toHaveCount(2)
-        ->and($arrayDml->affected())->toBe(5);
-});
+        $ids = $arrayDml->out('IDS');
+        expect(array_map(static fn (OutValue $value): array => $value->list(), $ids))->toBe([[3], []])
+            ->and($ids[0]->int())->toBe(3);
+    });
 
-test('run many of no rows gives an empty array dml', function (): void {
-    $arrayDml = $this->connection->runMany(INSERT, []);
+    it('gives one value per row in order from a block', function (): void {
+        $arrayDml = $this->connection->runMany('begin :label := :prefix || :n; end;', [
+            ['n' => 1, 'prefix' => 'a', 'label' => new Out\Varchar()],
+            ['n' => 2, 'prefix' => 'b', 'label' => new Out\Varchar()],
+        ]);
 
-    expect($arrayDml)->toBeEmpty()
-        ->and($arrayDml->affected())->toBe(0);
-});
+        $labels = $arrayDml->out('label');
 
-test('out gives one value per row in order from returning into', function (): void {
-    $this->connection->runMany(INSERT, rows(3));
+        expect(array_map(static fn (OutValue $value): string | null => $value->string(), $labels))->toBe(['a1', 'b2']);
+    });
 
-    $arrayDml = $this->connection->runMany('update batch_rows set qty = qty + 1 where id >= :low returning id into :ids', [
-        ['low' => 3, 'ids' => new Out\Number()],
-        ['low' => 9, 'ids' => new Out\Number()],
+    it('fails naming the fix for a name with no out value', function (string $name, string $message): void {
+        $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => new Out\Varchar()]]);
+
+        $read = fn () => $arrayDml->out($name);
+
+        expect($read)->toThrow(UsageException::class, $message);
+    })->with([
+        'an unknown name' => ['missing', "No OUT bind is named 'missing'; they are 'label'."],
+        'an IN only name' => ['PREFIX', "Bind 'prefix' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back."],
     ]);
 
-    $ids = $arrayDml->out('IDS');
-    expect(array_map(static fn (OutValue $value): array => $value->list(), $ids))->toBe([[3], []])
-        ->and($ids[0]->int())->toBe(3);
+    it('says the statement has no out binds when no rows ran', function (): void {
+        $arrayDml = $this->connection->runMany(INSERT, []);
+
+        $read = fn () => $arrayDml->out('anything');
+
+        expect($read)->toThrow(UsageException::class, "No OUT bind is named 'anything'; the statement has none.");
+    });
 });
 
-test('out gives one value per row in order from a block', function (): void {
-    $arrayDml = $this->connection->runMany('begin :label := :prefix || :n; end;', [
-        ['n' => 1, 'prefix' => 'a', 'label' => new Out\Varchar()],
-        ['n' => 2, 'prefix' => 'b', 'label' => new Out\Varchar()],
-    ]);
+describe('failing rows', function (): void {
+    it('throws one exception listing each failing row', function (): void {
+        $rows = rows(8);
+        $rows[3]['id'] = 1;
+        $rows[5]['code'] = null;
+        $rows[7]['qty'] = -1;
+        $thrown = null;
 
-    $labels = $arrayDml->out('label');
+        try {
+            $this->connection->runMany(INSERT, $rows);
+        } catch (ArrayDmlFailedException $arrayDmlFailedException) {
+            $thrown = $arrayDmlFailedException;
+        }
 
-    expect(array_map(static fn (OutValue $value): string | null => $value->string(), $labels))->toBe(['a1', 'b2']);
+        expect($thrown?->getCode())->toBe(1)
+            ->and($thrown?->sql())->toBe(INSERT)
+            ->and($thrown?->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
+            ->and(array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $thrown?->rows() ?? []))->toBe([[3, 1], [5, 1400], [7, 2290]]);
+    });
+
+    it('undoes only that call inside a transaction', function (): void {
+        $this->connection->begin();
+        $this->connection->run('insert into array_dml_marks (id) values (1)');
+
+        $rows = rows(2);
+        $rows[1]['id'] = 1;
+        expect(fn () => $this->connection->runMany(INSERT, $rows))->toThrow(ArrayDmlFailedException::class);
+        $this->connection->runMany(INSERT, [['id' => 5, 'code' => 'c5', 'qty' => 5]]);
+
+        $this->connection->commit();
+
+        expect(otherSession()->select('select id from batch_rows')->all())->toBe([['ID' => 5]])
+            ->and(otherSession()->select('select count(*) from array_dml_marks')->value())->toBe(1);
+    });
 });
 
-test('out of a name with no out value fails naming the fix', function (string $name, string $message): void {
-    $arrayDml = $this->connection->runMany('begin :label := :prefix; end;', [['prefix' => 'a', 'label' => new Out\Varchar()]]);
-
-    $read = fn () => $arrayDml->out($name);
-
-    expect($read)->toThrow(UsageException::class, $message);
-})->with([
-    'an unknown name' => ['missing', "No OUT bind is named 'missing'; they are 'label'."],
-    'an IN only name' => ['PREFIX', "Bind 'prefix' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back."],
-]);
-
-test('out of an empty run many says the statement has no out binds', function (): void {
-    $arrayDml = $this->connection->runMany(INSERT, []);
-
-    $read = fn () => $arrayDml->out('anything');
-
-    expect($read)->toThrow(UsageException::class, "No OUT bind is named 'anything'; the statement has none.");
-});
-
-test('failing rows throw one array dml failed exception listing each row', function (): void {
-    $rows = rows(8);
-    $rows[3]['id'] = 1;
-    $rows[5]['code'] = null;
-    $rows[7]['qty'] = -1;
-    $thrown = null;
-
-    try {
-        $this->connection->runMany(INSERT, $rows);
-    } catch (ArrayDmlFailedException $arrayDmlFailedException) {
-        $thrown = $arrayDmlFailedException;
-    }
-
-    expect($thrown?->getCode())->toBe(1)
-        ->and($thrown?->sql())->toBe(INSERT)
-        ->and($thrown?->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
-        ->and(array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $thrown?->rows() ?? []))->toBe([[3, 1], [5, 1400], [7, 2290]]);
-});
-
-test('failing rows inside begin undo only that call', function (): void {
-    $this->connection->begin();
-    $this->connection->run('insert into array_dml_marks (id) values (1)');
-
-    $rows = rows(2);
-    $rows[1]['id'] = 1;
-    expect(fn () => $this->connection->runMany(INSERT, $rows))->toThrow(ArrayDmlFailedException::class);
-    $this->connection->runMany(INSERT, [['id' => 5, 'code' => 'c5', 'qty' => 5]]);
-
-    $this->connection->commit();
-
-    expect(otherSession()->select('select id from batch_rows')->all())->toBe([['ID' => 5]])
-        ->and(otherSession()->select('select count(*) from array_dml_marks')->value())->toBe(1);
-});
+const INSERT = 'insert into batch_rows (id, code, qty) values (:id, :code, :qty)';
 
 /**
  * @return list<array{id: int, code: string|null, qty: int}>

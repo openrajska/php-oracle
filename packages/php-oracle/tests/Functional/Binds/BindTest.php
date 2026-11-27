@@ -48,30 +48,6 @@ beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
-test('plain values bind by name case insensitively', function (): void {
-    $binds = ['id' => 1, 'PRICE' => 0.1, 'priority' => Priority::High, 'flag' => true, 'nothing' => null];
-
-    $matches = $this->connection->select(
-        'select count(*) from dual where :Id = 1 and :price = 0.1 and :priority = 2 and :flag and :nothing is null',
-        $binds,
-    )->value();
-
-    expect($matches)->toBe(1);
-});
-
-test('a date fails naming the typed binds', function (): void {
-    $select = fn () => $this->connection->select('select :at from dual', ['at' => new DateTimeImmutable()]);
-
-    expect($select)->toThrow(UsageException::class, "Bind 'at': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.");
-});
-
-test('a list of binds fails naming the named form', function (): void {
-    // @phpstan-ignore argument.type (a list is the mistake under test)
-    $select = fn () => $this->connection->select('select :id from dual', [1]);
-
-    expect($select)->toThrow(UsageException::class, "key every value by its placeholder name without ':'");
-});
-
 /**
  * Every way a bound value can reach an exception: the server refusing it,
  * Core refusing it, a typed bind refusing it.
@@ -96,19 +72,49 @@ dataset('failures', function () {
     yield 'InOut\PlsInteger, a string' => [static fn (Connection $c, #[SensitiveParameter] string $secret): PlsInteger => new InOut\PlsInteger($secret)]; // @phpstan-ignore argument.type (the mistake is the point)
 });
 
-test('a bound value never appears in an error', function (Closure $failure): void {
-    $secret = 'zq32secret';
-    $thrown = null;
+describe('plain values', function (): void {
+    it('binds plain values by name ignoring case', function (): void {
+        $binds = ['id' => 1, 'PRICE' => 0.1, 'priority' => Priority::High, 'flag' => true, 'nothing' => null];
 
-    try {
-        $failure($this->connection, $secret);
-    } catch (Throwable $throwable) {
-        $thrown = $throwable;
-    }
+        $matches = $this->connection->select(
+            'select count(*) from dual where :Id = 1 and :price = 0.1 and :priority = 2 and :flag and :nothing is null',
+            $binds,
+        )->value();
 
-    expect($thrown)->toBeInstanceOf(Throwable::class)
-        ->and(everythingShown($thrown))->not->toContain($secret);
-})->with('failures');
+        expect($matches)->toBe(1);
+    });
+});
+
+describe('bind mistakes', function (): void {
+    it('refuses a date and names the typed binds', function (): void {
+        $select = fn () => $this->connection->select('select :at from dual', ['at' => new DateTimeImmutable()]);
+
+        expect($select)->toThrow(UsageException::class, "Bind 'at': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.");
+    });
+
+    it('refuses a list of binds and names the named form', function (): void {
+        // @phpstan-ignore argument.type (a list is the mistake under test)
+        $select = fn () => $this->connection->select('select :id from dual', [1]);
+
+        expect($select)->toThrow(UsageException::class, "key every value by its placeholder name without ':'");
+    });
+});
+
+describe('secrets', function (): void {
+    it('never shows a bound value in an error', function (Closure $failure): void {
+        $secret = 'zq32secret';
+        $thrown = null;
+
+        try {
+            $failure($this->connection, $secret);
+        } catch (Throwable $throwable) {
+            $thrown = $throwable;
+        }
+
+        expect($thrown)->toBeInstanceOf(Throwable::class)
+            ->and(everythingShown($thrown))->not->toContain($secret);
+    })->with('failures');
+});
 
 /**
  * What an exception shows: its message and trace with their arguments, its
@@ -116,7 +122,7 @@ test('a bound value never appears in an error', function (Closure $failure): voi
  */
 function everythingShown(Throwable | null $thrown): string
 {
-    if (!$thrown instanceof Throwable) {
+    if (! $thrown instanceof Throwable) {
         return '';
     }
     $shown = (string) $thrown;

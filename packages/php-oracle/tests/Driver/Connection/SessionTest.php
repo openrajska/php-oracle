@@ -29,83 +29,6 @@ beforeEach(function (): void {
     schema()->run('insert into session_bulk (id) select level from dual connect by level <= 10000');
 });
 
-test('the server version is five part matches version full and costs no round trip', function (): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $version = null;
-
-    $trips = roundTrips($sid, static function () use ($connection, &$version): void {
-        $version = $connection->serverVersion();
-    });
-
-    expect($trips)->toBe(0)
-        ->and($version)->toMatch('/^\d+\.\d+\.\d+\.\d+\.\d+$/')
-        ->toBe($this->value($connection, "select version_full from product_component_version where product like 'Oracle%'"));
-});
-
-test('config tracing shows in v session after the first round trip', function (): void {
-    $connection = $this->connect(tracing: new Tracing(
-        module: 'billing',
-        action: 'close month',
-        clientIdentifier: 'user-42',
-        clientInfo: 'worker 7',
-    ));
-
-    $sid = $this->sid($connection);
-
-    expect(tracing(otherSession(), $sid))->toBe([
-        'MODULE' => 'billing',
-        'ACTION' => 'close month',
-        'CLIENT_IDENTIFIER' => 'user-42',
-        'CLIENT_INFO' => 'worker 7',
-    ]);
-});
-
-test('trace costs no round trip and replaces the whole set with the next one', function (): void {
-    $connection = $this->connect(tracing: new Tracing(
-        module: 'billing',
-        action: 'close month',
-        clientIdentifier: 'user-42',
-        clientInfo: 'worker 7',
-    ));
-    $sid = $this->sid($connection);
-
-    $trips = roundTrips($sid, static fn () => $connection->trace(new Tracing(module: 'reports', clientInfo: 'worker 8')));
-    $pending = tracing(otherSession(), $sid)['MODULE'];
-    $this->sid($connection);
-
-    expect($trips)->toBe(0)
-        ->and($pending)->toBe('billing')
-        ->and(tracing(otherSession(), $sid))->toBe([
-            'MODULE' => 'reports',
-            'ACTION' => null,
-            'CLIENT_IDENTIFIER' => null,
-            'CLIENT_INFO' => 'worker 8',
-        ]);
-});
-
-test('tracing set by one connection is empty for the next on the same session', function (bool $sent): void {
-    $fields = $this->ownPool() + ['maxConnections' => 1];
-    $first = $this->connect(...$fields);
-    $sid = $this->sid($first);
-    $first->trace(new Tracing(module: 'A', action: 'A', clientIdentifier: 'A', clientInfo: 'A'));
-    if ($sent) {
-        $this->sid($first);
-    }
-    $first->close();
-
-    $second = $this->connect(...$fields);
-
-    expect($this->rows($second, <<<'SQL'
-        select sys_context('userenv', 'sid') sid,
-               sys_context('userenv', 'module') module,
-               sys_context('userenv', 'action') action,
-               sys_context('userenv', 'client_identifier') client_identifier,
-               sys_context('userenv', 'client_info') client_info
-          from dual
-        SQL)[0])->toBe(['SID' => (string) $sid, 'MODULE' => null, 'ACTION' => null, 'CLIENT_IDENTIFIER' => null, 'CLIENT_INFO' => null]);
-})->with(['sent' => [true], 'still pending' => [false]]);
-
 /**
  * @return iterable<string, array{int, int, bool}>
  */
@@ -116,19 +39,6 @@ dataset('fullBatches', function () {
     yield '3 rows at a fetch size of 3' => [3, 3, true];
     yield '3 rows at a fetch size of 3 without autocommit' => [3, 3, false];
 });
-
-test('a query of up to fetch size rows takes one round trip', function (int $count, int $fetchSize, bool $autocommit): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $rows = [];
-
-    $trips = roundTrips($sid, function () use ($connection, $count, $fetchSize, $autocommit, &$rows): void {
-        $rows = $this->rows($connection, 'select level n from dual connect by level <= :n', ['n' => $count], $this->options(fetchSize: $fetchSize, autocommit: $autocommit));
-    });
-
-    expect($trips)->toBe(1)
-        ->and($rows)->toHaveCount($count);
-})->with('fullBatches');
 
 /**
  * Each kind of cursor over 25 rows, and the Round trips opening and reading
@@ -159,136 +69,238 @@ dataset('cursorKinds', function () {
     }, 4];
 });
 
-test('a cursor reads fetch size rows per round trip', function (Closure $open, int $expectedTrips): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $sizes = [];
+describe('server version', function (): void {
+    it('has five parts, matches version full and costs no round trip', function (): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $version = null;
 
-    $trips = roundTrips($sid, function () use ($open, $connection, &$sizes): void {
-        $cursor = $open($connection, $this->options(fetchSize: 10));
-        assert($cursor instanceof Cursor);
-        while (($batch = $cursor->fetchBatch()) !== []) {
-            $sizes[] = \count($batch);
-        }
+        $trips = roundTrips($sid, static function () use ($connection, &$version): void {
+            $version = $connection->serverVersion();
+        });
+
+        expect($trips)->toBe(0)
+            ->and($version)->toMatch('/^\d+\.\d+\.\d+\.\d+\.\d+$/')
+            ->toBe($this->value($connection, "select version_full from product_component_version where product like 'Oracle%'"));
+    });
+});
+
+describe('tracing', function (): void {
+    it('shows the config tracing in v session after the first round trip', function (): void {
+        $connection = $this->connect(tracing: new Tracing(
+            module: 'billing',
+            action: 'close month',
+            clientIdentifier: 'user-42',
+            clientInfo: 'worker 7',
+        ));
+
+        $sid = $this->sid($connection);
+
+        expect(tracing(otherSession(), $sid))->toBe([
+            'MODULE' => 'billing',
+            'ACTION' => 'close month',
+            'CLIENT_IDENTIFIER' => 'user-42',
+            'CLIENT_INFO' => 'worker 7',
+        ]);
     });
 
-    expect($sizes)->toBe([10, 10, 5])
-        ->and($trips)->toBe($expectedTrips);
-})->with('cursorKinds');
+    it('costs no round trip and replaces the whole set with the next one', function (): void {
+        $connection = $this->connect(tracing: new Tracing(
+            module: 'billing',
+            action: 'close month',
+            clientIdentifier: 'user-42',
+            clientInfo: 'worker 7',
+        ));
+        $sid = $this->sid($connection);
 
-test('the fetch size of an execute governs its cursor', function (): void {
-    $connection = $this->connect();
-    $rows = 'select level n from dual connect by level <= 25';
+        $trips = roundTrips($sid, static fn () => $connection->trace(new Tracing(module: 'reports', clientInfo: 'worker 8')));
+        $pending = tracing(otherSession(), $sid)['MODULE'];
+        $this->sid($connection);
 
-    $small = $connection->execute($rows, [], $this->options(fetchSize: 7))->cursor();
-    $large = $connection->execute($rows, [], $this->options(fetchSize: 20))->cursor();
-
-    assert($small !== null);
-    assert($large !== null);
-    expect($small->fetchBatch())->toHaveCount(7)
-        ->and($large->fetchBatch())->toHaveCount(20)
-        ->and($small->fetchBatch())->toHaveCount(7);
-});
-
-test('a call over the call timeout throws timeout exception and the connection survives', function (): void {
-    $connection = $this->connect(...$this->ownPool());
-    $sql = 'select count(*) from session_bulk a, session_bulk b';
-    $thrown = null;
-    $started = microtime(true);
-
-    try {
-        $connection->execute($sql, [], $this->options(timeout: 0.5))->cursor()?->fetchBatch();
-    } catch (TimeoutException $timeoutException) {
-        $thrown = $timeoutException;
-    }
-
-    expect($thrown?->getCode())->toBe(0)
-        ->and($thrown?->getMessage())->toBe('Call timeout of 500 ms exceeded.')
-        ->and($thrown?->sql())->toBe($sql)
-        ->and(microtime(true) - $started)->toBeLessThan(5)
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-});
-
-test('a fetch over the call timeout throws timeout exception', function (): void {
-    $connection = $this->connect(...$this->ownPool() + ['maxConnections' => 2]);
-    $cursor = $connection->execute(
-        'select session_slow(level, case when level > 2 then 1 else 0 end) n from dual connect by level <= 4',
-        [],
-        $this->options(fetchSize: 1, timeout: 0.5),
-    )->cursor();
-    assert($cursor !== null);
-    $cursor->fetchBatch();
-    $cursor->fetchBatch();
-
-    expect(fn () => $cursor->fetchBatch())->toThrow(TimeoutException::class);
-});
-
-test('a read whose round trips are each under the call timeout completes', function (): void {
-    $connection = $this->connect();
-    $started = microtime(true);
-
-    $rows = $this->rows(
-        $connection,
-        'select session_slow(level, 0.3) n from dual connect by level <= 6',
-        [],
-        $this->options(fetchSize: 1, timeout: 1),
-    );
-
-    expect($rows)->toBe([['N' => 1], ['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5], ['N' => 6]])
-        ->and(microtime(true) - $started)->toBeGreaterThan(1.5);
-});
-
-test('a call timeout during a server sleep breaks the connection', function (): void {
-    $fields = $this->ownPool() + ['maxConnections' => 1];
-    $connection = $this->connect(...$fields);
-    $session = $this->session($connection);
-    $timeout = null;
-
-    try {
-        $connection->execute('begin dbms_session.sleep(3); end;', [], $this->options(timeout: 0.5));
-    } catch (TimeoutException $timeoutException) {
-        $timeout = $timeoutException;
-    }
-
-    expect($timeout?->getMessage())->toStartWith('Call timeout of 500 ms exceeded')
-        ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
-        ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $timeout?->getMessage());
-    $connection->close();
-    expect($this->session($this->connect(...$fields)))->not->toBe($session);
-});
-
-test('on a killed session tracing and the call timeout give way to connection lost', function (): void {
-    $connection = $this->connect(...$this->ownPool() + ['maxConnections' => 2]);
-    kill($this->sid($connection));
-    $connection->trace(new Tracing(module: 'after the kill'));
-    $started = microtime(true);
-
-    $lost = null;
-    try {
-        $connection->execute('select 1 from dual', [], $this->options(timeout: 30));
-    } catch (ConnectionLostException $connectionLostException) {
-        $lost = $connectionLostException;
-    }
-
-    expect($lost)->toBeInstanceOf(ConnectionLostException::class)
-        ->and(microtime(true) - $started)->toBeLessThan(5)
-        ->and(fn () => $connection->trace(new Tracing(module: 'broken')))
-        ->toThrow(ConnectionLostException::class, 'Connection is broken: ');
-});
-
-test('a repeated statement parses once unless the statement cache is off', function (int $size, int $parses): void {
-    $connection = $this->connect(...$this->ownPool() + ['statementCacheSize' => $size]);
-    $sid = $this->sid($connection);
-    $sql = 'select :n * 2 doubled from dual';
-
-    $parsed = parses(otherSession(), $sid, function () use ($connection, $sql): void {
-        foreach ([1, 2, 3] as $n) {
-            $this->rows($connection, $sql, ['n' => $n]);
-        }
+        expect($trips)->toBe(0)
+            ->and($pending)->toBe('billing')
+            ->and(tracing(otherSession(), $sid))->toBe([
+                'MODULE' => 'reports',
+                'ACTION' => null,
+                'CLIENT_IDENTIFIER' => null,
+                'CLIENT_INFO' => 'worker 8',
+            ]);
     });
 
-    expect($parsed)->toBe($parses);
-})->with(['the default Statement cache' => [20, 1], 'statementCacheSize: 0' => [0, 3]]);
+    it('leaves no tracing to the next connection on the same session', function (bool $sent): void {
+        $fields = $this->ownPool() + ['maxConnections' => 1];
+        $first = $this->connect(...$fields);
+        $sid = $this->sid($first);
+        $first->trace(new Tracing(module: 'A', action: 'A', clientIdentifier: 'A', clientInfo: 'A'));
+        if ($sent) {
+            $this->sid($first);
+        }
+        $first->close();
+
+        $second = $this->connect(...$fields);
+
+        expect($this->rows($second, <<<'SQL'
+            select sys_context('userenv', 'sid') sid,
+                   sys_context('userenv', 'module') module,
+                   sys_context('userenv', 'action') action,
+                   sys_context('userenv', 'client_identifier') client_identifier,
+                   sys_context('userenv', 'client_info') client_info
+              from dual
+            SQL)[0])->toBe(['SID' => (string) $sid, 'MODULE' => null, 'ACTION' => null, 'CLIENT_IDENTIFIER' => null, 'CLIENT_INFO' => null]);
+    })->with(['sent' => [true], 'still pending' => [false]]);
+});
+
+describe('fetch size', function (): void {
+    it('takes one round trip for a query of up to fetch size rows', function (int $count, int $fetchSize, bool $autocommit): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $rows = [];
+
+        $trips = roundTrips($sid, function () use ($connection, $count, $fetchSize, $autocommit, &$rows): void {
+            $rows = $this->rows($connection, 'select level n from dual connect by level <= :n', ['n' => $count], $this->options(fetchSize: $fetchSize, autocommit: $autocommit));
+        });
+
+        expect($trips)->toBe(1)
+            ->and($rows)->toHaveCount($count);
+    })->with('fullBatches');
+
+    it('reads fetch size rows per round trip', function (Closure $open, int $expectedTrips): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $sizes = [];
+
+        $trips = roundTrips($sid, function () use ($open, $connection, &$sizes): void {
+            $cursor = $open($connection, $this->options(fetchSize: 10));
+            assert($cursor instanceof Cursor);
+            while (($batch = $cursor->fetchBatch()) !== []) {
+                $sizes[] = \count($batch);
+            }
+        });
+
+        expect($sizes)->toBe([10, 10, 5])
+            ->and($trips)->toBe($expectedTrips);
+    })->with('cursorKinds');
+
+    it('lets the fetch size of an execute govern its cursor', function (): void {
+        $connection = $this->connect();
+        $rows = 'select level n from dual connect by level <= 25';
+
+        $small = $connection->execute($rows, [], $this->options(fetchSize: 7))->cursor();
+        $large = $connection->execute($rows, [], $this->options(fetchSize: 20))->cursor();
+
+        assert($small !== null);
+        assert($large !== null);
+        expect($small->fetchBatch())->toHaveCount(7)
+            ->and($large->fetchBatch())->toHaveCount(20)
+            ->and($small->fetchBatch())->toHaveCount(7);
+    });
+});
+
+describe('call timeout', function (): void {
+    it('throws timeout exception over the call timeout and the connection survives', function (): void {
+        $connection = $this->connect(...$this->ownPool());
+        $sql = 'select count(*) from session_bulk a, session_bulk b';
+        $thrown = null;
+        $started = microtime(true);
+
+        try {
+            $connection->execute($sql, [], $this->options(timeout: 0.5))->cursor()?->fetchBatch();
+        } catch (TimeoutException $timeoutException) {
+            $thrown = $timeoutException;
+        }
+
+        expect($thrown?->getCode())->toBe(0)
+            ->and($thrown?->getMessage())->toBe('Call timeout of 500 ms exceeded.')
+            ->and($thrown?->sql())->toBe($sql)
+            ->and(microtime(true) - $started)->toBeLessThan(5)
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    });
+
+    it('throws timeout exception for a fetch over the call timeout', function (): void {
+        $connection = $this->connect(...$this->ownPool() + ['maxConnections' => 2]);
+        $cursor = $connection->execute(
+            'select session_slow(level, case when level > 2 then 1 else 0 end) n from dual connect by level <= 4',
+            [],
+            $this->options(fetchSize: 1, timeout: 0.5),
+        )->cursor();
+        assert($cursor !== null);
+        $cursor->fetchBatch();
+        $cursor->fetchBatch();
+
+        expect(fn () => $cursor->fetchBatch())->toThrow(TimeoutException::class);
+    });
+
+    it('completes a read whose round trips each stay under the call timeout', function (): void {
+        $connection = $this->connect();
+        $started = microtime(true);
+
+        $rows = $this->rows(
+            $connection,
+            'select session_slow(level, 0.3) n from dual connect by level <= 6',
+            [],
+            $this->options(fetchSize: 1, timeout: 1),
+        );
+
+        expect($rows)->toBe([['N' => 1], ['N' => 2], ['N' => 3], ['N' => 4], ['N' => 5], ['N' => 6]])
+            ->and(microtime(true) - $started)->toBeGreaterThan(1.5);
+    });
+
+    it('breaks the connection when it runs out during a server sleep', function (): void {
+        $fields = $this->ownPool() + ['maxConnections' => 1];
+        $connection = $this->connect(...$fields);
+        $session = $this->session($connection);
+        $timeout = null;
+
+        try {
+            $connection->execute('begin dbms_session.sleep(3); end;', [], $this->options(timeout: 0.5));
+        } catch (TimeoutException $timeoutException) {
+            $timeout = $timeoutException;
+        }
+
+        expect($timeout?->getMessage())->toStartWith('Call timeout of 500 ms exceeded')
+            ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
+            ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $timeout?->getMessage());
+        $connection->close();
+        expect($this->session($this->connect(...$fields)))->not->toBe($session);
+    });
+});
+
+describe('killed sessions', function (): void {
+    it('turns tracing and the call timeout into connection lost', function (): void {
+        $connection = $this->connect(...$this->ownPool() + ['maxConnections' => 2]);
+        kill($this->sid($connection));
+        $connection->trace(new Tracing(module: 'after the kill'));
+        $started = microtime(true);
+
+        $lost = null;
+        try {
+            $connection->execute('select 1 from dual', [], $this->options(timeout: 30));
+        } catch (ConnectionLostException $connectionLostException) {
+            $lost = $connectionLostException;
+        }
+
+        expect($lost)->toBeInstanceOf(ConnectionLostException::class)
+            ->and(microtime(true) - $started)->toBeLessThan(5)
+            ->and(fn () => $connection->trace(new Tracing(module: 'broken')))
+            ->toThrow(ConnectionLostException::class, 'Connection is broken: ');
+    });
+});
+
+describe('the statement cache', function (): void {
+    it('parses a repeated statement once unless the cache is off', function (int $size, int $parses): void {
+        $connection = $this->connect(...$this->ownPool() + ['statementCacheSize' => $size]);
+        $sid = $this->sid($connection);
+        $sql = 'select :n * 2 doubled from dual';
+
+        $parsed = parses(otherSession(), $sid, function () use ($connection, $sql): void {
+            foreach ([1, 2, 3] as $n) {
+                $this->rows($connection, $sql, ['n' => $n]);
+            }
+        });
+
+        expect($parsed)->toBe($parses);
+    })->with(['the default Statement cache' => [20, 1], 'statementCacheSize: 0' => [0, 3]]);
+});
 
 /**
  * How many parses the Session with this SID asked for while $action ran.

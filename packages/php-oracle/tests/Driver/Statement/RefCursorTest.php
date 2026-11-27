@@ -21,11 +21,14 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
-/*
- * Five categories with multibyte names, and 20 items: item n is in category
- * ((n - 1) mod 5) + 1, named 'Item 000n', priced n * 1.25, created
- * 2026-01-01 00:00 + (n - 1) hours.
- */
+const NESTED = <<<'SQL'
+    select c.id, c.name,
+           cursor(select i.id, i.price from ref_items i
+                   where i.category_id = c.id order by i.id) as items
+      from ref_categories c
+     order by c.id
+    SQL;
+
 beforeEach(function (): void {
     schema()->run('create table ref_categories (id number(10) primary key, name varchar2(50) not null)');
     schema()->run(<<<'SQL'
@@ -99,52 +102,6 @@ beforeEach(function (): void {
         SQL);
 });
 
-const NESTED = <<<'SQL'
-    select c.id, c.name,
-           cursor(select i.id, i.price from ref_items i
-                   where i.category_id = c.id order by i.id) as items
-      from ref_categories c
-     order by c.id
-    SQL;
-
-test('a ref cursor out bind arrives as a driver cursor', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute(
-        'begin open :o for select id, name, price from ref_items where id <= :n order by id; end;',
-        ['o' => new Out\Cursor(), 'n' => 3],
-        $this->options(),
-    );
-
-    expect(drain(cursor($execution, 'o')))->toBe([
-        ['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'],
-        ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5'],
-        ['ID' => 3, 'NAME' => 'Item 0003', 'PRICE' => '3.75'],
-    ]);
-});
-
-test('a ref cursor in out bind is opened by the server', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute(
-        'begin open :io for select name from ref_categories where id <= 2 order by id; end;',
-        ['io' => new InOut\Cursor()],
-        $this->options(),
-    );
-
-    expect(drain(cursor($execution, 'io')))->toBe([['NAME' => 'Plain'], ['NAME' => 'Ação']]);
-});
-
-test('a ref cursor function return arrives as a driver cursor with its columns', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute('begin :o := ref_cursors.categories_with_items; end;', ['o' => new Out\Cursor()], $this->options());
-
-    $columns = cursor($execution, 'o')->columns();
-    expect(array_column($columns, 'name'))->toBe(['ID', 'NAME', 'ITEMS'])
-        ->and(array_column($columns, 'type'))->toBe(['number', 'varchar', 'cursor']);
-});
-
 /**
  * Each way a REF CURSOR with a DATE column arrives: the dates of items 1 and
  * 2 it reads, as compared.
@@ -164,65 +121,6 @@ dataset('dateCursors', function () {
     ];
 });
 
-test('a ref cursor with a date column reads in full', function (string $sql, array $binds, string $name, TemporalMode $temporals, array $expected): void {
-    /** @var array<string, mixed> $binds */
-    $dates = inTimeZone('UTC', function () use ($sql, $binds, $name, $temporals): array {
-        $execution = $this->connect()->execute($sql, $binds, $this->options(values: new ValueMapping(temporals: $temporals)));
-
-        return array_map(temporalText(...), array_column(drain(cursor($execution, $name)), 'CREATED_AT'));
-    });
-
-    expect($dates)->toBe($expected);
-})->with('dateCursors');
-
-test('an unopened ref cursor fails on its first read and the connection goes on', function (): void {
-    $connection = $this->connect();
-    $execution = $connection->execute('declare c sys_refcursor; begin :o := c; end;', ['o' => new Out\Cursor()], $this->options());
-    $thrown = null;
-
-    try {
-        cursor($execution, 'o')->fetchBatch();
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
-
-    expect($thrown?->getCode())->toBe(1001)
-        ->and($thrown?->getMessage())->toStartWith('ORA-01001')
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-});
-
-test('an empty ref cursor describes its columns', function (): void {
-    $connection = $this->connect();
-    $execution = $connection->execute(
-        'begin open :o for select id, name from ref_categories where 1 = 0; end;',
-        ['o' => new Out\Cursor()],
-        $this->options(),
-    );
-    $cursor = cursor($execution, 'o');
-
-    $columns = $cursor->columns();
-
-    expect($columns)->toBe([
-        ['name' => 'ID', 'type' => 'number', 'nullable' => false, 'precision' => 10, 'scale' => 0, 'maxSize' => null, 'objectType' => null, 'vectorDimensions' => null, 'vectorFormat' => null, 'sparse' => false],
-        ['name' => 'NAME', 'type' => 'varchar', 'nullable' => false, 'precision' => null, 'scale' => null, 'maxSize' => 50, 'objectType' => null, 'vectorDimensions' => null, 'vectorFormat' => null, 'sparse' => false],
-    ])
-        ->and([$cursor->fetchBatch(), $cursor->fetchBatch()])->toBe([[], []]);
-});
-
-test('every nested cursor reads after the parent is read to its end', function (): void {
-    $parent = $this->connect()->execute(NESTED, [], $this->options(fetchSize: 2))->cursor();
-    assert($parent !== null);
-    $rows = drain($parent);
-
-    $items = [];
-    foreach ($rows as $row) {
-        assert(\is_string($row['NAME']) && $row['ITEMS'] instanceof Cursor);
-        $items[$row['NAME']] = array_column(drain($row['ITEMS']), 'ID');
-    }
-
-    expect($items)->toBe(['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]]);
-});
-
 /**
  * @return iterable<string, array{bool, string}>
  */
@@ -231,65 +129,6 @@ dataset('nestedReads', function () {
         yield "fetchBatch() of a $which nested cursor" => [$started, 'fetchBatch'];
         yield "columns() of a $which nested cursor" => [$started, 'columns'];
     }
-});
-
-test('a nested cursor fails after its parent closes and the connection goes on', function (bool $started, string $read): void {
-    $connection = $this->connect();
-    $parent = $connection->execute(NESTED, [], $this->options())->cursor();
-    assert($parent !== null);
-    $child = $parent->fetchBatch()[$started ? 0 : 1]['ITEMS'] ?? null;
-    assert($child instanceof Cursor);
-    if ($started) {
-        $child->fetchBatch();
-    }
-    $parent->close();
-    $thrown = null;
-
-    try {
-        $child->$read();
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
-
-    expect($thrown?->getMessage())->toBe('The Cursor this one is nested in is closed, which closed this one too.')
-        ->and($thrown?->sql())->toBe(NESTED)
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-})->with('nestedReads');
-
-test('a nested cursor keeps its parent open after the parent object is dropped', function (): void {
-    $connection = $this->connect(...$this->ownPool() + ['statementCacheSize' => 0]);
-    $parent = $connection->execute(NESTED, [], $this->options())->cursor();
-    assert($parent !== null);
-    $child = $parent->fetchBatch()[2]['ITEMS'] ?? null;
-    assert($child instanceof Cursor);
-    unset($parent);
-
-    // A Round trip that would carry the parent's close.
-    $this->value($connection, 'select 1 from dual');
-
-    expect(array_column(drain($child), 'ID'))->toBe([3, 8, 13, 18]);
-});
-
-test('ref cursors and nested cursors inherit the executes options', function (): void {
-    $options = $this->options(
-        fetchSize: 3,
-        values: new ValueMapping(numbers: NumberMode::Float),
-        rowShape: RowShape::List,
-        keyCase: KeyCase::Lower,
-    );
-    $execution = $this->connect()->execute('begin :o := ref_cursors.categories_with_items; end;', ['o' => new Out\Cursor()], $options);
-    $categories = cursor($execution, 'o');
-
-    $batch = $categories->fetchBatch();
-    $items = $batch[0][2] ?? null;
-    assert($items instanceof Cursor);
-
-    expect(array_column($categories->columns(), 'name'))->toBe(['id', 'name', 'items'])
-        ->and($batch)->toHaveCount(3)
-        ->and(\array_slice($batch[0], 0, 2))->toBe([1, 'Plain'])
-        ->and(array_column($items->columns(), 'name'))->toBe(['id', 'name', 'price'])
-        ->and($items->fetchBatch())->toBe([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75]])
-        ->and($items->fetchBatch())->toBe([[16, 'Item 0016', 20]]);
 });
 
 /**
@@ -308,15 +147,177 @@ dataset('cursorKinds', function () {
     )];
 });
 
-test('cursors dropped unread raise no ora 01000', function (Closure $open): void {
-    $connection = $this->connect();
+describe('ref cursors', function (): void {
+    it('arrives as a driver cursor from an out bind', function (): void {
+        $connection = $this->connect();
 
-    for ($i = 0; $i < 1000; ++$i) {
-        $open($connection);
-    }
+        $execution = $connection->execute(
+            'begin open :o for select id, name, price from ref_items where id <= :n order by id; end;',
+            ['o' => new Out\Cursor(), 'n' => 3],
+            $this->options(),
+        );
 
-    expect(array_column($this->rows($connection, 'select id from ref_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
-})->with('cursorKinds');
+        expect(drain(cursor($execution, 'o')))->toBe([
+            ['ID' => 1, 'NAME' => 'Item 0001', 'PRICE' => '1.25'],
+            ['ID' => 2, 'NAME' => 'Item 0002', 'PRICE' => '2.5'],
+            ['ID' => 3, 'NAME' => 'Item 0003', 'PRICE' => '3.75'],
+        ]);
+    });
+
+    it('is opened by the server through an in out bind', function (): void {
+        $connection = $this->connect();
+
+        $execution = $connection->execute(
+            'begin open :io for select name from ref_categories where id <= 2 order by id; end;',
+            ['io' => new InOut\Cursor()],
+            $this->options(),
+        );
+
+        expect(drain(cursor($execution, 'io')))->toBe([['NAME' => 'Plain'], ['NAME' => 'Ação']]);
+    });
+
+    it('arrives as a driver cursor with its columns from a function return', function (): void {
+        $connection = $this->connect();
+
+        $execution = $connection->execute('begin :o := ref_cursors.categories_with_items; end;', ['o' => new Out\Cursor()], $this->options());
+
+        $columns = cursor($execution, 'o')->columns();
+        expect(array_column($columns, 'name'))->toBe(['ID', 'NAME', 'ITEMS'])
+            ->and(array_column($columns, 'type'))->toBe(['number', 'varchar', 'cursor']);
+    });
+
+    it('reads in full with a date column', function (string $sql, array $binds, string $name, TemporalMode $temporals, array $expected): void {
+        /** @var array<string, mixed> $binds */
+        $dates = inTimeZone('UTC', function () use ($sql, $binds, $name, $temporals): array {
+            $execution = $this->connect()->execute($sql, $binds, $this->options(values: new ValueMapping(temporals: $temporals)));
+
+            return array_map(temporalText(...), array_column(drain(cursor($execution, $name)), 'CREATED_AT'));
+        });
+
+        expect($dates)->toBe($expected);
+    })->with('dateCursors');
+
+    it('fails on its first read when unopened and the connection goes on', function (): void {
+        $connection = $this->connect();
+        $execution = $connection->execute('declare c sys_refcursor; begin :o := c; end;', ['o' => new Out\Cursor()], $this->options());
+        $thrown = null;
+
+        try {
+            cursor($execution, 'o')->fetchBatch();
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
+
+        expect($thrown?->getCode())->toBe(1001)
+            ->and($thrown?->getMessage())->toStartWith('ORA-01001')
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    });
+
+    it('describes its columns when empty', function (): void {
+        $connection = $this->connect();
+        $execution = $connection->execute(
+            'begin open :o for select id, name from ref_categories where 1 = 0; end;',
+            ['o' => new Out\Cursor()],
+            $this->options(),
+        );
+        $cursor = cursor($execution, 'o');
+
+        $columns = $cursor->columns();
+
+        expect($columns)->toBe([
+            ['name' => 'ID', 'type' => 'number', 'nullable' => false, 'precision' => 10, 'scale' => 0, 'maxSize' => null, 'objectType' => null, 'vectorDimensions' => null, 'vectorFormat' => null, 'sparse' => false],
+            ['name' => 'NAME', 'type' => 'varchar', 'nullable' => false, 'precision' => null, 'scale' => null, 'maxSize' => 50, 'objectType' => null, 'vectorDimensions' => null, 'vectorFormat' => null, 'sparse' => false],
+        ])
+            ->and([$cursor->fetchBatch(), $cursor->fetchBatch()])->toBe([[], []]);
+    });
+});
+
+describe('nested cursors', function (): void {
+    it('reads after the parent is read to its end', function (): void {
+        $parent = $this->connect()->execute(NESTED, [], $this->options(fetchSize: 2))->cursor();
+        assert($parent !== null);
+        $rows = drain($parent);
+
+        $items = [];
+        foreach ($rows as $row) {
+            assert(\is_string($row['NAME']) && $row['ITEMS'] instanceof Cursor);
+            $items[$row['NAME']] = array_column(drain($row['ITEMS']), 'ID');
+        }
+
+        expect($items)->toBe(['Plain' => [1, 6, 11, 16], 'Ação' => [2, 7, 12, 17], 'Café' => [3, 8, 13, 18], 'Straße' => [4, 9, 14, 19], '日本' => [5, 10, 15, 20]]);
+    });
+
+    it('fails after its parent closes and the connection goes on', function (bool $started, string $read): void {
+        $connection = $this->connect();
+        $parent = $connection->execute(NESTED, [], $this->options())->cursor();
+        assert($parent !== null);
+        $child = $parent->fetchBatch()[$started ? 0 : 1]['ITEMS'] ?? null;
+        assert($child instanceof Cursor);
+        if ($started) {
+            $child->fetchBatch();
+        }
+        $parent->close();
+        $thrown = null;
+
+        try {
+            $child->$read();
+        } catch (UsageException $usageException) {
+            $thrown = $usageException;
+        }
+
+        expect($thrown?->getMessage())->toBe('The Cursor this one is nested in is closed, which closed this one too.')
+            ->and($thrown?->sql())->toBe(NESTED)
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    })->with('nestedReads');
+
+    it('keeps its parent open after the parent object is dropped', function (): void {
+        $connection = $this->connect(...$this->ownPool() + ['statementCacheSize' => 0]);
+        $parent = $connection->execute(NESTED, [], $this->options())->cursor();
+        assert($parent !== null);
+        $child = $parent->fetchBatch()[2]['ITEMS'] ?? null;
+        assert($child instanceof Cursor);
+        unset($parent);
+
+        // A Round trip that would carry the parent's close.
+        $this->value($connection, 'select 1 from dual');
+
+        expect(array_column(drain($child), 'ID'))->toBe([3, 8, 13, 18]);
+    });
+});
+
+describe('cursors of every kind', function (): void {
+    it('inherit the options of their execution', function (): void {
+        $options = $this->options(
+            fetchSize: 3,
+            values: new ValueMapping(numbers: NumberMode::Float),
+            rowShape: RowShape::List,
+            keyCase: KeyCase::Lower,
+        );
+        $execution = $this->connect()->execute('begin :o := ref_cursors.categories_with_items; end;', ['o' => new Out\Cursor()], $options);
+        $categories = cursor($execution, 'o');
+
+        $batch = $categories->fetchBatch();
+        $items = $batch[0][2] ?? null;
+        assert($items instanceof Cursor);
+
+        expect(array_column($categories->columns(), 'name'))->toBe(['id', 'name', 'items'])
+            ->and($batch)->toHaveCount(3)
+            ->and(\array_slice($batch[0], 0, 2))->toBe([1, 'Plain'])
+            ->and(array_column($items->columns(), 'name'))->toBe(['id', 'name', 'price'])
+            ->and($items->fetchBatch())->toBe([[1, 'Item 0001', 1.25], [6, 'Item 0006', 7.5], [11, 'Item 0011', 13.75]])
+            ->and($items->fetchBatch())->toBe([[16, 'Item 0016', 20]]);
+    });
+
+    it('raise no ora 01000 when dropped unread', function (Closure $open): void {
+        $connection = $this->connect();
+
+        for ($i = 0; $i < 1000; ++$i) {
+            $open($connection);
+        }
+
+        expect(array_column($this->rows($connection, 'select id from ref_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
+    })->with('cursorKinds');
+});
 
 /**
  * The one REF CURSOR in an OUT value list.

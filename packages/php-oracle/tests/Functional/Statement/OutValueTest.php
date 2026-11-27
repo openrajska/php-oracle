@@ -21,11 +21,6 @@ use Rajska\Oracle\Tests\Functional\TestCase;
 
 uses(TestCase::class);
 
-const TEMPORALS = "begin
-    :d := date '2026-03-01'; :tz := timestamp '2026-03-01 10:00:00 +05:45';
-    :ds := interval '1 02:00:00' day to second; :nothing := null;
-end;";
-
 beforeEach(function (): void {
     schema()->run('create type out_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type out_tags as varray(10) of varchar2(100)');
@@ -45,19 +40,6 @@ beforeEach(function (): void {
     schema()->run('create global temporary table out_inserts (id number(10), code char(5)) on commit delete rows');
 
     $this->connection = $this->connect();
-});
-
-test('a block reads its out and in out binds', function (): void {
-    $execution = $this->connection->run(
-        "begin :total := :a + :b; :greeting := :greeting || ', world'; :ok := :total > 2; end;",
-        ['a' => 1, 'b' => new In\Number('2.5'), 'total' => new Out\Number(), 'greeting' => new InOut\Varchar('hello'), 'ok' => new Out\Boolean()],
-    );
-
-    expect($execution->out('total')->string())->toBe('3.5')
-        ->and($execution->out('greeting')->string())->toBe('hello, world')
-        ->and($execution->out('ok')->bool())->toBeTrue()
-        ->and($execution->out('total')->value())->toBe('3.5')
-        ->and($execution->out('total')->list())->toBe(['3.5']);
 });
 
 /**
@@ -98,38 +80,6 @@ dataset('getterMistakes', function () {
     ];
 });
 
-test('a getter never converts and names the one to use', function (Closure $getter, Out\Number | Out\Varchar $bind, string $value, string $message): void {
-    $execution = $this->connection->run("begin :v := $value; end;", ['v' => $bind]);
-
-    $read = static fn (): mixed => $getter($execution->out('v'));
-
-    expect($read)->toThrow(UsageException::class, $message);
-})->with('getterMistakes');
-
-test('a null out value reads as null through every getter', function (string $getter): void {
-    $execution = $this->connection->run('begin :v := null; end;', ['v' => new Out\Number()]);
-
-    $value = $execution->out('v')->$getter();
-
-    expect($value)->toBeNull();
-})->with(['int', 'string', 'bool', 'value', 'dateTime', 'interval']);
-
-test('the value mapping decides what a getter finds', function (): void {
-    $float = new Options(values: new ValueMapping(numbers: NumberMode::Float));
-
-    $execution = $this->connection->run('begin :fraction := 12.5; end;', ['fraction' => new Out\Number()], $float);
-
-    expect($execution->out('fraction')->float())->toBe(12.5);
-});
-
-test('temporal out values read as date times and intervals', function (): void {
-    $execution = inTimeZone('UTC', fn (): Execution => $this->connection->run(TEMPORALS, temporalBinds()));
-
-    expect(temporalText($execution->out('d')->dateTime()))->toBe('+2026-03-01 00:00:00.000000 UTC')
-        ->and(temporalText($execution->out('tz')->dateTime()))->toBe('+2026-03-01 10:00:00.000000 +05:45')
-        ->and(temporalText($execution->out('ds')->interval()))->toBe('+0Y0M1DT2H0M0S.000000');
-});
-
 /**
  * @return iterable<string, array{Closure(Execution): mixed, string}>
  */
@@ -148,42 +98,6 @@ dataset('temporalGetterMistakes', function () {
     ];
 });
 
-test('a temporal getter of the wrong kind names the one to use', function (Closure $read, string $message): void {
-    $execution = $this->connection->run(TEMPORALS, temporalBinds());
-
-    $call = static fn (): mixed => $read($execution);
-
-    expect($call)->toThrow(UsageException::class, $message);
-})->with('temporalGetterMistakes');
-
-test('under temporal mode string a temporal out value reads as text', function (): void {
-    $string = new Options(values: new ValueMapping(temporals: TemporalMode::String));
-
-    $execution = $this->connection->run(TEMPORALS, temporalBinds(), $string);
-
-    expect($execution->out('d')->string())->toBe('2026-03-01 00:00:00')
-        ->and(static fn (): mixed => $execution->out('d')->dateTime())
-        ->toThrow(UsageException::class, "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
-});
-
-test('array reads objects collections and associative arrays', function (): void {
-    $execution = $this->connection->run(
-        'begin :point := out_point(1, 2, :label); :tags := :tags; :map := :map; :none := null; end;',
-        [
-            'label' => 'p',
-            'point' => new Out\Struct('out_point'),
-            'tags' => new InOut\Collection('out_tags', ['a', null]),
-            'map' => new InOut\Indexed('out_maps.t_number_map', [-1 => 1]),
-            'none' => new Out\Struct('out_point'),
-        ],
-    );
-
-    expect($execution->out('point')->array())->toBe(['X' => 1, 'Y' => 2, 'LABEL' => 'p'])
-        ->and($execution->out('tags')->array())->toBe(['a', null])
-        ->and($execution->out('map')->array())->toBe([-1 => 1])
-        ->and($execution->out('none')->array())->toBeNull();
-});
-
 /**
  * @return iterable<string, array{Closure(Execution): mixed, string}>
  */
@@ -198,100 +112,6 @@ dataset('arrayGetterMistakes', function () {
     ];
 });
 
-test('an array getter of the wrong kind names the one to use', function (Closure $read, string $message): void {
-    $execution = $this->connection->run('begin :point := out_point(1, 2, null); :n := 1; end;', ['point' => new Out\Struct('out_point'), 'n' => new Out\Number()]);
-
-    $call = static fn (): mixed => $read($execution);
-
-    expect($call)->toThrow(UsageException::class, $message);
-})->with('arrayGetterMistakes');
-
-test('a getter of a value without a getter of its own names value', function (): void {
-    $execution = $this->connection->run('begin :sparse := :sparse; end;', ['sparse' => new InOut\Vector(new SparseVector(4, [2 => 0.5]))]);
-
-    $read = static fn (): string | null => $execution->out('sparse')->string();
-
-    expect($read)->toThrow(UsageException::class, "OUT bind 'sparse' holds Rajska\\Oracle\\DataType\\SparseVector, not a string. Read it with value().");
-});
-
-test('json and vector out values have their mapped types', function (): void {
-    $execution = $this->connection->run(
-        "begin :doc := :doc; :scalar := json('5'); :dense := :dense; :sparse := :sparse; end;",
-        [
-            'doc' => new InOut\Json(['a' => [1, 0.5]]),
-            'scalar' => new Out\Json(),
-            'dense' => new InOut\Vector([1, 2], VectorFormat::Int8),
-            'sparse' => new InOut\Vector(new SparseVector(4, [2 => 0.5])),
-        ],
-    );
-
-    $sparse = $execution->out('sparse')->value();
-
-    assert($sparse instanceof SparseVector);
-    expect($execution->out('doc')->array())->toBe(['a' => [1, '0.5']])
-        ->and($execution->out('scalar')->int())->toBe(5)
-        ->and($execution->out('dense')->array())->toBe([1, 2])
-        ->and([$sparse->dimensions, $sparse->values])->toBe([4, [2 => 0.5]]);
-});
-
-test('returning into from one row gives its values', function (): void {
-    $execution = $this->connection->run(
-        'insert into out_inserts (id, code) values (:id, :code) returning id, code into :new_id, :new_code',
-        ['id' => 42, 'code' => new In\Char('AB'), 'new_id' => new Out\Number(), 'new_code' => new Out\Char()],
-    );
-
-    expect($execution->affected())->toBe(1)
-        ->and($execution->out('new_id')->int())->toBe(42)
-        ->and($execution->out('new_code')->string())->toBe('AB   ')
-        ->and($execution->out('new_id')->list())->toBe([42]);
-});
-
-test('returning into gives one value per row through list', function (string $where, array $ids): void {
-    $execution = $this->connection->run("update out_items set id = id where $where returning id into :id", ['id' => new Out\Number()]);
-
-    $list = $execution->out('id')->list();
-
-    expect($list)->toEqualCanonicalizing($ids);
-})->with([
-    'two rows' => ['id in (3, 4)', [3, 4]],
-    'no row' => ['id < 0', []],
-]);
-
-test('a scalar getter of returning into needs exactly one row', function (string $where, string $getter, string $message): void {
-    $execution = $this->connection->run("update out_items set id = id where $where returning id into :id", ['id' => new Out\Number()]);
-
-    $read = static fn (): mixed => $execution->out('id')->$getter();
-
-    expect($read)->toThrow(UsageException::class, $message);
-})->with([
-    'int() of two rows' => ['id in (3, 4)', 'int', "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list()."],
-    'int() of no row' => ['id < 0', 'int', "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list()."],
-    'value() of no row' => ['id < 0', 'value', "OUT bind 'id' returned 0 rows, and value() needs exactly one"],
-]);
-
-test('returning into a lob gives the lob', function (): void {
-    $execution = $this->connection->run('update out_items set id = id where id = 1 returning text_value into :t', ['t' => new Out\Clob()]);
-
-    $lob = $execution->out('t')->lob();
-
-    expect($lob?->contents())->toBe("Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}");
-});
-
-test('returning into an object or a collection gives one value per row', function (): void {
-    $execution = $this->connection->run(
-        'update out_shapes set id = id where id in (1, 2) returning id, center, tags into :id, :center, :tags',
-        ['id' => new Out\Number(), 'center' => new Out\Struct('out_point'), 'tags' => new Out\Collection('out_tags')],
-    );
-
-    $rows = array_map(null, $execution->out('id')->list(), $execution->out('center')->list(), $execution->out('tags')->list());
-
-    usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
-    expect($rows)->toBe([
-        [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
-        [2, null, null],
-    ]);
-});
-
 /**
  * @return iterable<string, array{string, array<string, mixed>, string, string}>
  */
@@ -304,40 +124,234 @@ dataset('outNameMistakes', function () {
     yield 'an IN bind of a query' => ['select :v from dual', ['v' => new In\Varchar('y')], 'v', "Bind 'v' is IN only"];
 });
 
-test('out of a name that has no out value fails with the sql', function (string $sql, array $binds, string $name, string $message): void {
-    /** @var array<string, mixed> $binds */
-    $execution = $this->connection->run($sql, $binds);
+describe('out values', function (): void {
+    it('reads the out and in out binds of a block', function (): void {
+        $execution = $this->connection->run(
+            "begin :total := :a + :b; :greeting := :greeting || ', world'; :ok := :total > 2; end;",
+            ['a' => 1, 'b' => new In\Number('2.5'), 'total' => new Out\Number(), 'greeting' => new InOut\Varchar('hello'), 'ok' => new Out\Boolean()],
+        );
 
-    $thrown = null;
-    try {
-        $execution->out($name);
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
+        expect($execution->out('total')->string())->toBe('3.5')
+            ->and($execution->out('greeting')->string())->toBe('hello, world')
+            ->and($execution->out('ok')->bool())->toBeTrue()
+            ->and($execution->out('total')->value())->toBe('3.5')
+            ->and($execution->out('total')->list())->toBe(['3.5']);
+    });
 
-    expect($thrown?->getMessage())->toContain($message)
-        ->and($thrown?->sql())->toBe($sql);
-})->with('outNameMistakes');
+    it('fails with the sql for a name that has no out value', function (string $sql, array $binds, string $name, string $message): void {
+        /** @var array<string, mixed> $binds */
+        $execution = $this->connection->run($sql, $binds);
 
-test('out matches the name ignoring case', function (string $name): void {
-    $execution = $this->connection->run('begin :TOTAL := 7; end;', ['Total' => new Out\Number()]);
+        $thrown = null;
+        try {
+            $execution->out($name);
+        } catch (UsageException $usageException) {
+            $thrown = $usageException;
+        }
 
-    $value = $execution->out($name)->int();
+        expect($thrown?->getMessage())->toContain($message)
+            ->and($thrown?->sql())->toBe($sql);
+    })->with('outNameMistakes');
 
-    expect($value)->toBe(7);
-})->with(['Total', 'total', 'TOTAL']);
+    it('matches the name ignoring case', function (string $name): void {
+        $execution = $this->connection->run('begin :TOTAL := 7; end;', ['Total' => new Out\Number()]);
 
-test('a number string must be a decimal literal', function (string $class, string $text): void {
-    $build = static fn (): object => new $class($text);
+        $value = $execution->out($name)->int();
 
-    expect($build)->toThrow(UsageException::class, "A NUMBER bind takes a decimal literal with '.' as the separator, such as '12.30'");
-})->with([In\Number::class, InOut\Number::class])->with(['1,5', '1e5', '', ' 1', 'abc', '1.2.3', '0x1A']);
+        expect($value)->toBe(7);
+    })->with(['Total', 'total', 'TOTAL']);
+});
 
-test('a number string keeps its decimal literal as written', function (string $text): void {
-    $bind = new In\Number($text);
+describe('getters', function (): void {
+    it('never converts and names the getter to use', function (Closure $getter, Out\Number | Out\Varchar $bind, string $value, string $message): void {
+        $execution = $this->connection->run("begin :v := $value; end;", ['v' => $bind]);
 
-    expect($bind->value)->toBe($text);
-})->with(['-.5', '12.', '12.30']);
+        $read = static fn (): mixed => $getter($execution->out('v'));
+
+        expect($read)->toThrow(UsageException::class, $message);
+    })->with('getterMistakes');
+
+    it('reads a null out value as null', function (string $getter): void {
+        $execution = $this->connection->run('begin :v := null; end;', ['v' => new Out\Number()]);
+
+        $value = $execution->out('v')->$getter();
+
+        expect($value)->toBeNull();
+    })->with(['int', 'string', 'bool', 'value', 'dateTime', 'interval']);
+
+    it('finds what the value mapping decides', function (): void {
+        $float = new Options(values: new ValueMapping(numbers: NumberMode::Float));
+
+        $execution = $this->connection->run('begin :fraction := 12.5; end;', ['fraction' => new Out\Number()], $float);
+
+        expect($execution->out('fraction')->float())->toBe(12.5);
+    });
+
+    it('names value for a value without a getter of its own', function (): void {
+        $execution = $this->connection->run('begin :sparse := :sparse; end;', ['sparse' => new InOut\Vector(new SparseVector(4, [2 => 0.5]))]);
+
+        $read = static fn (): string | null => $execution->out('sparse')->string();
+
+        expect($read)->toThrow(UsageException::class, "OUT bind 'sparse' holds Rajska\\Oracle\\DataType\\SparseVector, not a string. Read it with value().");
+    });
+});
+
+describe('dates and intervals', function (): void {
+    it('reads them as date times and intervals', function (): void {
+        $execution = inTimeZone('UTC', fn (): Execution => $this->connection->run(TEMPORALS, temporalBinds()));
+
+        expect(temporalText($execution->out('d')->dateTime()))->toBe('+2026-03-01 00:00:00.000000 UTC')
+            ->and(temporalText($execution->out('tz')->dateTime()))->toBe('+2026-03-01 10:00:00.000000 +05:45')
+            ->and(temporalText($execution->out('ds')->interval()))->toBe('+0Y0M1DT2H0M0S.000000');
+    });
+
+    it('names the getter to use when read with the wrong kind', function (Closure $read, string $message): void {
+        $execution = $this->connection->run(TEMPORALS, temporalBinds());
+
+        $call = static fn (): mixed => $read($execution);
+
+        expect($call)->toThrow(UsageException::class, $message);
+    })->with('temporalGetterMistakes');
+
+    it('reads them as text under temporal mode string', function (): void {
+        $string = new Options(values: new ValueMapping(temporals: TemporalMode::String));
+
+        $execution = $this->connection->run(TEMPORALS, temporalBinds(), $string);
+
+        expect($execution->out('d')->string())->toBe('2026-03-01 00:00:00')
+            ->and(static fn (): mixed => $execution->out('d')->dateTime())
+            ->toThrow(UsageException::class, "OUT bind 'd' holds string, not a DateTimeImmutable. Under ValueMapping(temporals: TemporalMode::String), a temporal value arrives as ISO text: read it with string().");
+    });
+});
+
+describe('objects and collections', function (): void {
+    it('reads them as arrays', function (): void {
+        $execution = $this->connection->run(
+            'begin :point := out_point(1, 2, :label); :tags := :tags; :map := :map; :none := null; end;',
+            [
+                'label' => 'p',
+                'point' => new Out\Struct('out_point'),
+                'tags' => new InOut\Collection('out_tags', ['a', null]),
+                'map' => new InOut\Indexed('out_maps.t_number_map', [-1 => 1]),
+                'none' => new Out\Struct('out_point'),
+            ],
+        );
+
+        expect($execution->out('point')->array())->toBe(['X' => 1, 'Y' => 2, 'LABEL' => 'p'])
+            ->and($execution->out('tags')->array())->toBe(['a', null])
+            ->and($execution->out('map')->array())->toBe([-1 => 1])
+            ->and($execution->out('none')->array())->toBeNull();
+    });
+
+    it('names the getter to use when read with the wrong kind', function (Closure $read, string $message): void {
+        $execution = $this->connection->run('begin :point := out_point(1, 2, null); :n := 1; end;', ['point' => new Out\Struct('out_point'), 'n' => new Out\Number()]);
+
+        $call = static fn (): mixed => $read($execution);
+
+        expect($call)->toThrow(UsageException::class, $message);
+    })->with('arrayGetterMistakes');
+});
+
+describe('json and vectors', function (): void {
+    it('gives them their mapped types', function (): void {
+        $execution = $this->connection->run(
+            "begin :doc := :doc; :scalar := json('5'); :dense := :dense; :sparse := :sparse; end;",
+            [
+                'doc' => new InOut\Json(['a' => [1, 0.5]]),
+                'scalar' => new Out\Json(),
+                'dense' => new InOut\Vector([1, 2], VectorFormat::Int8),
+                'sparse' => new InOut\Vector(new SparseVector(4, [2 => 0.5])),
+            ],
+        );
+
+        $sparse = $execution->out('sparse')->value();
+
+        assert($sparse instanceof SparseVector);
+        expect($execution->out('doc')->array())->toBe(['a' => [1, '0.5']])
+            ->and($execution->out('scalar')->int())->toBe(5)
+            ->and($execution->out('dense')->array())->toBe([1, 2])
+            ->and([$sparse->dimensions, $sparse->values])->toBe([4, [2 => 0.5]]);
+    });
+});
+
+describe('returning into', function (): void {
+    it('gives the values of one row', function (): void {
+        $execution = $this->connection->run(
+            'insert into out_inserts (id, code) values (:id, :code) returning id, code into :new_id, :new_code',
+            ['id' => 42, 'code' => new In\Char('AB'), 'new_id' => new Out\Number(), 'new_code' => new Out\Char()],
+        );
+
+        expect($execution->affected())->toBe(1)
+            ->and($execution->out('new_id')->int())->toBe(42)
+            ->and($execution->out('new_code')->string())->toBe('AB   ')
+            ->and($execution->out('new_id')->list())->toBe([42]);
+    });
+
+    it('gives one value per row through list', function (string $where, array $ids): void {
+        $execution = $this->connection->run("update out_items set id = id where $where returning id into :id", ['id' => new Out\Number()]);
+
+        $list = $execution->out('id')->list();
+
+        expect($list)->toEqualCanonicalizing($ids);
+    })->with([
+        'two rows' => ['id in (3, 4)', [3, 4]],
+        'no row' => ['id < 0', []],
+    ]);
+
+    it('needs exactly one row for a scalar getter', function (string $where, string $getter, string $message): void {
+        $execution = $this->connection->run("update out_items set id = id where $where returning id into :id", ['id' => new Out\Number()]);
+
+        $read = static fn (): mixed => $execution->out('id')->$getter();
+
+        expect($read)->toThrow(UsageException::class, $message);
+    })->with([
+        'int() of two rows' => ['id in (3, 4)', 'int', "OUT bind 'id' returned 2 rows, and int() needs exactly one; read every returned row with list()."],
+        'int() of no row' => ['id < 0', 'int', "OUT bind 'id' returned 0 rows, and int() needs exactly one; read every returned row with list()."],
+        'value() of no row' => ['id < 0', 'value', "OUT bind 'id' returned 0 rows, and value() needs exactly one"],
+    ]);
+
+    it('gives a lob', function (): void {
+        $execution = $this->connection->run('update out_items set id = id where id = 1 returning text_value into :t', ['t' => new Out\Clob()]);
+
+        $lob = $execution->out('t')->lob();
+
+        expect($lob?->contents())->toBe("Hello, LOB! A\u{e7}\u{e3}o \u{65e5}\u{672c}");
+    });
+
+    it('gives one object or collection per row', function (): void {
+        $execution = $this->connection->run(
+            'update out_shapes set id = id where id in (1, 2) returning id, center, tags into :id, :center, :tags',
+            ['id' => new Out\Number(), 'center' => new Out\Struct('out_point'), 'tags' => new Out\Collection('out_tags')],
+        );
+
+        $rows = array_map(null, $execution->out('id')->list(), $execution->out('center')->list(), $execution->out('tags')->list());
+
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        expect($rows)->toBe([
+            [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
+            [2, null, null],
+        ]);
+    });
+});
+
+describe('number strings', function (): void {
+    it('requires a decimal literal', function (string $class, string $text): void {
+        $build = static fn (): object => new $class($text);
+
+        expect($build)->toThrow(UsageException::class, "A NUMBER bind takes a decimal literal with '.' as the separator, such as '12.30'");
+    })->with([In\Number::class, InOut\Number::class])->with(['1,5', '1e5', '', ' 1', 'abc', '1.2.3', '0x1A']);
+
+    it('keeps the decimal literal as written', function (string $text): void {
+        $bind = new In\Number($text);
+
+        expect($bind->value)->toBe($text);
+    })->with(['-.5', '12.', '12.30']);
+});
+
+const TEMPORALS = "begin
+    :d := date '2026-03-01'; :tz := timestamp '2026-03-01 10:00:00 +05:45';
+    :ds := interval '1 02:00:00' day to second; :nothing := null;
+end;";
 
 /**
  * @return array<string, Out\Date|Out\IntervalDs|Out\IntervalYm|Out\TimestampTz>

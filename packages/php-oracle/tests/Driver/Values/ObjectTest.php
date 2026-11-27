@@ -27,6 +27,10 @@ use Rajska\Oracle\Tests\Driver\TestCase;
 
 uses(TestCase::class);
 
+const ECHO_BLOCK = 'begin :o := :i; end;';
+
+const INSERT_SHAPE = 'insert into obj_shapes (id, center, tags, outline) values (:id, :center, :tags, :outline)';
+
 beforeEach(function (): void {
     schema()->run('create type obj_point as object (x number, y number, label varchar2(30))');
     schema()->run('create type obj_point_list as table of obj_point');
@@ -221,430 +225,6 @@ beforeEach(function (): void {
         SQL);
 });
 
-const ECHO_BLOCK = 'begin :o := :i; end;';
-
-/**
- * The rows of obj_shapes: every column set, every column NULL, and empty
- * Collections in an all-NULL Object.
- *
- * @return list<array<string, mixed>>
- */
-function shapes(): array
-{
-    return [
-        [
-            'ID' => 1,
-            'CENTER' => ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'],
-            'TAGS' => ['red', 'café'],
-            'OUTLINE' => [
-                ['X' => 0, 'Y' => 0, 'LABEL' => 'a'],
-                ['X' => 1, 'Y' => 0, 'LABEL' => 'b'],
-                ['X' => 0, 'Y' => 1, 'LABEL' => null],
-            ],
-        ],
-        ['ID' => 2, 'CENTER' => null, 'TAGS' => null, 'OUTLINE' => null],
-        ['ID' => 3, 'CENTER' => ['X' => null, 'Y' => null, 'LABEL' => null], 'TAGS' => [], 'OUTLINE' => []],
-    ];
-}
-
-test('object and collection columns arrive as arrays', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select * from obj_shapes order by id');
-
-    expect($rows)->toBe(shapes());
-});
-
-test('object and collection columns of a cursor arrive as the same arrays', function (string $kind): void {
-    $connection = $this->connect();
-    $query = 'select * from obj_shapes order by id';
-    $cursor = $kind === 'REF CURSOR'
-        ? $connection->execute("begin open :o for $query; end;", ['o' => new Out\Cursor()], $this->options())->outValues()['o'][0]
-        : $connection->execute("declare c sys_refcursor; begin open c for $query; dbms_sql.return_result(c); end;", [], $this->options())->implicitResults()[0];
-    assert($cursor instanceof CursorContract);
-
-    $rows = drain($cursor);
-
-    expect($rows)->toBe(shapes());
-})->with(['REF CURSOR', 'Implicit result']);
-
-test('the objects of a pipelined function arrive as arrays', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select value(t) as p from table(obj_pkg.points(2)) t');
-
-    expect($rows)->toBe([
-        ['P' => ['X' => 1, 'Y' => 1, 'LABEL' => 'P1']],
-        ['P' => ['X' => 2, 'Y' => 4, 'LABEL' => 'P2']],
-    ]);
-});
-
-test('attribute keys follow key case', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows(
-        $connection,
-        "select center, obj_point_list(obj_point(0, 0, 'a')) from obj_shapes where id = 1",
-        options: $this->options(rowShape: RowShape::List, keyCase: KeyCase::Lower),
-    );
-
-    expect($rows)->toBe([[['x' => '1.5', 'y' => -2, 'label' => 'center'], [['x' => 0, 'y' => 0, 'label' => 'a']]]]);
-});
-
-test('a quoted attribute keeps its case', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select "OBJ_Mixed_Point"(1, 2) as p from dual');
-
-    expect($rows)->toBe([['P' => ['x' => 1, 'Y' => 2]]]);
-});
-
-test('object and collection columns describe their type', function (): void {
-    $connection = $this->connect();
-    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    assert(\is_string($schema));
-    $cursor = $connection->execute('select center, tags, outline from obj_shapes', [], $this->options())->cursor();
-    assert($cursor !== null);
-
-    $columns = array_map(static fn (array $column): array => [$column['type'], $column['objectType']], $cursor->columns());
-    $cursor->close();
-
-    expect($columns)->toBe([
-        [Type::Object->value, "$schema.OBJ_POINT"],
-        [Type::Collection->value, "$schema.OBJ_STRING_VARRAY"],
-        [Type::Collection->value, "$schema.OBJ_POINT_LIST"],
-    ]);
-});
-
-test('attributes map like columns under the default mapping', function (): void {
-    $connection = $this->connect();
-
-    $rows = inTimeZone('America/Sao_Paulo', fn (): array => $this->rows($connection, 'select value from obj_all_scalars_tab order by id'));
-
-    $zone = 'America/Sao_Paulo';
-    expect(shown(struct($rows[0]['VALUE'])))->toBe([
-        'C_CHAR' => 'ab   ',
-        'C_NCHAR' => 'ç    ',
-        'C_VARCHAR' => 'héllo',
-        'C_NVARCHAR' => '日本',
-        'C_RAW' => "\x00\xff\x80",
-        'C_NUMBER' => '12.5',
-        'C_FLOAT' => 0.1,
-        'C_DOUBLE' => 0.1,
-        'C_BOOLEAN' => true,
-        'C_DATE' => "+2026-03-01 10:00:00.000000 $zone",
-        'C_TS' => "+2026-03-01 10:00:00.123456 $zone",
-        'C_TSTZ' => '+2026-03-01 10:00:00.123456 +05:45',
-        // Stored at UTC: 07:00 in São Paulo.
-        'C_TSLTZ' => "+2026-03-01 07:00:00.123456 $zone",
-        'C_IDS' => '+0Y0M3DT4H5M6S.789000',
-        'C_IYM' => '+2Y5M0DT0H0M0S.000000',
-    ])
-        ->and($rows[1]['VALUE'])->toBe(allScalars());
-});
-
-test('number attributes follow the float mapping', function (): void {
-    $connection = $this->connect();
-
-    $value = struct($this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(values: new ValueMapping(numbers: NumberMode::Float)))[0]['VALUE']);
-
-    expect($value['C_NUMBER'])->toBe(12.5);
-});
-
-test('temporal attributes follow the string mapping and intervals stay objects', function (): void {
-    $connection = $this->connect();
-
-    $value = struct(inTimeZone('America/Sao_Paulo', fn (): mixed => $this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['VALUE']));
-
-    expect([$value['C_DATE'], $value['C_TS'], $value['C_TSTZ'], $value['C_TSLTZ']])->toBe(['2026-03-01 10:00:00', '2026-03-01 10:00:00.123456789', '2026-03-01 10:00:00.123456789 +05:45', '2026-03-01 07:00:00.123456789 -03:00'])
-        ->and($value['C_IDS'])->toBeInstanceOf(DateInterval::class);
-});
-
-test('attribute keys follow the lower key case', function (): void {
-    $connection = $this->connect();
-
-    $rows = $this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(keyCase: KeyCase::Lower));
-
-    expect(array_keys(struct($rows[0]['value'])))->toBe(array_map(strtolower(...), array_keys(allScalars())));
-});
-
-test('a boolean attribute reads as stored', function (string $flag, bool | null $expected, string $through): void {
-    $connection = $this->connect();
-    $built = "obj_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
-
-    $value = $through === 'PL/SQL'
-        ? $connection->execute("begin :o := $built; end;", ['o' => new Out\Struct('obj_all_scalars')], $this->options())->outValues()['o'][0]
-        : $this->value($connection, "select $built from dual");
-
-    expect(struct($value)['C_BOOLEAN'])->toBe($expected);
-})->with([
-    'true' => ['true', true],
-    'false' => ['false', false],
-    'null' => ['null', null],
-])->with(['PL/SQL', 'SQL']);
-
-test('a struct binds in out and in out', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        'begin :o := obj_pkg.make_point(:x, :y, :label); obj_pkg.move_point(:io, 1, 2); :n := obj_pkg.count_vertices(:polygon); end;',
-        [
-            'x' => 1, 'y' => '0.5', 'label' => 'p',
-            'o' => new Out\Struct('obj_point'),
-            'io' => new InOut\Struct('obj_point', ['x' => 1, 'y' => 1, 'label' => 'moved']),
-            'polygon' => new In\Struct('obj_polygon', ['name' => 'tri', 'vertices' => [point(0, 0), point(1, 0), point(0, 1)]]),
-            'n' => new Out\Number(),
-        ],
-        $this->options(),
-    )->outValues();
-
-    expect($values)->toBe([
-        'o' => [['X' => 1, 'Y' => '0.5', 'LABEL' => 'p']],
-        'io' => [['X' => 2, 'Y' => 3, 'LABEL' => 'moved']],
-        'n' => [3],
-    ]);
-});
-
-test('a collection binds in out and in out', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        "begin obj_pkg.reverse_numbers(:numbers, :reversed); obj_pkg.append_tag(:tags, 'z'); :sum := obj_pkg.sum_numbers(:numbers); end;",
-        [
-            'numbers' => new In\Collection('obj_number_list', [1, 2.5, -3]),
-            'reversed' => new Out\Collection('obj_number_list'),
-            'tags' => new InOut\Collection('obj_string_varray', ['x', 'y']),
-            'sum' => new Out\Number(),
-        ],
-        $this->options(),
-    )->outValues();
-
-    expect([$values['reversed'], $values['tags'], $values['sum']])->toBe([[[-3, '2.5', 1]], [['x', 'y', 'z']], ['0.5']]);
-});
-
-test('an associative array binds in out and in out', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        'begin obj_pkg.fill_map(3, :filled); :sum := obj_pkg.sum_map(:map); :io := :io; end;',
-        [
-            'filled' => new Out\Indexed('obj_pkg.t_number_map'),
-            'map' => new In\Indexed('obj_pkg.t_number_map', [7 => 1, -2 => 2]),
-            'io' => new InOut\Indexed('obj_pkg.t_number_map', [1 => 1]),
-            'sum' => new Out\Number(),
-        ],
-        $this->options(),
-    )->outValues();
-
-    expect([$values['filled'], $values['sum'], $values['io']])->toBe([[[10 => 1, 20 => 2, 30 => 3]], [3], [[1 => 1]]]);
-});
-
-/**
- * A new obj_shapes row 99, bound.
- *
- * @return array<string, Bindable|int>
- */
-function newShape(): array
-{
-    return [
-        'id' => 99,
-        'center' => new In\Struct('obj_point', ['x' => 5, 'y' => 6, 'label' => 'new']),
-        'tags' => new In\Collection('obj_string_varray', ['t']),
-        'outline' => new In\Collection('obj_point_list', []),
-    ];
-}
-
-const INSERT_SHAPE = 'insert into obj_shapes (id, center, tags, outline) values (:id, :center, :tags, :outline)';
-
-test('a struct and collections bind into sql', function (): void {
-    $connection = $this->connect();
-    $options = $this->options(autocommit: false);
-
-    $inserted = $connection->execute(INSERT_SHAPE, newShape(), $options)->rowCount();
-    $rows = $this->rows($connection, 'select center, tags, outline from obj_shapes where id = 99', options: $options);
-    $connection->rollback();
-
-    expect($inserted)->toBe(1)
-        ->and($rows)->toBe([['CENTER' => ['X' => 5, 'Y' => 6, 'LABEL' => 'new'], 'TAGS' => ['t'], 'OUTLINE' => []]]);
-});
-
-test('insert returning into gives the struct and collection inserted', function (string $sql): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        $sql,
-        newShape() + ['center_o' => new Out\Struct('obj_point'), 'tags_o' => new Out\Collection('obj_string_varray')],
-        $this->options(autocommit: false),
-    )->outValues();
-    $connection->rollback();
-
-    expect([$values['center_o'], $values['tags_o']])->toBe([[['X' => 5, 'Y' => 6, 'LABEL' => 'new']], [['t']]]);
-})->with([
-    'SQL' => [INSERT_SHAPE . ' returning center, tags into :center_o, :tags_o'],
-    'a block' => ['begin ' . INSERT_SHAPE . ' returning center, tags into :center_o, :tags_o; end;'],
-]);
-
-test('update returning into gives the objects of every row', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        'update obj_shapes set id = id where id in (1, 2, 3) returning id, center, tags into :id_o, :center_o, :tags_o',
-        ['id_o' => new Out\Number(), 'center_o' => new Out\Struct('obj_point'), 'tags_o' => new Out\Collection('obj_string_varray')],
-        $this->options(autocommit: false),
-    )->outValues();
-    $connection->rollback();
-
-    $rows = array_map(null, $values['id_o'], $values['center_o'], $values['tags_o']);
-    usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
-    expect($rows)->toBe([
-        [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
-        [2, null, null],
-        [3, ['X' => null, 'Y' => null, 'LABEL' => null], []],
-    ]);
-});
-
-test('returning a nested table column fails loudly and the connection stays usable', function (string $sql): void {
-    $connection = $this->connect();
-    $thrown = null;
-
-    try {
-        $connection->execute($sql, ['outline_o' => new Out\Collection('obj_point_list')], $this->options(autocommit: false));
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
-    $connection->rollback();
-
-    // It comes back as a reference to its storage table, not decoded.
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain('database object stored in a LOB')
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-})->with([
-    'SQL' => ['update obj_shapes set id = id where id = 1 returning outline into :outline_o'],
-    'a block' => ['begin update obj_shapes set id = id where id = 1 returning outline into :outline_o; end;'],
-]);
-
-test('a fetched value binds back unchanged', function (ValueMapping $values): void {
-    $connection = $this->connect();
-    $options = $this->options(values: $values);
-
-    [$value, $shape, $back] = inTimeZone('Asia/Kathmandu', function () use ($connection, $options): array {
-        $value = struct($this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $options)[0]['VALUE']);
-        $shape = $this->rows($connection, 'select center, tags, outline from obj_shapes where id = 1', options: $options)[0];
-
-        return [$value, $shape, $connection->execute(
-            'begin :o := :i; :center_o := :center; :tags_o := :tags; :outline_o := :outline; end;',
-            [
-                'i' => new In\Struct('obj_all_scalars', $value), 'o' => new Out\Struct('obj_all_scalars'),
-                'center' => new In\Struct('obj_point', struct($shape['CENTER'])), 'center_o' => new Out\Struct('obj_point'),
-                'tags' => new In\Collection('obj_string_varray', elements($shape['TAGS'])), 'tags_o' => new Out\Collection('obj_string_varray'),
-                'outline' => new In\Collection('obj_point_list', elements($shape['OUTLINE'])), 'outline_o' => new Out\Collection('obj_point_list'),
-            ],
-            $options,
-        )->outValues()];
-    });
-
-    expect(shown(struct($back['o'][0])))->toBe(shown($value))
-        ->and([$back['center_o'][0], $back['tags_o'][0], $back['outline_o'][0]])->toBe([$shape['CENTER'], $shape['TAGS'], $shape['OUTLINE']]);
-})->with([
-    'default' => [new ValueMapping()],
-    'String temporals, Float numbers' => [new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)],
-]);
-
-test('bound attributes reach the server as their types store them', function (): void {
-    $value = allScalars();
-    $value['C_NUMBER'] = 0.1;
-    $value['C_DATE'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('Asia/Tokyo'));
-    $value['C_TSTZ'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('-03:30'));
-    $value['C_TSLTZ'] = new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('+02:00'));
-    $value['C_BOOLEAN'] = true;
-    $value['C_NCHAR'] = 'ç';
-
-    $text = $this->connect()->execute(
-        "declare v obj_all_scalars := :i; begin :s := to_char(v.c_number) || '|' || to_char(v.c_date, 'YYYY-MM-DD HH24:MI:SS') || '|' || to_char(v.c_tstz, 'YYYY-MM-DD HH24:MI:SS.FF3 TZH:TZM') || '|' || to_char(sys_extract_utc(v.c_tsltz), 'YYYY-MM-DD HH24:MI:SS') || '|' || case when v.c_boolean then 'T' else 'F' end || '|' || v.c_nchar || '|'; end;",
-        ['i' => new In\Struct('obj_all_scalars', $value), 's' => new Out\Varchar()],
-        $this->options(),
-    )->outValues()['s'][0];
-
-    // A CHAR or NCHAR attribute is stored as given, unpadded.
-    expect($text)->toBe('.1|2026-03-01 10:00:00|2026-03-01 10:00:00.500 -03:30|2026-03-01 08:00:00|T|ç|');
-});
-
-test('null empty and all null values stay apart in and out', function (): void {
-    $nullPoint = ['X' => null, 'Y' => null, 'LABEL' => null];
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        <<<'SQL'
-            begin
-              :null_sum := obj_pkg.sum_numbers(:null_list);
-              :empty_sum := obj_pkg.sum_numbers(:empty_list);
-              :null_is_null := case when :null_point is null then 'Y' else 'N' end;
-              :all_null_is_null := case when :all_null_point is null then 'Y' else 'N' end;
-              obj_pkg.reverse_numbers(:null_list, :reversed_null);
-              obj_pkg.reverse_numbers(:with_nulls, :reversed_nulls);
-              :point_o := :all_null_point;
-              :null_point_o := :null_point;
-            end;
-            SQL,
-        [
-            'null_list' => new In\Collection('obj_number_list', null),
-            'empty_list' => new In\Collection('obj_number_list', []),
-            'with_nulls' => new In\Collection('obj_number_list', [null, 1, null]),
-            'null_point' => new In\Struct('obj_point', null),
-            'all_null_point' => new In\Struct('obj_point', $nullPoint),
-            'null_sum' => new Out\Number(), 'empty_sum' => new Out\Number(),
-            'null_is_null' => new Out\Varchar(), 'all_null_is_null' => new Out\Varchar(),
-            'reversed_null' => new Out\Collection('obj_number_list'),
-            'reversed_nulls' => new Out\Collection('obj_number_list'),
-            'point_o' => new Out\Struct('obj_point'), 'null_point_o' => new Out\Struct('obj_point'),
-        ],
-        $this->options(),
-    )->outValues();
-
-    expect(array_filter($values, static fn (array $list): bool => $list !== []))->toBe([
-        'null_sum' => [null], 'empty_sum' => [0],
-        'null_is_null' => ['Y'], 'all_null_is_null' => ['N'],
-        'reversed_null' => [null], 'reversed_nulls' => [[null, 1, null]],
-        'point_o' => [$nullPoint], 'null_point_o' => [null],
-    ]);
-});
-
-test('an associative array keeps sparse and negative keys in order', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        ECHO_BLOCK,
-        ['i' => new In\Indexed('obj_pkg.t_number_map', [10 => 2, -5 => 1, 3 => 3, -2147483648 => 4, 2147483647 => 5]), 'o' => new Out\Indexed('obj_pkg.t_number_map')],
-        $this->options(),
-    )->outValues();
-
-    expect($values['o'][0])->toBe([-2147483648 => 4, -5 => 1, 3 => 3, 10 => 2, 2147483647 => 5]);
-});
-
-test('a sparse nested table gives a list', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute('begin :o := obj_kinds.sparse_numbers; end;', ['o' => new Out\Collection('obj_number_list')], $this->options())->outValues();
-
-    expect($values['o'][0])->toBe([1, 3, 5]);
-});
-
-test('table of a collection bind takes ten thousand ids', function (string $type, array $ids): void {
-    /** @var list<int|string> $ids */
-    $connection = $this->connect();
-    $bind = ['ids' => new In\Collection($type, $ids)];
-
-    $all = $this->rows($connection, 'select count(*) as n, sum(column_value) as s from table(:ids)', $bind);
-    $joined = $this->rows($connection, 'select count(*) as n, sum(i.id) as s from (select level as id from dual connect by level <= 1000) i join table(:ids) t on t.column_value = i.id', $bind);
-
-    expect($all)->toBe([['N' => 10000, 'S' => 50005000]])
-        ->and($joined)->toBe([['N' => 1000, 'S' => 500500]]);
-})->with([
-    'SYS.ODCINUMBERLIST' => ['sys.odcinumberlist', range(1, 10000)],
-    'SYS.ODCIVARCHAR2LIST' => ['sys.odcivarchar2list', array_map(strval(...), range(1, 10000))],
-    'a user type' => ['obj_number_list', range(1, 10000)],
-]);
-
 /**
  * @return iterable<string, array{Bindable, string}>
  */
@@ -682,320 +262,754 @@ dataset('mistakes', function () {
     yield 'a nested Object of the wrong shape' => [new In\Struct('obj_polygon', ['name' => 'p', 'vertices' => [1]]), "Bind 'i', attribute VERTICES, element 0: the value must be an array keyed by attribute name or null."];
 });
 
-test('a mistake fails before any round trip naming the fix', function (Bindable $bind, string $message): void {
-    $connection = $this->connect();
-    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    assert(\is_string($schema));
-    // Describe every type the cases name, so a case costs no Round trip.
-    $connection->execute(
-        'begin :a := :a; :b := :b; :c := :c; :d := :d; :e := :e; :f := :f; end;',
-        [
-            'a' => new Out\Struct('obj_point'), 'b' => new Out\Collection('obj_number_list'), 'c' => new Out\Indexed('obj_pkg.t_number_map'),
-            'd' => new Out\Struct('obj_polygon'), 'e' => new Out\Collection('obj_string_varray'), 'f' => new Out\Struct('obj_all_scalars'),
-        ],
-        $this->options(),
-    );
-    $sid = $this->sid($connection);
-    $thrown = null;
+describe('reading objects', function (): void {
+    it('gives object and collection columns as arrays', function (): void {
+        $connection = $this->connect();
 
-    $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
-        try {
-            $connection->execute(ECHO_BLOCK, ['i' => $bind, 'o' => new Out\Number()], $this->options());
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $rows = $this->rows($connection, 'select * from obj_shapes order by id');
+
+        expect($rows)->toBe(shapes());
     });
 
-    $expected = str_replace(schemaPlaceholder(), $schema, $message);
-    assert($thrown instanceof UsageException && $expected !== '');
-    expect($thrown->getMessage())->toStartWith($expected)
-        ->and($trips)->toBe(0);
-})->with('mistakes');
+    it('gives the same arrays from the columns of a cursor', function (string $kind): void {
+        $connection = $this->connect();
+        $query = 'select * from obj_shapes order by id';
+        $cursor = $kind === 'REF CURSOR'
+            ? $connection->execute("begin open :o for $query; end;", ['o' => new Out\Cursor()], $this->options())->outValues()['o'][0]
+            : $connection->execute("declare c sys_refcursor; begin open c for $query; dbms_sql.return_result(c); end;", [], $this->options())->implicitResults()[0];
+        assert($cursor instanceof CursorContract);
 
-test('a type name resolves under oracle identifier rules', function (string $name): void {
-    $connection = $this->connect();
-    $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
-    assert(\is_string($schema));
-    $name = str_replace(schemaPlaceholder(), strtolower($schema), $name);
+        $rows = drain($cursor);
 
-    $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($name, ['X' => 1, 'Y' => 2, 'LABEL' => 'a']), 'o' => new Out\Struct($name)], $this->options())->outValues();
+        expect($rows)->toBe(shapes());
+    })->with(['REF CURSOR', 'Implicit result']);
 
-    expect($values['o'])->toBe([['X' => 1, 'Y' => 2, 'LABEL' => 'a']]);
-})->with([
-    // Unquoted parts are case-insensitive, a quoted part is kept.
-    'lowercase' => ['obj_point'],
-    'uppercase' => ['OBJ_POINT'],
-    'quoted' => ['"OBJ_POINT"'],
-    'mixed case' => ['Obj_Point'],
-    'schema-qualified' => [schemaPlaceholder() . '.obj_point'],
-    'a synonym' => ['obj_point_alias'],
-]);
+    it('gives the objects of a pipelined function as arrays', function (): void {
+        $connection = $this->connect();
 
-test('a quoted mixed case type name resolves', function (): void {
-    $connection = $this->connect();
+        $rows = $this->rows($connection, 'select value(t) as p from table(obj_pkg.points(2)) t');
 
-    $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('"OBJ_Mixed_Point"', ['x' => 1, 'y' => 2]), 'o' => new Out\Struct('"OBJ_Mixed_Point"')], $this->options())->outValues();
+        expect($rows)->toBe([
+            ['P' => ['X' => 1, 'Y' => 1, 'LABEL' => 'P1']],
+            ['P' => ['X' => 2, 'Y' => 4, 'LABEL' => 'P2']],
+        ]);
+    });
 
-    expect($values['o'])->toBe([['x' => 1, 'Y' => 2]]);
+    it('describes object and collection columns with their type', function (): void {
+        $connection = $this->connect();
+        $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+        assert(\is_string($schema));
+        $cursor = $connection->execute('select center, tags, outline from obj_shapes', [], $this->options())->cursor();
+        assert($cursor !== null);
+
+        $columns = array_map(static fn (array $column): array => [$column['type'], $column['objectType']], $cursor->columns());
+        $cursor->close();
+
+        expect($columns)->toBe([
+            [Type::Object->value, "$schema.OBJ_POINT"],
+            [Type::Collection->value, "$schema.OBJ_STRING_VARRAY"],
+            [Type::Collection->value, "$schema.OBJ_POINT_LIST"],
+        ]);
+    });
 });
 
-test('package types resolve', function (): void {
-    $connection = $this->connect();
+describe('attributes', function (): void {
+    it('follow the key case in their keys', function (): void {
+        $connection = $this->connect();
 
-    $values = $connection->execute(
-        'begin :r := :r; :n := :n; end;',
-        [
-            'r' => new InOut\Struct('obj_kinds.t_record', ['id' => -7, 'name' => 'r', 'flag' => true]),
-            'n' => new InOut\Collection('obj_kinds.t_numbers', [1, 2]),
-        ],
-        $this->options(),
-    )->outValues();
+        $rows = $this->rows(
+            $connection,
+            "select center, obj_point_list(obj_point(0, 0, 'a')) from obj_shapes where id = 1",
+            options: $this->options(rowShape: RowShape::List, keyCase: KeyCase::Lower),
+        );
 
-    expect($values)->toBe(['r' => [['ID' => -7, 'NAME' => 'r', 'FLAG' => true]], 'n' => [[1, 2]]]);
+        expect($rows)->toBe([[['x' => '1.5', 'y' => -2, 'label' => 'center'], [['x' => 0, 'y' => 0, 'label' => 'a']]]]);
+    });
+
+    it('keep the case of a quoted name', function (): void {
+        $connection = $this->connect();
+
+        $rows = $this->rows($connection, 'select "OBJ_Mixed_Point"(1, 2) as p from dual');
+
+        expect($rows)->toBe([['P' => ['x' => 1, 'Y' => 2]]]);
+    });
+
+    it('map like columns under the default mapping', function (): void {
+        $connection = $this->connect();
+
+        $rows = inTimeZone('America/Sao_Paulo', fn (): array => $this->rows($connection, 'select value from obj_all_scalars_tab order by id'));
+
+        $zone = 'America/Sao_Paulo';
+        expect(shown(struct($rows[0]['VALUE'])))->toBe([
+            'C_CHAR' => 'ab   ',
+            'C_NCHAR' => 'ç    ',
+            'C_VARCHAR' => 'héllo',
+            'C_NVARCHAR' => '日本',
+            'C_RAW' => "\x00\xff\x80",
+            'C_NUMBER' => '12.5',
+            'C_FLOAT' => 0.1,
+            'C_DOUBLE' => 0.1,
+            'C_BOOLEAN' => true,
+            'C_DATE' => "+2026-03-01 10:00:00.000000 $zone",
+            'C_TS' => "+2026-03-01 10:00:00.123456 $zone",
+            'C_TSTZ' => '+2026-03-01 10:00:00.123456 +05:45',
+            // Stored at UTC: 07:00 in São Paulo.
+            'C_TSLTZ' => "+2026-03-01 07:00:00.123456 $zone",
+            'C_IDS' => '+0Y0M3DT4H5M6S.789000',
+            'C_IYM' => '+2Y5M0DT0H0M0S.000000',
+        ])
+            ->and($rows[1]['VALUE'])->toBe(allScalars());
+    });
+
+    it('follow the float mapping for numbers', function (): void {
+        $connection = $this->connect();
+
+        $value = struct($this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(values: new ValueMapping(numbers: NumberMode::Float)))[0]['VALUE']);
+
+        expect($value['C_NUMBER'])->toBe(12.5);
+    });
+
+    it('follow the string mapping for temporals and keep intervals as objects', function (): void {
+        $connection = $this->connect();
+
+        $value = struct(inTimeZone('America/Sao_Paulo', fn (): mixed => $this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(values: new ValueMapping(temporals: TemporalMode::String)))[0]['VALUE']));
+
+        expect([$value['C_DATE'], $value['C_TS'], $value['C_TSTZ'], $value['C_TSLTZ']])->toBe(['2026-03-01 10:00:00', '2026-03-01 10:00:00.123456789', '2026-03-01 10:00:00.123456789 +05:45', '2026-03-01 07:00:00.123456789 -03:00'])
+            ->and($value['C_IDS'])->toBeInstanceOf(DateInterval::class);
+    });
+
+    it('follow the lower key case in their keys', function (): void {
+        $connection = $this->connect();
+
+        $rows = $this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $this->options(keyCase: KeyCase::Lower));
+
+        expect(array_keys(struct($rows[0]['value'])))->toBe(array_map(strtolower(...), array_keys(allScalars())));
+    });
+
+    it('read a boolean as stored', function (string $flag, bool | null $expected, string $through): void {
+        $connection = $this->connect();
+        $built = "obj_all_scalars(null, null, null, null, null, null, null, null, $flag, null, null, null, null, null, null)";
+
+        $value = $through === 'PL/SQL'
+            ? $connection->execute("begin :o := $built; end;", ['o' => new Out\Struct('obj_all_scalars')], $this->options())->outValues()['o'][0]
+            : $this->value($connection, "select $built from dual");
+
+        expect(struct($value)['C_BOOLEAN'])->toBe($expected);
+    })->with([
+        'true' => ['true', true],
+        'false' => ['false', false],
+        'null' => ['null', null],
+    ])->with(['PL/SQL', 'SQL']);
 });
 
-test('an unknown type fails naming it', function (string $unknown): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('binding objects', function (): void {
+    it('binds a struct in out and in out', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($unknown, null), 'o' => new Out\Number()], $this->options());
-    } catch (QueryException $queryException) {
-        $thrown = $queryException;
-    }
-
-    assert($thrown instanceof QueryException);
-    expect($thrown->getMessage())->toStartWith("Bind 'i': the type ")
-        ->toEndWith(' does not exist, or this user cannot see it.');
-})->with([
-    'a quoted name written unquoted' => ['obj_mixed_point'],
-    'a missing type' => ['obj_no_such_type'],
-    'a missing package type' => ['obj_pkg.no_such_type'],
-]);
-
-test('describing a type costs round trips only on its first use in a session', function (): void {
-    $pool = $this->ownPool() + ['maxConnections' => 1];
-    $connection = $this->connect(...$pool);
-    $sid = $this->sid($connection);
-    $echo = fn (Session $connection, string $name): mixed => $connection->execute(
-        ECHO_BLOCK,
-        ['i' => new In\Collection($name, [[1], []]), 'o' => new Out\Collection($name)],
-        $this->options(),
-    )->outValues()['o'];
-
-    $first = roundTrips($sid, static fn (): mixed => $echo($connection, 'obj_number_matrix'));
-    $again = roundTrips($sid, static fn (): mixed => $echo($connection, 'OBJ_NUMBER_MATRIX'));
-    $connection->close();
-    $next = $this->connect(...$pool);
-    $nextLoan = roundTrips($sid, static fn (): mixed => $echo($next, 'Obj_Number_Matrix'));
-    $column = roundTrips($sid, fn (): array => $this->rows($next, 'select obj_number_matrix(obj_number_list(1)) from dual'));
-
-    expect($this->sid($next))->toBe($sid)
-        ->and($first)->toBeGreaterThan(1)
-        ->and($again)->toBe(1)
-        ->and($nextLoan)->toBe(1)
-        ->and($column)->toBe(1);
-});
-
-test('after alter type elsewhere a session fails loudly or stays consistent', function (): void {
-    $type = 'obj_evolving_' . bin2hex(random_bytes(3));
-    $connection = $this->connect(standalone: true);
-    $connection->execute("create type $type as object (a number)", [], $this->options());
-
-    $echo = fn (array $value): mixed => $connection->execute(
-        ECHO_BLOCK,
-        ['i' => new In\Struct($type, struct($value)), 'o' => new Out\Struct($type)],
-        $this->options(),
-    )->outValues()['o'][0];
-    $echo(['a' => 1]);
-    $this->connect()->execute("alter type $type add attribute (b varchar2(10)) cascade", [], $this->options());
-    $fresh = $this->connect(standalone: true);
-    $outcomes = [];
-    $messages = [];
-
-    foreach ([
-        'bind the old shape' => static fn (): mixed => $echo(['a' => 2]),
-        'bind the new shape' => static fn (): mixed => $echo(['a' => 3, 'b' => 'x']),
-        'fetch a value' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
-        'fetch a value again' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
-        'still usable' => fn (): mixed => $this->value($connection, 'select 1 from dual'),
-        'a new Session fetches' => fn (): mixed => $this->value($fresh, "select $type(5, 'z') from dual"),
-        'a new Session binds' => fn (): mixed => $fresh->execute(
-            "declare v $type := :i; begin :o := v.a || v.b; end;",
-            ['i' => new In\Struct($type, ['a' => 6, 'b' => 'w']), 'o' => new Out\Varchar()],
+        $values = $connection->execute(
+            'begin :o := obj_pkg.make_point(:x, :y, :label); obj_pkg.move_point(:io, 1, 2); :n := obj_pkg.count_vertices(:polygon); end;',
+            [
+                'x' => 1, 'y' => '0.5', 'label' => 'p',
+                'o' => new Out\Struct('obj_point'),
+                'io' => new InOut\Struct('obj_point', ['x' => 1, 'y' => 1, 'label' => 'moved']),
+                'polygon' => new In\Struct('obj_polygon', ['name' => 'tri', 'vertices' => [point(0, 0), point(1, 0), point(0, 1)]]),
+                'n' => new Out\Number(),
+            ],
             $this->options(),
-        )->outValues()['o'][0],
-        'a new Session binds OUT' => fn (): mixed => $fresh->execute(
-            "begin :o := $type(7, 'v'); end;",
-            ['o' => new Out\Struct($type)],
+        )->outValues();
+
+        expect($values)->toBe([
+            'o' => [['X' => 1, 'Y' => '0.5', 'LABEL' => 'p']],
+            'io' => [['X' => 2, 'Y' => 3, 'LABEL' => 'moved']],
+            'n' => [3],
+        ]);
+    });
+
+    it('binds a collection in out and in out', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            "begin obj_pkg.reverse_numbers(:numbers, :reversed); obj_pkg.append_tag(:tags, 'z'); :sum := obj_pkg.sum_numbers(:numbers); end;",
+            [
+                'numbers' => new In\Collection('obj_number_list', [1, 2.5, -3]),
+                'reversed' => new Out\Collection('obj_number_list'),
+                'tags' => new InOut\Collection('obj_string_varray', ['x', 'y']),
+                'sum' => new Out\Number(),
+            ],
             $this->options(),
-        )->outValues()['o'][0],
-    ] as $case => $run) {
+        )->outValues();
+
+        expect([$values['reversed'], $values['tags'], $values['sum']])->toBe([[[-3, '2.5', 1]], [['x', 'y', 'z']], ['0.5']]);
+    });
+
+    it('binds an associative array in out and in out', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            'begin obj_pkg.fill_map(3, :filled); :sum := obj_pkg.sum_map(:map); :io := :io; end;',
+            [
+                'filled' => new Out\Indexed('obj_pkg.t_number_map'),
+                'map' => new In\Indexed('obj_pkg.t_number_map', [7 => 1, -2 => 2]),
+                'io' => new InOut\Indexed('obj_pkg.t_number_map', [1 => 1]),
+                'sum' => new Out\Number(),
+            ],
+            $this->options(),
+        )->outValues();
+
+        expect([$values['filled'], $values['sum'], $values['io']])->toBe([[[10 => 1, 20 => 2, 30 => 3]], [3], [[1 => 1]]]);
+    });
+
+    it('binds a struct and collections into sql', function (): void {
+        $connection = $this->connect();
+        $options = $this->options(autocommit: false);
+
+        $inserted = $connection->execute(INSERT_SHAPE, newShape(), $options)->rowCount();
+        $rows = $this->rows($connection, 'select center, tags, outline from obj_shapes where id = 99', options: $options);
+        $connection->rollback();
+
+        expect($inserted)->toBe(1)
+            ->and($rows)->toBe([['CENTER' => ['X' => 5, 'Y' => 6, 'LABEL' => 'new'], 'TAGS' => ['t'], 'OUTLINE' => []]]);
+    });
+
+    it('gives back the struct and collection an insert returns', function (string $sql): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            $sql,
+            newShape() + ['center_o' => new Out\Struct('obj_point'), 'tags_o' => new Out\Collection('obj_string_varray')],
+            $this->options(autocommit: false),
+        )->outValues();
+        $connection->rollback();
+
+        expect([$values['center_o'], $values['tags_o']])->toBe([[['X' => 5, 'Y' => 6, 'LABEL' => 'new']], [['t']]]);
+    })->with([
+        'SQL' => [INSERT_SHAPE . ' returning center, tags into :center_o, :tags_o'],
+        'a block' => ['begin ' . INSERT_SHAPE . ' returning center, tags into :center_o, :tags_o; end;'],
+    ]);
+
+    it('gives back the objects of every row an update returns', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            'update obj_shapes set id = id where id in (1, 2, 3) returning id, center, tags into :id_o, :center_o, :tags_o',
+            ['id_o' => new Out\Number(), 'center_o' => new Out\Struct('obj_point'), 'tags_o' => new Out\Collection('obj_string_varray')],
+            $this->options(autocommit: false),
+        )->outValues();
+        $connection->rollback();
+
+        $rows = array_map(null, $values['id_o'], $values['center_o'], $values['tags_o']);
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        expect($rows)->toBe([
+            [1, ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'], ['red', "caf\u{e9}"]],
+            [2, null, null],
+            [3, ['X' => null, 'Y' => null, 'LABEL' => null], []],
+        ]);
+    });
+
+    it('fails loudly returning a nested table column and the connection stays usable', function (string $sql): void {
+        $connection = $this->connect();
+        $thrown = null;
+
         try {
-            $outcomes[$case] = $run();
-        } catch (OracleException $e) {
-            $outcomes[$case] = $e::class . ($e->getCode() === 0 ? '' : ' ' . $e->getCode());
-            $messages[$case] = $e->getMessage();
+            $connection->execute($sql, ['outline_o' => new Out\Collection('obj_point_list')], $this->options(autocommit: false));
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
         }
-    }
+        $connection->rollback();
 
-    expect($outcomes)->toBe([
-        'bind the old shape' => QueryException::class . ' 3101',
-        'bind the new shape' => UsageException::class,
-        'fetch a value' => QueryException::class,
-        'fetch a value again' => QueryException::class,
-        'still usable' => 1,
-        'a new Session fetches' => ['A' => 5, 'B' => 'z'],
-        'a new Session binds' => '6w',
-        'a new Session binds OUT' => ['A' => 7, 'B' => 'v'],
-    ])
-        ->and($messages['fetch a value'] ?? '')->toContain(strtoupper($type) . ' has changed since this connection described it');
+        // It comes back as a reference to its storage table, not decoded.
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain('database object stored in a LOB')
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    })->with([
+        'SQL' => ['update obj_shapes set id = id where id = 1 returning outline into :outline_o'],
+        'a block' => ['begin update obj_shapes set id = id where id = 1 returning outline into :outline_o; end;'],
+    ]);
+
+    it('binds a fetched value back unchanged', function (ValueMapping $values): void {
+        $connection = $this->connect();
+        $options = $this->options(values: $values);
+
+        [$value, $shape, $back] = inTimeZone('Asia/Kathmandu', function () use ($connection, $options): array {
+            $value = struct($this->rows($connection, 'select value from obj_all_scalars_tab where id = 1', options: $options)[0]['VALUE']);
+            $shape = $this->rows($connection, 'select center, tags, outline from obj_shapes where id = 1', options: $options)[0];
+
+            return [$value, $shape, $connection->execute(
+                'begin :o := :i; :center_o := :center; :tags_o := :tags; :outline_o := :outline; end;',
+                [
+                    'i' => new In\Struct('obj_all_scalars', $value), 'o' => new Out\Struct('obj_all_scalars'),
+                    'center' => new In\Struct('obj_point', struct($shape['CENTER'])), 'center_o' => new Out\Struct('obj_point'),
+                    'tags' => new In\Collection('obj_string_varray', elements($shape['TAGS'])), 'tags_o' => new Out\Collection('obj_string_varray'),
+                    'outline' => new In\Collection('obj_point_list', elements($shape['OUTLINE'])), 'outline_o' => new Out\Collection('obj_point_list'),
+                ],
+                $options,
+            )->outValues()];
+        });
+
+        expect(shown(struct($back['o'][0])))->toBe(shown($value))
+            ->and([$back['center_o'][0], $back['tags_o'][0], $back['outline_o'][0]])->toBe([$shape['CENTER'], $shape['TAGS'], $shape['OUTLINE']]);
+    })->with([
+        'default' => [new ValueMapping()],
+        'String temporals, Float numbers' => [new ValueMapping(numbers: NumberMode::Float, temporals: TemporalMode::String)],
+    ]);
+
+    it('sends attributes as their types store them', function (): void {
+        $value = allScalars();
+        $value['C_NUMBER'] = 0.1;
+        $value['C_DATE'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('Asia/Tokyo'));
+        $value['C_TSTZ'] = new DateTimeImmutable('2026-03-01 10:00:00.5', new DateTimeZone('-03:30'));
+        $value['C_TSLTZ'] = new DateTimeImmutable('2026-03-01 10:00:00', new DateTimeZone('+02:00'));
+        $value['C_BOOLEAN'] = true;
+        $value['C_NCHAR'] = 'ç';
+
+        $text = $this->connect()->execute(
+            "declare v obj_all_scalars := :i; begin :s := to_char(v.c_number) || '|' || to_char(v.c_date, 'YYYY-MM-DD HH24:MI:SS') || '|' || to_char(v.c_tstz, 'YYYY-MM-DD HH24:MI:SS.FF3 TZH:TZM') || '|' || to_char(sys_extract_utc(v.c_tsltz), 'YYYY-MM-DD HH24:MI:SS') || '|' || case when v.c_boolean then 'T' else 'F' end || '|' || v.c_nchar || '|'; end;",
+            ['i' => new In\Struct('obj_all_scalars', $value), 's' => new Out\Varchar()],
+            $this->options(),
+        )->outValues()['s'][0];
+
+        // A CHAR or NCHAR attribute is stored as given, unpadded.
+        expect($text)->toBe('.1|2026-03-01 10:00:00|2026-03-01 10:00:00.500 -03:30|2026-03-01 08:00:00|T|ç|');
+    });
+
+    it('keeps null empty and all null values apart in and out', function (): void {
+        $nullPoint = ['X' => null, 'Y' => null, 'LABEL' => null];
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            <<<'SQL'
+                begin
+                  :null_sum := obj_pkg.sum_numbers(:null_list);
+                  :empty_sum := obj_pkg.sum_numbers(:empty_list);
+                  :null_is_null := case when :null_point is null then 'Y' else 'N' end;
+                  :all_null_is_null := case when :all_null_point is null then 'Y' else 'N' end;
+                  obj_pkg.reverse_numbers(:null_list, :reversed_null);
+                  obj_pkg.reverse_numbers(:with_nulls, :reversed_nulls);
+                  :point_o := :all_null_point;
+                  :null_point_o := :null_point;
+                end;
+                SQL,
+            [
+                'null_list' => new In\Collection('obj_number_list', null),
+                'empty_list' => new In\Collection('obj_number_list', []),
+                'with_nulls' => new In\Collection('obj_number_list', [null, 1, null]),
+                'null_point' => new In\Struct('obj_point', null),
+                'all_null_point' => new In\Struct('obj_point', $nullPoint),
+                'null_sum' => new Out\Number(), 'empty_sum' => new Out\Number(),
+                'null_is_null' => new Out\Varchar(), 'all_null_is_null' => new Out\Varchar(),
+                'reversed_null' => new Out\Collection('obj_number_list'),
+                'reversed_nulls' => new Out\Collection('obj_number_list'),
+                'point_o' => new Out\Struct('obj_point'), 'null_point_o' => new Out\Struct('obj_point'),
+            ],
+            $this->options(),
+        )->outValues();
+
+        expect(array_filter($values, static fn (array $list): bool => $list !== []))->toBe([
+            'null_sum' => [null], 'empty_sum' => [0],
+            'null_is_null' => ['Y'], 'all_null_is_null' => ['N'],
+            'reversed_null' => [null], 'reversed_nulls' => [[null, 1, null]],
+            'point_o' => [$nullPoint], 'null_point_o' => [null],
+        ]);
+    });
+
+    it('keeps the sparse and negative keys of an associative array in order', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            ECHO_BLOCK,
+            ['i' => new In\Indexed('obj_pkg.t_number_map', [10 => 2, -5 => 1, 3 => 3, -2147483648 => 4, 2147483647 => 5]), 'o' => new Out\Indexed('obj_pkg.t_number_map')],
+            $this->options(),
+        )->outValues();
+
+        expect($values['o'][0])->toBe([-2147483648 => 4, -5 => 1, 3 => 3, 10 => 2, 2147483647 => 5]);
+    });
+
+    it('gives a sparse nested table as a list', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute('begin :o := obj_kinds.sparse_numbers; end;', ['o' => new Out\Collection('obj_number_list')], $this->options())->outValues();
+
+        expect($values['o'][0])->toBe([1, 3, 5]);
+    });
+
+    it('takes ten thousand ids in a table of a collection bind', function (string $type, array $ids): void {
+        /** @var list<int|string> $ids */
+        $connection = $this->connect();
+        $bind = ['ids' => new In\Collection($type, $ids)];
+
+        $all = $this->rows($connection, 'select count(*) as n, sum(column_value) as s from table(:ids)', $bind);
+        $joined = $this->rows($connection, 'select count(*) as n, sum(i.id) as s from (select level as id from dual connect by level <= 1000) i join table(:ids) t on t.column_value = i.id', $bind);
+
+        expect($all)->toBe([['N' => 10000, 'S' => 50005000]])
+            ->and($joined)->toBe([['N' => 1000, 'S' => 500500]]);
+    })->with([
+        'SYS.ODCINUMBERLIST' => ['sys.odcinumberlist', range(1, 10000)],
+        'SYS.ODCIVARCHAR2LIST' => ['sys.odcivarchar2list', array_map(strval(...), range(1, 10000))],
+        'a user type' => ['obj_number_list', range(1, 10000)],
+    ]);
+
+    it('fails before any round trip naming the fix for a mistake', function (Bindable $bind, string $message): void {
+        $connection = $this->connect();
+        $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+        assert(\is_string($schema));
+        // Describe every type the cases name, so a case costs no Round trip.
+        $connection->execute(
+            'begin :a := :a; :b := :b; :c := :c; :d := :d; :e := :e; :f := :f; end;',
+            [
+                'a' => new Out\Struct('obj_point'), 'b' => new Out\Collection('obj_number_list'), 'c' => new Out\Indexed('obj_pkg.t_number_map'),
+                'd' => new Out\Struct('obj_polygon'), 'e' => new Out\Collection('obj_string_varray'), 'f' => new Out\Struct('obj_all_scalars'),
+            ],
+            $this->options(),
+        );
+        $sid = $this->sid($connection);
+        $thrown = null;
+
+        $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
+            try {
+                $connection->execute(ECHO_BLOCK, ['i' => $bind, 'o' => new Out\Number()], $this->options());
+            } catch (UsageException $usageException) {
+                $thrown = $usageException;
+            }
+        });
+
+        $expected = str_replace(schemaPlaceholder(), $schema, $message);
+        assert($thrown instanceof UsageException && $expected !== '');
+        expect($thrown->getMessage())->toStartWith($expected)
+            ->and($trips)->toBe(0);
+    })->with('mistakes');
 });
 
-test('an attribute type v1 does not map fails loudly on read', function (string $value, string $named): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('type names', function (): void {
+    it('resolves a type name under oracle identifier rules', function (string $name): void {
+        $connection = $this->connect();
+        $schema = $this->value($connection, "select sys_context('userenv', 'current_schema') from dual");
+        assert(\is_string($schema));
+        $name = str_replace(schemaPlaceholder(), strtolower($schema), $name);
 
-    try {
-        $this->rows($connection, "select $value as v from dual");
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($name, ['X' => 1, 'Y' => 2, 'LABEL' => 'a']), 'o' => new Out\Struct($name)], $this->options())->outValues();
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain($named)
-        ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
-})->with([
-    // JSON, VECTOR and LONG cannot be attributes of an Object type at all.
-    'CLOB' => ["obj_lob_holder(1, to_clob('x'), null, null)", 'CLOB'],
-    'NCLOB' => ["obj_lob_holder(1, null, to_nclob('x'), null)", 'NCLOB'],
-    'BLOB' => ["obj_lob_holder(1, null, null, to_blob(hextoraw('00')))", 'BLOB'],
-    'XMLTYPE' => ["obj_xml_holder(1, sys.xmltype('<a/>'))", 'XMLTYPE'],
-    'REF' => ['obj_ref_holder(1, null)', 'TDS type code 9'],
-    'BFILE' => ['obj_bfile_holder(1, null)', 'TDS type code 31'],
-    'a region-named TSTZ' => ["obj_tstz_holder(timestamp '2026-03-01 10:00:00 America/Sao_Paulo')", 'time zone region'],
-]);
+        expect($values['o'])->toBe([['X' => 1, 'Y' => 2, 'LABEL' => 'a']]);
+    })->with([
+        // Unquoted parts are case-insensitive, a quoted part is kept.
+        'lowercase' => ['obj_point'],
+        'uppercase' => ['OBJ_POINT'],
+        'quoted' => ['"OBJ_POINT"'],
+        'mixed case' => ['Obj_Point'],
+        'schema-qualified' => [schemaPlaceholder() . '.obj_point'],
+        'a synonym' => ['obj_point_alias'],
+    ]);
 
-test('a lob attribute value fails loudly on bind', function (string $attribute, string $value): void {
-    $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
-    $holder[$attribute] = $value;
-    $connection = $this->connect();
-    $thrown = null;
+    it('resolves a quoted mixed case type name', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options());
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('"OBJ_Mixed_Point"', ['x' => 1, 'y' => 2]), 'o' => new Out\Struct('"OBJ_Mixed_Point"')], $this->options())->outValues();
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toStartWith("Bind 'i', attribute " . strtoupper($attribute) . ': ')
-        ->toEndWith(' values in an Object or Collection are not supported yet.');
-})->with([
-    'CLOB' => ['doc', 'x'],
-    'NCLOB' => ['ndoc', 'x'],
-    'BLOB' => ['bin', "\x00"],
-]);
+        expect($values['o'])->toBe([['x' => 1, 'Y' => 2]]);
+    });
 
-test('a type with a ref or bfile attribute fails loudly on bind', function (string $type): void {
-    $connection = $this->connect();
-    $thrown = null;
+    it('resolves package types', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($type, null), 'o' => new Out\Number()], $this->options());
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $values = $connection->execute(
+            'begin :r := :r; :n := :n; end;',
+            [
+                'r' => new InOut\Struct('obj_kinds.t_record', ['id' => -7, 'name' => 'r', 'flag' => true]),
+                'n' => new InOut\Collection('obj_kinds.t_numbers', [1, 2]),
+            ],
+            $this->options(),
+        )->outValues();
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toStartWith("Bind 'i': TDS type code");
-})->with(['obj_ref_holder', 'obj_bfile_holder']);
+        expect($values)->toBe(['r' => [['ID' => -7, 'NAME' => 'r', 'FLAG' => true]], 'n' => [[1, 2]]]);
+    });
 
-test('null lob attributes bind and read as null', function (): void {
-    $connection = $this->connect();
-    $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
+    it('fails naming an unknown type', function (string $unknown): void {
+        $connection = $this->connect();
+        $thrown = null;
 
-    $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options())->outValues();
+        try {
+            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($unknown, null), 'o' => new Out\Number()], $this->options());
+        } catch (QueryException $queryException) {
+            $thrown = $queryException;
+        }
 
-    expect($values['o'])->toBe([['ID' => 1, 'DOC' => null, 'NDOC' => null, 'BIN' => null]]);
+        assert($thrown instanceof QueryException);
+        expect($thrown->getMessage())->toStartWith("Bind 'i': the type ")
+            ->toEndWith(' does not exist, or this user cannot see it.');
+    })->with([
+        'a quoted name written unquoted' => ['obj_mixed_point'],
+        'a missing type' => ['obj_no_such_type'],
+        'a missing package type' => ['obj_pkg.no_such_type'],
+    ]);
+
+    it('describes a type with round trips only on its first use in a session', function (): void {
+        $pool = $this->ownPool() + ['maxConnections' => 1];
+        $connection = $this->connect(...$pool);
+        $sid = $this->sid($connection);
+        $echo = fn (Session $connection, string $name): mixed => $connection->execute(
+            ECHO_BLOCK,
+            ['i' => new In\Collection($name, [[1], []]), 'o' => new Out\Collection($name)],
+            $this->options(),
+        )->outValues()['o'];
+
+        $first = roundTrips($sid, static fn (): mixed => $echo($connection, 'obj_number_matrix'));
+        $again = roundTrips($sid, static fn (): mixed => $echo($connection, 'OBJ_NUMBER_MATRIX'));
+        $connection->close();
+        $next = $this->connect(...$pool);
+        $nextLoan = roundTrips($sid, static fn (): mixed => $echo($next, 'Obj_Number_Matrix'));
+        $column = roundTrips($sid, fn (): array => $this->rows($next, 'select obj_number_matrix(obj_number_list(1)) from dual'));
+
+        expect($this->sid($next))->toBe($sid)
+            ->and($first)->toBeGreaterThan(1)
+            ->and($again)->toBe(1)
+            ->and($nextLoan)->toBe(1)
+            ->and($column)->toBe(1);
+    });
+
+    it('fails loudly or stays consistent after alter type elsewhere', function (): void {
+        $type = 'obj_evolving_' . bin2hex(random_bytes(3));
+        $connection = $this->connect(standalone: true);
+        $connection->execute("create type $type as object (a number)", [], $this->options());
+
+        $echo = fn (array $value): mixed => $connection->execute(
+            ECHO_BLOCK,
+            ['i' => new In\Struct($type, struct($value)), 'o' => new Out\Struct($type)],
+            $this->options(),
+        )->outValues()['o'][0];
+        $echo(['a' => 1]);
+        $this->connect()->execute("alter type $type add attribute (b varchar2(10)) cascade", [], $this->options());
+        $fresh = $this->connect(standalone: true);
+        $outcomes = [];
+        $messages = [];
+
+        foreach ([
+            'bind the old shape' => static fn (): mixed => $echo(['a' => 2]),
+            'bind the new shape' => static fn (): mixed => $echo(['a' => 3, 'b' => 'x']),
+            'fetch a value' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
+            'fetch a value again' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
+            'still usable' => fn (): mixed => $this->value($connection, 'select 1 from dual'),
+            'a new Session fetches' => fn (): mixed => $this->value($fresh, "select $type(5, 'z') from dual"),
+            'a new Session binds' => fn (): mixed => $fresh->execute(
+                "declare v $type := :i; begin :o := v.a || v.b; end;",
+                ['i' => new In\Struct($type, ['a' => 6, 'b' => 'w']), 'o' => new Out\Varchar()],
+                $this->options(),
+            )->outValues()['o'][0],
+            'a new Session binds OUT' => fn (): mixed => $fresh->execute(
+                "begin :o := $type(7, 'v'); end;",
+                ['o' => new Out\Struct($type)],
+                $this->options(),
+            )->outValues()['o'][0],
+        ] as $case => $run) {
+            try {
+                $outcomes[$case] = $run();
+            } catch (OracleException $e) {
+                $outcomes[$case] = $e::class . ($e->getCode() === 0 ? '' : ' ' . $e->getCode());
+                $messages[$case] = $e->getMessage();
+            }
+        }
+
+        expect($outcomes)->toBe([
+            'bind the old shape' => QueryException::class . ' 3101',
+            'bind the new shape' => UsageException::class,
+            'fetch a value' => QueryException::class,
+            'fetch a value again' => QueryException::class,
+            'still usable' => 1,
+            'a new Session fetches' => ['A' => 5, 'B' => 'z'],
+            'a new Session binds' => '6w',
+            'a new Session binds OUT' => ['A' => 7, 'B' => 'v'],
+        ])
+            ->and($messages['fetch a value'] ?? '')->toContain(strtoupper($type) . ' has changed since this connection described it');
+    });
 });
 
-test('a supertype instance in a supertype column reads', function (): void {
-    $connection = $this->connect();
+describe('unsupported attributes', function (): void {
+    it('fail loudly on read when v1 does not map their type', function (string $value, string $named): void {
+        $connection = $this->connect();
+        $thrown = null;
 
-    $rows = $this->rows($connection, 'select animal from obj_animals where id = 1');
+        try {
+            $this->rows($connection, "select $value as v from dual");
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
 
-    expect($rows)->toBe([['ANIMAL' => ['NAME' => 'cat']]]);
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain($named)
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+    })->with([
+        // JSON, VECTOR and LONG cannot be attributes of an Object type at all.
+        'CLOB' => ["obj_lob_holder(1, to_clob('x'), null, null)", 'CLOB'],
+        'NCLOB' => ["obj_lob_holder(1, null, to_nclob('x'), null)", 'NCLOB'],
+        'BLOB' => ["obj_lob_holder(1, null, null, to_blob(hextoraw('00')))", 'BLOB'],
+        'XMLTYPE' => ["obj_xml_holder(1, sys.xmltype('<a/>'))", 'XMLTYPE'],
+        'REF' => ['obj_ref_holder(1, null)', 'TDS type code 9'],
+        'BFILE' => ['obj_bfile_holder(1, null)', 'TDS type code 31'],
+        'a region-named TSTZ' => ["obj_tstz_holder(timestamp '2026-03-01 10:00:00 America/Sao_Paulo')", 'time zone region'],
+    ]);
+
+    it('fail loudly on bind when they hold a lob value', function (string $attribute, string $value): void {
+        $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
+        $holder[$attribute] = $value;
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options());
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toStartWith("Bind 'i', attribute " . strtoupper($attribute) . ': ')
+            ->toEndWith(' values in an Object or Collection are not supported yet.');
+    })->with([
+        'CLOB' => ['doc', 'x'],
+        'NCLOB' => ['ndoc', 'x'],
+        'BLOB' => ['bin', "\x00"],
+    ]);
+
+    it('fail loudly on bind when the type has a ref or bfile attribute', function (string $type): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($type, null), 'o' => new Out\Number()], $this->options());
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toStartWith("Bind 'i': TDS type code");
+    })->with(['obj_ref_holder', 'obj_bfile_holder']);
+
+    it('bind and read as null when they are null lobs', function (): void {
+        $connection = $this->connect();
+        $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
+
+        $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options())->outValues();
+
+        expect($values['o'])->toBe([['ID' => 1, 'DOC' => null, 'NDOC' => null, 'BIN' => null]]);
+    });
 });
 
-test('a subtype instance fails loudly on read', function (): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('inheritance', function (): void {
+    it('reads a supertype instance in a supertype column', function (): void {
+        $connection = $this->connect();
 
-    try {
-        $this->rows($connection, 'select animal from obj_animals where id = 2');
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $rows = $this->rows($connection, 'select animal from obj_animals where id = 1');
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toContain('OBJ_ANIMAL holds an instance of an object subtype');
+        expect($rows)->toBe([['ANIMAL' => ['NAME' => 'cat']]]);
+    });
+
+    it('fails loudly reading a subtype instance', function (): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $this->rows($connection, 'select animal from obj_animals where id = 2');
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toContain('OBJ_ANIMAL holds an instance of an object subtype');
+    });
+
+    it('fails loudly binding a subtype instance', function (): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => new Out\Number()], $this->options());
+        } catch (UnsupportedException $unsupportedException) {
+            $thrown = $unsupportedException;
+        }
+
+        assert($thrown instanceof UnsupportedException);
+        expect($thrown->getMessage())->toStartWith("Bind 'i': ")
+            ->toContain('OBJ_DOG holds an instance of an object subtype');
+    });
 });
 
-test('a subtype instance fails loudly on bind', function (): void {
-    $connection = $this->connect();
-    $thrown = null;
+describe('nested collections', function (): void {
+    it('binds a collection of collections in and out', function (): void {
+        $matrix = [[1, 2], [], null, [null]];
+        $connection = $this->connect();
 
-    try {
-        $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => new Out\Number()], $this->options());
-    } catch (UnsupportedException $unsupportedException) {
-        $thrown = $unsupportedException;
-    }
+        $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Collection('obj_number_matrix', $matrix), 'o' => new Out\Collection('obj_number_matrix')], $this->options())->outValues();
 
-    assert($thrown instanceof UnsupportedException);
-    expect($thrown->getMessage())->toStartWith("Bind 'i': ")
-        ->toContain('OBJ_DOG holds an instance of an object subtype');
+        expect($values['o'])->toBe([$matrix]);
+    });
+
+    it('binds an associative array of objects in and out', function (): void {
+        $connection = $this->connect();
+
+        $values = $connection->execute(
+            ECHO_BLOCK,
+            ['i' => new In\Indexed('obj_kinds.t_point_map', [5 => point(1, 2), -1 => null]), 'o' => new Out\Indexed('obj_kinds.t_point_map')],
+            $this->options(),
+        )->outValues();
+
+        expect($values['o'])->toBe([[-1 => null, 5 => ['X' => 1, 'Y' => 2, 'LABEL' => null]]]);
+    });
+
+    it('fails loudly binding an index by varchar2', function (Bindable $bind): void {
+        $connection = $this->connect();
+        $thrown = null;
+
+        try {
+            $connection->execute('begin :o := obj_kinds.string_map; end;', ['o' => $bind], $this->options());
+        } catch (UnsupportedException | UsageException $exception) {
+            $thrown = $exception;
+        }
+
+        expect($thrown?->getMessage())->toContain('INDEX BY VARCHAR2');
+    })->with([
+        // @phpstan-ignore argument.type (deliberately string keys)
+        'In\Indexed with string keys' => [new In\Indexed('obj_kinds.t_string_map', ['a' => 'x'])],
+        'In\Indexed with int keys' => [new In\Indexed('obj_kinds.t_string_map', [1 => 'x'])],
+        'Out\Indexed' => [new Out\Indexed('obj_kinds.t_string_map')],
+        'Out\Collection' => [new Out\Collection('obj_kinds.t_string_map')],
+    ]);
 });
 
-test('a collection of collections binds in and out', function (): void {
-    $matrix = [[1, 2], [], null, [null]];
-    $connection = $this->connect();
+/**
+ * The rows of obj_shapes: every column set, every column NULL, and empty
+ * Collections in an all-NULL Object.
+ *
+ * @return list<array<string, mixed>>
+ */
+function shapes(): array
+{
+    return [
+        [
+            'ID' => 1,
+            'CENTER' => ['X' => '1.5', 'Y' => -2, 'LABEL' => 'center'],
+            'TAGS' => ['red', 'café'],
+            'OUTLINE' => [
+                ['X' => 0, 'Y' => 0, 'LABEL' => 'a'],
+                ['X' => 1, 'Y' => 0, 'LABEL' => 'b'],
+                ['X' => 0, 'Y' => 1, 'LABEL' => null],
+            ],
+        ],
+        ['ID' => 2, 'CENTER' => null, 'TAGS' => null, 'OUTLINE' => null],
+        ['ID' => 3, 'CENTER' => ['X' => null, 'Y' => null, 'LABEL' => null], 'TAGS' => [], 'OUTLINE' => []],
+    ];
+}
 
-    $values = $connection->execute(ECHO_BLOCK, ['i' => new In\Collection('obj_number_matrix', $matrix), 'o' => new Out\Collection('obj_number_matrix')], $this->options())->outValues();
-
-    expect($values['o'])->toBe([$matrix]);
-});
-
-test('an associative array of objects binds in and out', function (): void {
-    $connection = $this->connect();
-
-    $values = $connection->execute(
-        ECHO_BLOCK,
-        ['i' => new In\Indexed('obj_kinds.t_point_map', [5 => point(1, 2), -1 => null]), 'o' => new Out\Indexed('obj_kinds.t_point_map')],
-        $this->options(),
-    )->outValues();
-
-    expect($values['o'])->toBe([[-1 => null, 5 => ['X' => 1, 'Y' => 2, 'LABEL' => null]]]);
-});
-
-test('an index by varchar2 bind fails loudly', function (Bindable $bind): void {
-    $connection = $this->connect();
-    $thrown = null;
-
-    try {
-        $connection->execute('begin :o := obj_kinds.string_map; end;', ['o' => $bind], $this->options());
-    } catch (UnsupportedException | UsageException $exception) {
-        $thrown = $exception;
-    }
-
-    expect($thrown?->getMessage())->toContain('INDEX BY VARCHAR2');
-})->with([
-    // @phpstan-ignore argument.type (deliberately string keys)
-    'In\Indexed with string keys' => [new In\Indexed('obj_kinds.t_string_map', ['a' => 'x'])],
-    'In\Indexed with int keys' => [new In\Indexed('obj_kinds.t_string_map', [1 => 'x'])],
-    'Out\Indexed' => [new Out\Indexed('obj_kinds.t_string_map')],
-    'Out\Collection' => [new Out\Collection('obj_kinds.t_string_map')],
-]);
+/**
+ * A new obj_shapes row 99, bound.
+ *
+ * @return array<string, Bindable|int>
+ */
+function newShape(): array
+{
+    return [
+        'id' => 99,
+        'center' => new In\Struct('obj_point', ['x' => 5, 'y' => 6, 'label' => 'new']),
+        'tags' => new In\Collection('obj_string_varray', ['t']),
+        'outline' => new In\Collection('obj_point_list', []),
+    ];
+}
 
 /**
  * @return list<array<int|string, mixed>>

@@ -55,116 +55,6 @@ dataset('inferred', function () {
     yield 'null' => [null, 'NULL', null];
 });
 
-test('a plain value binds as its inferred type', function (mixed $value, string $dump, mixed $readBack): void {
-    $connection = $this->connect();
-
-    $dumped = $this->value($connection, 'select dump(:v) from dual', ['v' => $value]);
-    $read = $this->value($connection, 'select :v from dual', ['v' => $value]);
-
-    expect($dumped)->toBe($dump)
-        ->and($read)->toBe($readBack);
-})->with('inferred');
-
-test('a bool binds as boolean', function (bool $value, string $dump, string $truth): void {
-    $connection = $this->connect();
-
-    $dumped = $this->value($connection, 'select dump(:v) from dual', ['v' => $value]);
-    $tested = $this->value($connection, "select case when :v then 'true' else 'false' end from dual", ['v' => $value]);
-
-    expect($dumped)->toBe($dump)
-        ->and($tested)->toBe($truth);
-})->with([
-    'true' => [true, 'Typ=252 Len=4: 1,0,0,0', 'true'],
-    'false' => [false, 'Typ=252 Len=4: 0,0,0,0', 'false'],
-]);
-
-test('a string binds as varchar2 up to 32767 bytes and as a clob beyond', function (int $bytes, string $type): void {
-    $connection = $this->connect();
-    // 4-byte characters, so a cut inside one would show.
-    $value = str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
-
-    $bound = $connection->execute(
-        "declare
-               function type_of(v varchar2) return varchar2 is begin return 'VARCHAR2'; end;
-               function type_of(v clob) return varchar2 is begin return 'CLOB'; end;
-             begin
-               :type := type_of(:v);
-               insert into bind_lobs (id, text_value) values (1, :v);
-             end;",
-        ['v' => $value, 'type' => new Out\Varchar()],
-        $this->options(),
-    )->outValues();
-    $stored = readLob($this->rows($connection, 'select text_value from bind_lobs')[0]['TEXT_VALUE']);
-
-    expect($bound)->toBe(['type' => [$type]])
-        ->and($stored)->toBe($value);
-})->with([
-    '4000 bytes' => [4000, 'VARCHAR2'],
-    '4001 bytes' => [4001, 'VARCHAR2'],
-    '32767 bytes' => [32767, 'VARCHAR2'],
-    '32768 bytes' => [32768, 'CLOB'],
-    '1 MiB' => [1 << 20, 'CLOB'],
-]);
-
-test('a blocks binds match its placeholders in any order and case', function (): void {
-    $connection = $this->connect();
-
-    $execution = $connection->execute(
-        'begin :Total := :a + :b; :Echo := to_char(:b) || :a; end;',
-        ['B' => 2, 'echo' => new Out\Varchar(), 'TOTAL' => new Out\Number(), 'a' => 40],
-        $this->options(),
-    );
-
-    expect($execution->outValues())->toBe(['echo' => ['240'], 'TOTAL' => [42]]);
-});
-
-test('a float binds as the exact number its shortest text shows', function (float $float, string $literal): void {
-    $connection = $this->connect();
-
-    $equal = $this->value($connection, "select case when cast(:f as number) = $literal then 1 else 0 end from dual", ['f' => $float]);
-
-    expect($equal)->toBe(1);
-})->with([
-    // As BINARY_DOUBLE, 0.1 would become 0.1000000000000000055511151231257827.
-    '0.1' => [0.1, '0.1'],
-    '1e-130' => [1e-130, '1e-130'],
-    '-1.5e-7' => [-1.5e-7, '-1.5e-7'],
-    '1e30' => [1e30, '1e30'],
-    '9.99e125' => [9.99e125, '9.99e125'],
-    '0.1 + 0.2' => [0.1 + 0.2, '0.30000000000000004'],
-]);
-
-test('one sql text takes binds of different types with the statement cache on', function (): void {
-    $connection = $this->connect(statementCacheSize: 20);
-    $sid = $this->sid($connection);
-    $binds = [[1, 1], ['x', 'x'], [2, 2], ['y', 'y'], [2.5, '2.5'], [null, null], [3, 3], [Color::Green, 'green'], [Priority::High, 2], ['z', 'z']];
-
-    $read = array_map(fn (array $bind): mixed => $this->value($connection, 'select :v from dual', ['v' => $bind[0]]), $binds);
-
-    expect($read)->toBe(array_column($binds, 1))
-        ->and($this->sid($connection))->toBe($sid);
-});
-
-test('one sql text takes ever longer text with the statement cache on', function (string $kind): void {
-    $sequences = [[1, 10, 100, 2000, 4000, 4001, 16000, 32767], [10, 16000], [100, 16000], [4000, 32767], [1, 32767]];
-    $expected = [];
-    $lengths = [];
-
-    foreach (['first Session', 'second Session'] as $session) {
-        $connection = $this->connect(statementCacheSize: 20, standalone: true);
-        foreach ($sequences as $i => $sizes) {
-            foreach ($sizes as $bytes) {
-                $text = str_repeat('x', $bytes);
-                $read = $this->value($connection, "select :v from dual -- sizes $i", ['v' => $kind === 'typed' ? new In\Varchar($text) : $text]);
-                $expected[] = "$session, sizes $i: $bytes";
-                $lengths[] = "$session, sizes $i: " . (\is_string($read) && $read === $text ? \strlen($read) : 'wrong text');
-            }
-        }
-    }
-
-    expect($lengths)->toBe($expected);
-})->with(['inferred', 'typed']);
-
 /**
  * @return iterable<string, array{array<mixed>, string, string}>
  */
@@ -206,50 +96,168 @@ dataset('mistakes', function () {
     yield '? with a name' => [['v' => 1], 'select ? from dual', "'?' is not accepted"];
 });
 
-test('a bind mistake fails before any round trip naming the fix', function (array $binds, string $sql, string $fix): void {
-    $connection = $this->connect();
-    $sid = $this->sid($connection);
-    $thrown = null;
+describe('values without a type', function (): void {
+    it('binds a plain value as its inferred type', function (mixed $value, string $dump, mixed $readBack): void {
+        $connection = $this->connect();
 
-    $trips = roundTrips($sid, function () use ($connection, $sql, $binds, &$thrown): void {
-        try {
-            // @phpstan-ignore argument.type (the mistake is the point)
-            $connection->execute($sql, $binds, $this->options());
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $dumped = $this->value($connection, 'select dump(:v) from dual', ['v' => $value]);
+        $read = $this->value($connection, 'select :v from dual', ['v' => $value]);
+
+        expect($dumped)->toBe($dump)
+            ->and($read)->toBe($readBack);
+    })->with('inferred');
+
+    it('binds a bool as boolean', function (bool $value, string $dump, string $truth): void {
+        $connection = $this->connect();
+
+        $dumped = $this->value($connection, 'select dump(:v) from dual', ['v' => $value]);
+        $tested = $this->value($connection, "select case when :v then 'true' else 'false' end from dual", ['v' => $value]);
+
+        expect($dumped)->toBe($dump)
+            ->and($tested)->toBe($truth);
+    })->with([
+        'true' => [true, 'Typ=252 Len=4: 1,0,0,0', 'true'],
+        'false' => [false, 'Typ=252 Len=4: 0,0,0,0', 'false'],
+    ]);
+
+    it('binds a string as varchar2 up to 32767 bytes and as a clob beyond', function (int $bytes, string $type): void {
+        $connection = $this->connect();
+        // 4-byte characters, so a cut inside one would show.
+        $value = str_repeat('x', $bytes % 4) . str_repeat("\u{1f600}", intdiv($bytes, 4));
+
+        $bound = $connection->execute(
+            "declare
+                   function type_of(v varchar2) return varchar2 is begin return 'VARCHAR2'; end;
+                   function type_of(v clob) return varchar2 is begin return 'CLOB'; end;
+                 begin
+                   :type := type_of(:v);
+                   insert into bind_lobs (id, text_value) values (1, :v);
+                 end;",
+            ['v' => $value, 'type' => new Out\Varchar()],
+            $this->options(),
+        )->outValues();
+        $stored = readLob($this->rows($connection, 'select text_value from bind_lobs')[0]['TEXT_VALUE']);
+
+        expect($bound)->toBe(['type' => [$type]])
+            ->and($stored)->toBe($value);
+    })->with([
+        '4000 bytes' => [4000, 'VARCHAR2'],
+        '4001 bytes' => [4001, 'VARCHAR2'],
+        '32767 bytes' => [32767, 'VARCHAR2'],
+        '32768 bytes' => [32768, 'CLOB'],
+        '1 MiB' => [1 << 20, 'CLOB'],
+    ]);
+
+    it('binds a float as the exact number its shortest text shows', function (float $float, string $literal): void {
+        $connection = $this->connect();
+
+        $equal = $this->value($connection, "select case when cast(:f as number) = $literal then 1 else 0 end from dual", ['f' => $float]);
+
+        expect($equal)->toBe(1);
+    })->with([
+        // As BINARY_DOUBLE, 0.1 would become 0.1000000000000000055511151231257827.
+        '0.1' => [0.1, '0.1'],
+        '1e-130' => [1e-130, '1e-130'],
+        '-1.5e-7' => [-1.5e-7, '-1.5e-7'],
+        '1e30' => [1e30, '1e30'],
+        '9.99e125' => [9.99e125, '9.99e125'],
+        '0.1 + 0.2' => [0.1 + 0.2, '0.30000000000000004'],
+    ]);
+});
+
+describe('placeholders', function (): void {
+    it('matches the binds of a block to its placeholders in any order and case', function (): void {
+        $connection = $this->connect();
+
+        $execution = $connection->execute(
+            'begin :Total := :a + :b; :Echo := to_char(:b) || :a; end;',
+            ['B' => 2, 'echo' => new Out\Varchar(), 'TOTAL' => new Out\Number(), 'a' => 40],
+            $this->options(),
+        );
+
+        expect($execution->outValues())->toBe(['echo' => ['240'], 'TOTAL' => [42]]);
+    });
+});
+
+describe('the statement cache', function (): void {
+    it('takes binds of different types for one sql text', function (): void {
+        $connection = $this->connect(statementCacheSize: 20);
+        $sid = $this->sid($connection);
+        $binds = [[1, 1], ['x', 'x'], [2, 2], ['y', 'y'], [2.5, '2.5'], [null, null], [3, 3], [Color::Green, 'green'], [Priority::High, 2], ['z', 'z']];
+
+        $read = array_map(fn (array $bind): mixed => $this->value($connection, 'select :v from dual', ['v' => $bind[0]]), $binds);
+
+        expect($read)->toBe(array_column($binds, 1))
+            ->and($this->sid($connection))->toBe($sid);
     });
 
-    assert($thrown instanceof UsageException);
-    expect($thrown->getMessage())->toContain($fix)
-        ->and($thrown->sql())->toBe($sql)
-        ->and($trips)->toBe(0);
-})->with('mistakes');
+    it('takes ever longer text for one sql text', function (string $kind): void {
+        $sequences = [[1, 10, 100, 2000, 4000, 4001, 16000, 32767], [10, 16000], [100, 16000], [4000, 32767], [1, 32767]];
+        $expected = [];
+        $lengths = [];
 
-test('an exception from to string reaches the caller', function (): void {
-    $connection = $this->connect();
-    $thrown = new DomainException('from __toString');
-    $value = new readonly class ($thrown) implements Stringable {
-        public function __construct(private Throwable $thrown)
-        {
+        foreach (['first Session', 'second Session'] as $session) {
+            $connection = $this->connect(statementCacheSize: 20, standalone: true);
+            foreach ($sequences as $i => $sizes) {
+                foreach ($sizes as $bytes) {
+                    $text = str_repeat('x', $bytes);
+                    $read = $this->value($connection, "select :v from dual -- sizes $i", ['v' => $kind === 'typed' ? new In\Varchar($text) : $text]);
+                    $expected[] = "$session, sizes $i: $bytes";
+                    $lengths[] = "$session, sizes $i: " . (\is_string($read) && $read === $text ? \strlen($read) : 'wrong text');
+                }
+            }
         }
 
-        #[Override]
-        public function __toString(): string
-        {
-            throw $this->thrown;
+        expect($lengths)->toBe($expected);
+    })->with(['inferred', 'typed']);
+});
+
+describe('bind mistakes', function (): void {
+    it('fails before any round trip naming the fix', function (array $binds, string $sql, string $fix): void {
+        $connection = $this->connect();
+        $sid = $this->sid($connection);
+        $thrown = null;
+
+        $trips = roundTrips($sid, function () use ($connection, $sql, $binds, &$thrown): void {
+            try {
+                // @phpstan-ignore argument.type (the mistake is the point)
+                $connection->execute($sql, $binds, $this->options());
+            } catch (UsageException $usageException) {
+                $thrown = $usageException;
+            }
+        });
+
+        assert($thrown instanceof UsageException);
+        expect($thrown->getMessage())->toContain($fix)
+            ->and($thrown->sql())->toBe($sql)
+            ->and($trips)->toBe(0);
+    })->with('mistakes');
+
+    it('lets an exception thrown while turning a value into a string reach the caller', function (): void {
+        $connection = $this->connect();
+        $thrown = new DomainException('from __toString');
+        $value = new readonly class ($thrown) implements Stringable {
+            public function __construct(private Throwable $thrown)
+            {
+            }
+
+            #[Override]
+            public function __toString(): string
+            {
+                throw $this->thrown;
+            }
+        };
+        $caught = null;
+
+        try {
+            $connection->execute('select :v from dual', ['v' => $value], $this->options());
+        } catch (DomainException $domainException) {
+            $caught = $domainException;
         }
-    };
-    $caught = null;
 
-    try {
-        $connection->execute('select :v from dual', ['v' => $value], $this->options());
-    } catch (DomainException $domainException) {
-        $caught = $domainException;
-    }
-
-    expect($caught)->toBe($thrown)
-        ->and($this->value($connection, 'select :v from dual', ['v' => 1]))->toBe(1);
+        expect($caught)->toBe($thrown)
+            ->and($this->value($connection, 'select :v from dual', ['v' => 1]))->toBe(1);
+    });
 });
 
 function readLob(mixed $lob): string

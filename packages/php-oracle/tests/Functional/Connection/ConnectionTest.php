@@ -25,43 +25,6 @@ beforeEach(function (): void {
     $this->connection = $this->connect();
 });
 
-test('value of an empty result is null', function (): void {
-    $value = $this->connection->select('select id from connection_items where id = :id', ['id' => -1])->value();
-
-    expect($value)->toBeNull();
-});
-
-test('run returns the dml count', function (): void {
-    $execution = $this->connection->run('update connection_items set name = name where id <= :last', ['last' => 3]);
-
-    expect($execution->affected())->toBe(3);
-});
-
-test('a query affects nothing', function (): void {
-    $execution = $this->connection->run('select id from connection_items');
-
-    expect($execution->affected())->toBe(0);
-});
-
-test('select of a statement that is not a query throws usage exception', function (): void {
-    $select = fn () => $this->connection->select('update connection_items set name = name where id = 1');
-
-    expect($select)->toThrow(UsageException::class);
-});
-
-test('a wrong password throws connection exception with code 1017', function (): void {
-    $thrown = null;
-
-    try {
-        Oracle::connect($this->config(password: 'not-the-password'));
-    } catch (ConnectionException $connectionException) {
-        $thrown = $connectionException;
-    }
-
-    expect($thrown?->getCode())->toBe(1017)
-        ->and($thrown?->getMessage())->toStartWith('ORA-01017');
-});
-
 /**
  * Every verb of a Connection.
  *
@@ -84,31 +47,74 @@ dataset('verbs', function () {
     yield 'disableOutput()' => [static fn (Connection $c) => $c->disableOutput()];
 });
 
-test('every connection verb after close throws usage exception', function (Closure $verb): void {
-    $this->connection->close();
+describe('running statements', function (): void {
+    it('reads null as the value of an empty result', function (): void {
+        $value = $this->connection->select('select id from connection_items where id = :id', ['id' => -1])->value();
 
-    $call = fn () => $verb($this->connection);
+        expect($value)->toBeNull();
+    });
 
-    expect($call)->toThrow(UsageException::class, 'The Connection is closed.');
-})->with('verbs');
+    it('returns how many rows a dml statement changed', function (): void {
+        $execution = $this->connection->run('update connection_items set name = name where id <= :last', ['last' => 3]);
 
-test('a statement refused after close carries its sql', function (): void {
-    $this->connection->close();
-    $thrown = null;
+        expect($execution->affected())->toBe(3);
+    });
 
-    try {
-        $this->connection->run('select 1 from dual');
-    } catch (UsageException $usageException) {
-        $thrown = $usageException;
-    }
+    it('counts no changed rows for a query', function (): void {
+        $execution = $this->connection->run('select id from connection_items');
 
-    expect($thrown?->sql())->toBe('select 1 from dual');
+        expect($execution->affected())->toBe(0);
+    });
+
+    it('throws usage exception when the selected statement is not a query', function (): void {
+        $select = fn () => $this->connection->select('update connection_items set name = name where id = 1');
+
+        expect($select)->toThrow(UsageException::class);
+    });
 });
 
-test('a second close is fine', function (): void {
-    $this->connection->close();
+describe('connecting', function (): void {
+    it('throws connection exception with code 1017 for a wrong password', function (): void {
+        $thrown = null;
 
-    $this->connection->close();
+        try {
+            Oracle::connect($this->config(password: 'not-the-password'));
+        } catch (ConnectionException $connectionException) {
+            $thrown = $connectionException;
+        }
 
-    expect(fn () => $this->connection->run('select 1 from dual'))->toThrow(UsageException::class, 'The Connection is closed.');
+        expect($thrown?->getCode())->toBe(1017)
+            ->and($thrown?->getMessage())->toStartWith('ORA-01017');
+    });
+});
+
+describe('closing the connection', function (): void {
+    it('throws usage exception for every verb after close', function (Closure $verb): void {
+        $this->connection->close();
+
+        $call = fn () => $verb($this->connection);
+
+        expect($call)->toThrow(UsageException::class, 'The Connection is closed.');
+    })->with('verbs');
+
+    it('carries the sql of a statement refused after close', function (): void {
+        $this->connection->close();
+        $thrown = null;
+
+        try {
+            $this->connection->run('select 1 from dual');
+        } catch (UsageException $usageException) {
+            $thrown = $usageException;
+        }
+
+        expect($thrown?->sql())->toBe('select 1 from dual');
+    });
+
+    it('closes a second time without error', function (): void {
+        $this->connection->close();
+
+        $this->connection->close();
+
+        expect(fn () => $this->connection->run('select 1 from dual'))->toThrow(UsageException::class, 'The Connection is closed.');
+    });
 });
