@@ -108,7 +108,9 @@ pub fn read(name: &str, object: &ZendObject, describe: &Describe<'_>) -> Result<
         .get_class_name()
         .map_err(|e| Error::unsupported(format!("Bind '{name}': {e}.")))?;
     let (direction, type_name) = of_class(&class).ok_or_else(|| {
-        Error::unsupported(format!("Bind '{name}': {class} is not a bind class of Core."))
+        Error::unsupported(format!(
+            "Bind '{name}': {class} is not a bind class of Core."
+        ))
     })?;
     let type_name = type_name.as_str();
     let null = Zval::null();
