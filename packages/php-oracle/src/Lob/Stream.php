@@ -42,8 +42,8 @@ final class Stream
             stream_wrapper_register(self::PROTOCOL, self::class);
         }
         $context = stream_context_create([self::PROTOCOL => ['read' => $read]]);
+        /** @var resource $stream the wrapper opens every read of a LOB */
         $stream = fopen(self::PROTOCOL . '://lob', 'rb', false, $context);
-        \assert(\is_resource($stream));
 
         return $stream;
     }
