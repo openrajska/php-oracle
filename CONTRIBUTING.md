@@ -44,7 +44,7 @@ The header is the first line. It takes the form `<type>(<scope>)!: <description>
 | `test`     | Adding or fixing tests, conformance suites or benchmarks          | —      |
 | `build`    | Build system, packaging, dependencies, Dockerfiles, PIE metadata  | —      |
 | `ci`       | CI configuration and scripts                                      | —      |
-| `style`    | Formatting only (whitespace, rustfmt, php-cs-fixer); no logic     | —      |
+| `style`    | Formatting only (whitespace, rustfmt, Pint); no logic             | —      |
 | `chore`    | Maintenance that fits none of the above                           | —      |
 | `revert`   | Reverting a previous commit                                       | —      |
 
@@ -56,10 +56,10 @@ add its scope here first.
 | Scope      | Area                                                                 |
 |------------|----------------------------------------------------------------------|
 | `core`     | `packages/php-oracle`: the `openrajska/php-oracle` contract and API  |
-| `ext`      | `packages/php-oracle-ext`: the Rust extension (`rajska_oracle`)      |
+| `ext`      | `packages/php-oracle-ext`: the Rust extension (`oracledb`)           |
 | `laravel`  | `packages/laravel-oracle`: the Laravel adapter                       |
 | `spike`    | `spikes/`: throwaway experiments                                     |
-| `fixtures` | `fixtures/`: SQL and PL/SQL test schemas                             |
+| `fixtures` | `fixtures/`: TLS certificates and listeners for the tests            |
 | `ddev`     | `.ddev/`: the local development environment                          |
 | `docs`     | `docs/`: research, ADRs and guides                                   |
 | `ci`       | `.github/`: workflows and automation                                 |
@@ -104,13 +104,22 @@ revert: feat(core): add implicit results support
 This reverts commit 1a2b3c4.
 ```
 
+### Merge commits
+
+A merge commit that integrates one branch into another (a ticket branch
+into its integration branch, or the integration branch back into a ticket
+branch to bring it up to date) keeps the message git writes by default,
+`Merge branch '…' into …` or `Merge remote-tracking branch '…' into …`.
+It is exempt from the type and the 72-character rules above. Never rewrite
+history to change one.
+
 ### Examples
 
 ```
 feat(core): add named-notation call builder for procedures
 fix(ext): release statement handle when fetch is interrupted
 perf(ext): convert NUMBER columns to int without string round-trip
-test(fixtures): add pipelined table function with BOOLEAN column
+test(fixtures): regenerate the TLS test certificates
 build(ddev): pin Rust toolchain to 1.100.0
 docs: record ADR for choosing the Rust thin backend
 chore(spike): drop smoke tests superseded by the probe
@@ -131,10 +140,103 @@ is required on the host.
 ```bash
 ddev start                     # PHP 8.4 web container + Oracle 26ai Free
 ddev cargo build               # cargo inside the web container (from any directory)
-ddev exec -s oracle sqlplus rajska/rajska@localhost/FREEPDB1
+ddev exec -s oracle sqlplus system/oracle@localhost/FREEPDB1
 ```
 
 The Oracle database is ephemeral. `ddev restart` gives you a clean database.
+
+### Running the suites
+
+The suites need nothing installed beforehand. Each test process creates its
+own schema through the admin user (`test`, or `test_<TEST_TOKEN>` under
+`--parallel`). Before each test file the schema is emptied
+(`tests/RefreshDatabase.php`, like Laravel's `migrate:fresh`), and the file
+creates the tables, types and PL/SQL it uses through `schema()->run()`
+(`tests/Pest.php`). From the repository root:
+
+```bash
+# The Extension's suite
+(cd packages/php-oracle-ext && ddev cargo test)
+
+# Core's suite, with the Extension built and loaded
+ddev exec -d /var/www/html/packages/php-oracle-ext cargo build \
+  && ddev exec -d /var/www/html/packages/php-oracle composer install --ignore-platform-req=ext-oracledb \
+  && ddev exec -d /var/www/html/packages/php-oracle vendor/bin/pest
+```
+
+Core's suite has two parts (`--testsuite <name>` runs one): `functional`
+(Core's public API, `Oracle::connect()`) and `driver` (the Driver contract of
+spec #32, `new ExtensionManager()->connect($config)`). Each file names its
+TestCase with `uses()`; `tests/Functional/TestCase.php` and
+`tests/Driver/TestCase.php` extend `tests/TestCase.php`.
+
+The Extension's stub, `packages/php-oracle-ext/oracledb.stub.php`, has a copy
+in `packages/php-oracle/stubs/` for PHPStan; change both together (CI fails
+when they differ).
+
+Core's suite fails on any PHP warning, notice or deprecation and runs with
+`zend.exception_ignore_args=Off` (`phpunit.xml.dist`). Both suites reach Oracle
+through `ORACLE_CONNECT_STRING`, `ORACLE_ADMIN_USER` and `ORACLE_ADMIN_PASSWORD`.
+Their defaults (`phpunit.xml.dist`, and the Pool's tests in `pool.rs`) are a
+local `gvenzl/oracle-free` on port 1521 started with `ORACLE_PASSWORD=oracle`;
+ddev points them at its `oracle` service. The TLS tests run only when
+`ORACLE_TLS_CONNECT_STRING` and `ORACLE_MTLS_CONNECT_STRING` are set, and the
+DRCP tests need DRCP started; ddev's `oracle` container starts both
+(`.ddev/oracle-startdb/`), and CI does the same. One Core test waits 61 s for
+the Pool's idle ping; `--exclude-group slow` skips it. CI
+(`.github/workflows/ci.yml`) runs both suites on PHP 8.4 NTS and ZTS.
+
+The database image allows 200 processes, about 90 of them its own. CI raises
+the limit to 400 first, because Core's suite holds about 60 Sessions by its
+end (one for every Pool it created) and a burst of logons on top made the
+listener refuse new ones with ORA-12516. If you hit ORA-12516 locally
+(several suites at once), raise it while nothing else uses the database (it
+restarts the instance) and it lasts until the next `ddev restart`:
+
+```bash
+ddev exec -s oracle bash -c "sqlplus -s -l / as sysdba <<'SQL'
+alter system set processes = 400 scope = spfile;
+shutdown immediate
+startup
+SQL"
+```
+
+Core `require`s `ext-oracledb`, but Composer runs without the Extension
+loaded, hence `--ignore-platform-req=ext-oracledb`. The constraint
+(`^0.1`) declares the oldest Extension Core works with; the adapter
+(`ExtensionDriver::MINIMUM`) refuses anything outside `>= minimum, <` the next
+breaking version on the first `connect()`. Raise both together, and only after
+releasing that Extension: its release is tagged `php-oracle-ext-v<version>`, and
+CI then runs Core's suite against the Extension built from that tag too
+(`.github/scripts/extension-matrix.sh`). Until the minimum has a tag, it is the
+checkout's own Extension and the regular legs cover it; running the workflow by
+hand with `minimum-ref` builds that leg from any ref.
+
+### The `oracledb` fork
+
+The Rust thin Backend builds on [openrajska/rust-oracledb](https://github.com/openrajska/rust-oracledb),
+our fork of Oracle's `oracledb` crate, pinned to the 26.0.0-beta.6 release
+([ADR 0002](docs/adr/0002-rust-thin-backend-is-the-primary-backend.md),
+condition C17). Its [RAJSKA.md](https://github.com/openrajska/rust-oracledb/blob/rajska/integration/RAJSKA.md)
+is the workflow every fork patch follows and the procedure for upgrading the
+pin.
+
+The Extension depends on an exact commit of the fork's `rajska/integration`
+branch, never on a branch name. Moving `rev` is a commit of its own:
+
+```toml
+oracledb = { git = "https://github.com/openrajska/rust-oracledb", rev = "<full sha>", version = "=26.0.0-beta.6" }
+```
+
+To work on a patch, clone the fork next to this repository. ddev mounts it,
+and `ddev fork` runs `cargo` in it against the Oracle service:
+
+```bash
+git clone git@github.com:openrajska/rust-oracledb.git ../rust-oracledb
+ddev restart
+ddev fork run --locked --bin create_test_schema   # recreates the rsotest user
+ddev fork test --locked --all-features            # the crate's own suite
+```
 
 ## License
 

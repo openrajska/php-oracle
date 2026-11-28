@@ -1,0 +1,185 @@
+name: ci
+
+# Every commit is tested once: pushes to this repository's branches run it,
+# and a pull request runs it only when it comes from a fork (whose pushes
+# do not). Markdown alone does not run it.
+on:
+  push:
+    paths:
+      - "**"
+      - "!**.md"
+  pull_request:
+    paths:
+      - "**"
+      - "!**.md"
+  workflow_dispatch:
+    inputs:
+      minimum-ref:
+        description: Build the minimum-Extension leg from this ref (tag, branch or SHA) instead of the minimum's release tag
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Same toolchain as ddev (.ddev/web-build/Dockerfile.rust).
+  RUST_TOOLCHAIN: "1.100.0"
+
+jobs:
+  extensions:
+    name: Extension versions
+    # A pull request from this repository: its push run tests the commit.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The latest and the minimum Extension
+        id: matrix
+        env:
+          MINIMUM_REF: ${{ inputs.minimum-ref }}
+        run: .github/scripts/extension-matrix.sh >> "$GITHUB_OUTPUT"
+
+  test:
+    name: PHP 8.4 ${{ matrix.ts }}, Extension ${{ matrix.extension }}
+    needs: extensions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.extensions.outputs.matrix) }}
+    services:
+      oracle:
+        # Same image as ddev (.ddev/docker-compose.oracle.yaml).
+        image: gvenzl/oracle-free:23.26.3-faststart
+        env:
+          ORACLE_PASSWORD: oracle
+        ports:
+          - 1521:1521
+          # The TCPS listeners of fixtures/tls (one-way TLS, mTLS).
+          - 2484:2484
+          - 2485:2485
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-start-period 30s
+          --health-retries 30
+    env:
+      # The rest of the connection is the suites' default (phpunit.xml.dist).
+      ORACLE_TLS_CONNECT_STRING: tcps://localhost:2484/FREEPDB1
+      ORACLE_MTLS_CONNECT_STRING: tcps://localhost:2485/FREEPDB1
+      # The Extension under test: this checkout's, or the minimum's.
+      EXTENSION_DIR: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext
+      EXTENSION: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/target/debug/libphp_oracledb.so
+      EXTENSION_CARGO_TOML: ${{ github.workspace }}/${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext/Cargo.toml
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check out the minimum Extension
+        if: matrix.ref != ''
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.ref }}
+          path: minimum
+
+      - name: Set up PHP 8.4 ${{ matrix.ts }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer
+          coverage: xdebug
+        env:
+          phpts: ${{ matrix.ts }}
+
+      - name: Check thread safety
+        run: |
+          php -v
+          php -r 'exit(PHP_ZTS === ("${{ matrix.ts }}" === "zts") ? 0 : 1);'
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt
+          rustup default "$RUST_TOOLCHAIN"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.ref != '' && 'minimum/' || '' }}packages/php-oracle-ext
+          key: ${{ matrix.ts }}${{ matrix.ref != '' && '-minimum' || '' }}
+
+      - name: Build the Extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: |
+          cargo build --locked
+          php -d extension="$EXTENSION" --ri oracledb
+
+      # Before anything logs on: it restarts the instance. The image allows
+      # 200 processes, about 90 of them its own, and Core's suite holds about
+      # 60 Sessions by its end (one per Pool it created): a burst of logons
+      # on top made the listener refuse new ones (ORA-12516).
+      - name: Raise the database's process limit
+        run: |
+          oracle="${{ job.services.oracle.id }}"
+          docker exec -i "$oracle" sqlplus -s -l / as sysdba <<'SQL'
+          whenever sqlerror exit failure
+          alter system set processes = 400 scope = spfile;
+          shutdown immediate
+          startup
+          alter system register;
+          SQL
+          for attempt in $(seq 1 60); do
+            if echo "select 'pdb' || '_open' from dual;" \
+              | docker exec -i "$oracle" sqlplus -s -l sys/oracle@//localhost/FREEPDB1 as sysdba \
+              | grep -q pdb_open; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FREEPDB1 did not come back after the restart." >&2
+          exit 1
+
+      - name: Start DRCP
+        run: |
+          docker exec -i "${{ job.services.oracle.id }}" sqlplus -s -l / as sysdba <<'SQL'
+          whenever sqlerror exit failure
+          exec dbms_connection_pool.start_pool()
+          SQL
+
+      - name: Start the TCPS listeners
+        run: |
+          oracle="${{ job.services.oracle.id }}"
+          docker cp fixtures/tls "$oracle:/tmp/rajska-tls-src"
+          docker exec "$oracle" bash /tmp/rajska-tls-src/listeners.sh
+
+      # The minimum's own suite passed when it was released.
+      - name: Extension suite
+        if: matrix.ref == ''
+        working-directory: packages/php-oracle-ext
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Check Core's copy of the stub
+        run: diff packages/php-oracle-ext/oracledb.stub.php packages/php-oracle/stubs/oracledb.stub.php
+
+      - name: Install Core's dependencies
+        working-directory: packages/php-oracle
+        # Composer runs without the Extension loaded (spec #32 §15).
+        run: composer install --no-interaction --no-progress --ignore-platform-req=ext-oracledb
+
+      - name: Load the Extension
+        run: echo "extension=$EXTENSION" | sudo tee "$(php -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')/oracledb.ini"
+
+      - name: Core checks and suite
+        working-directory: packages/php-oracle
+        run: composer test

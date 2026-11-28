@@ -1,0 +1,148 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace Rajska\Oracle\Statement;
+
+use Rajska\Oracle\ConnectionState;
+use Rajska\Oracle\Contracts\Driver\Cursor as CursorContract;
+use Rajska\Oracle\Contracts\Driver\Response;
+use Rajska\Oracle\Exceptions\UsageException;
+
+/**
+ * What one statement produced. Every statement kind (query, DML, PL/SQL,
+ * DDL) gives a complete Execution.
+ */
+final class Execution
+{
+    private Cursor | null $rows = null;
+
+    /**
+     * The OUT values, each REF CURSOR wrapped once as a Cursor and each LOB
+     * as a Lob.
+     *
+     * @var array<string, list<mixed>>|null
+     */
+    private array | null $outValues = null;
+
+    /**
+     * @var list<Cursor>|null
+     */
+    private array | null $results = null;
+
+    /**
+     * @internal use Connection::run()
+     *
+     * @param list<string> $bindNames every bind's name as the user wrote it
+     * @param ?string $call the Call name, for a Call
+     */
+    public function __construct(
+        private readonly Response $driver,
+        private readonly string $sql,
+        private readonly ConnectionState $connection,
+        private readonly array $bindNames = [],
+        private readonly string | null $call = null,
+    ) {
+    }
+
+    /**
+     * The INSERT / UPDATE / DELETE / MERGE count; 0 for anything else.
+     */
+    public function affected(): int
+    {
+        return $this->driver->rowCount();
+    }
+
+    /**
+     * The value an OUT or IN OUT bind brought back, by the bind's name.
+     *
+     * @throws UsageException if no OUT or IN OUT bind has that name
+     */
+    public function out(string $name): OutValue
+    {
+        $values = $this->outValues ??= $this->wrap($this->driver->outValues(), $this->connection);
+        $key = \array_key_exists($name, $values) ? $name : $this->find($name, array_keys($values));
+        if ($key !== null) {
+            return new OutValue($key, $values[$key], $this->sql, $this->call);
+        }
+
+        $in = $this->find($name, $this->bindNames);
+        if ($in !== null) {
+            throw new UsageException("Bind '$in' is IN only, so it has no OUT value; bind it with an Out\\ or InOut\\ class to read it back.", 0, $this->sql, $this->call);
+        }
+        $names = $values === [] ? 'the statement has none' : "they are '" . implode("', '", array_keys($values)) . "'";
+
+        throw new UsageException("No OUT bind is named '$name'; $names.", 0, $this->sql, $this->call);
+    }
+
+    /**
+     * The Implicit results (`DBMS_SQL.RETURN_RESULT`) in production order:
+     * always the same Cursors, each lazy and readable in any order. `[]`
+     * when the statement returned none.
+     *
+     * @return list<Cursor>
+     */
+    public function results(): array
+    {
+        return $this->results ??= array_map(
+            fn (CursorContract $cursor): Cursor => new Cursor($cursor, $this->connection),
+            $this->driver->implicitResults(),
+        );
+    }
+
+    /**
+     * The rows of a query: always the same Cursor.
+     *
+     * @throws UsageException if the statement was not a query
+     */
+    public function rows(): Cursor
+    {
+        if ($this->rows instanceof Cursor) {
+            return $this->rows;
+        }
+        $cursor = $this->driver->cursor() ?? throw new UsageException(
+            'The statement is not a query, so it has no rows: read OUT values with out() and Implicit results with results().',
+            0,
+            $this->sql,
+            $this->call,
+        );
+
+        return $this->rows = new Cursor($cursor, $this->connection);
+    }
+
+    /**
+     * The success-with-info text, such as "creation succeeded with
+     * compilation errors"; null otherwise.
+     */
+    public function warning(): string | null
+    {
+        return $this->driver->warning();
+    }
+
+    /**
+     * @param array<string, list<mixed>> $outValues
+     *
+     * @return array<string, list<mixed>>
+     */
+    private function wrap(array $outValues, ConnectionState $connection): array
+    {
+        return array_map($connection->wrapHandles(...), $outValues);
+    }
+
+    /**
+     * The name among `$names` that equals `$name` ignoring case: bind names
+     * are case-insensitive.
+     *
+     * @param list<int|string> $names
+     */
+    private function find(string $name, array $names): string | null
+    {
+        foreach ($names as $candidate) {
+            if (strcasecmp((string) $candidate, $name) === 0) {
+                return (string) $candidate;
+            }
+        }
+
+        return null;
+    }
+}

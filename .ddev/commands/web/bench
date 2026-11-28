@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+## Description: Benchmarks Core against oci8 with a release build of the Extension (packages/php-oracle/bench/README.md)
+## Usage: bench [layers] [rounds=10] [only=call,fetch,...] [scale=1] [tag=nts]
+## Example: "ddev bench" or "ddev bench rounds=3 only=call,fetch" or "ddev bench layers"
+## HostWorkingDir: true
+
+set -euo pipefail
+
+# The checkout it runs from (a worktree too), else the main one.
+root=$PWD
+while [ "$root" != / ] && [ ! -f "$root/packages/php-oracle/bench/run.php" ]; do
+    root=$(dirname "$root")
+done
+[ -f "$root/packages/php-oracle/bench/run.php" ] || root=/var/www/html
+
+# A target dir of its own: the default one holds the spike's build of the same crate name.
+target=${BENCH_TARGET_DIR:-/var/cache/cargo-target/bench}
+(cd "$root/packages/php-oracle-ext" && cargo build --release --locked --target-dir "$target")
+extension=$target/release/libphp_oracledb.so
+
+cd "$root/packages/php-oracle/bench"
+# bench/php.ini alone, no conf.d: the same settings for both drivers.
+export PHP_INI_SCAN_DIR=
+if [ "${1:-}" = layers ]; then
+    php -c php.ini -d extension="$extension" schema.php
+    shift
+    exec php -c php.ini -d extension=oci8 -d extension="$extension" layers.php "$@"
+fi
+php -c php.ini -d extension="$extension" schema.php
+php -c php.ini -d extension=oci8 -d extension="$extension" crosscheck.php
+exec php -c php.ini run.php extension="$extension" "$@"

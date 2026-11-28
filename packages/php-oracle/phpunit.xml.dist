@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Exceptions keep their arguments and traces show string arguments whole, so
+  a test can see a bound value leak.
+  Run with the Extension loaded:
+    php -d extension=/path/to/libphp_oracledb.so vendor/bin/phpunit
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true"
+         beStrictAboutOutputDuringTests="true"
+         beStrictAboutChangesToGlobalState="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         failOnNotice="true"
+         failOnDeprecation="true"
+         failOnPhpunitWarning="true"
+         failOnPhpunitDeprecation="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnTestsThatTriggerErrors="true"
+         displayDetailsOnPhpunitDeprecations="true">
+    <testsuites>
+        <testsuite name="functional">
+            <directory>tests/Functional</directory>
+        </testsuite>
+        <testsuite name="driver">
+            <directory>tests/Driver</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+
+    <php>
+        <ini name="error_reporting" value="-1"/>
+        <ini name="zend.exception_ignore_args" value="0"/>
+        <ini name="zend.exception_string_param_max_len" value="1000000"/>
+        <env name="ORACLE_CONNECT_STRING" value="localhost:1521/FREEPDB1"/>
+        <env name="ORACLE_ADMIN_CONNECT_STRING" value="localhost:1521/FREE"/>
+        <env name="ORACLE_ADMIN_USER" value="system"/>
+        <env name="ORACLE_ADMIN_PASSWORD" value="oracle"/>
+    </php>
+</phpunit>

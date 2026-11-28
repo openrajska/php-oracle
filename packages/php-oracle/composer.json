@@ -1,0 +1,61 @@
+{
+    "name": "openrajska/php-oracle",
+    "description": "A typed API for Oracle Database in PHP",
+    "type": "library",
+    "license": ["MIT", "Apache-2.0"],
+    "require": {
+        "php": "~8.4.0",
+        "ext-oracledb": "^0.1"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.32",
+        "pestphp/pest": "^5.3",
+        "pestphp/pest-plugin-drift": "^5.0",
+        "pestphp/pest-plugin-phpstan": "^5.3",
+        "pestphp/pest-plugin-rector": "^5.0",
+        "pestphp/pest-plugin-type-coverage": "^5.1",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan": "^2.3",
+        "rector/rector": "^2.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "Rajska\\Oracle\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Rajska\\Oracle\\Bench\\": "bench/src/",
+            "Rajska\\Oracle\\Rector\\": "rector/",
+            "Rajska\\Oracle\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "scripts": {
+        "lint": [
+            "rector",
+            "pint --parallel"
+        ],
+        "test:type-coverage": "pest --type-coverage --min=100",
+        "test:lint": [
+            "pint --parallel --test",
+            "rector --dry-run"
+        ],
+        "test:unit": "XDEBUG_MODE=\"coverage\" pest --parallel --processes=4 --coverage --exactly=100.0",
+        "test:types": [
+            "phpstan --memory-limit=-1"
+        ],
+        "test": [
+            "@test:lint",
+            "@test:type-coverage",
+            "@test:types",
+            "@test:unit"
+        ]
+    }
+}

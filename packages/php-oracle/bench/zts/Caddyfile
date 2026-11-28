@@ -1,0 +1,18 @@
+# FrankenPHP in worker mode for the benchmark's concurrency run (load.sh).
+{
+	auto_https off
+	admin off
+	frankenphp {
+		num_threads {$THREADS}
+	}
+}
+
+:8080 {
+	root * /app/packages/php-oracle/bench/zts
+	php_server {
+		worker {
+			file /app/packages/php-oracle/bench/zts/index.php
+			num {$WORKERS}
+		}
+	}
+}

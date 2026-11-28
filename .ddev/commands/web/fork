@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+## Description: Roda o cargo no fork rust-oracledb (../rust-oracledb) com as variáveis da suíte do crate
+## Usage: fork [cargo args]
+## Example: "ddev fork run --locked --bin create_test_schema" then "ddev fork test --locked --all-features"
+
+set -euo pipefail
+
+dir=/var/www/rust-oracledb
+if [ ! -f "$dir/Cargo.toml" ]; then
+    echo "Fork não encontrado em ../rust-oracledb. Clone e reinicie o ddev:" >&2
+    echo "  git clone git@github.com:openrajska/rust-oracledb.git ../rust-oracledb" >&2
+    echo "  ddev restart" >&2
+    exit 1
+fi
+cd "$dir"
+
+export CARGO_TARGET_DIR=/var/cache/cargo-target/rust-oracledb
+
+# Variáveis da suíte do crate (tests/README.md e RAJSKA.md no fork).
+export RSO_TEST_CONNECT_STRING=oracle:1521/FREEPDB1
+export RSO_TEST_ADMIN_USER=sys
+export RSO_TEST_ADMIN_PASSWORD=oracle
+export RSO_TEST_MAIN_PASSWORD=rsotest
+export RSO_TEST_PROXY_PASSWORD=rsotestproxy
+
+# Um teste por vez: em paralelo, o listener do 26ai Free recusa Sessions com
+# ORA-12516.
+export RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}"
+
+exec cargo "$@"

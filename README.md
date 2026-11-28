@@ -24,8 +24,8 @@ All planned; none is published yet.
 
 | Package | What it is |
 |---|---|
-| `openrajska/php-oracle` | Core: the typed API users call and the Driver contract Backends implement |
-| `openrajska/php-oracle-ext` | The `rajska_oracle` PHP extension, hosting the Rust thin Backend |
+| `openrajska/php-oracle` | Core: the typed API users call and the Driver contract Backends implement ([docs](packages/php-oracle/README.md)) |
+| `openrajska/php-oracle-ext` | The `oracledb` PHP extension, hosting the Rust thin Backend |
 | `openrajska/laravel-oracle` | Integrates Core into Laravel's database layer |
 
 The shared vocabulary (Backend, Call, Implicit result, Collection…) is defined in the [glossaries](GLOSSARY-MAP.md).
@@ -39,7 +39,7 @@ The open question is whether a Rust thin Backend built on Oracle's [`oracledb`](
 ```
 packages/        the Composer/PIE packages (glossaries only, for now)
 spikes/          throwaway experiments; never shipped
-fixtures/sql/    PL/SQL fixture schema, the seed of the conformance suite
+fixtures/tls/    certificates and listeners for the TLS tests
 docs/adr/        architecture decision records
 docs/research/   background research (in Portuguese)
 ```
@@ -50,7 +50,6 @@ Everything runs in [ddev](https://ddev.com): PHP 8.4, Rust and an ephemeral Orac
 
 ```bash
 ddev start
-ddev fixtures        # install the PL/SQL fixture schema (again after every restart)
 ddev cargo build     # cargo inside the web container
 ```
 

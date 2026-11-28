@@ -4,7 +4,7 @@ status: accepted
 
 # The Rust thin Backend is the Primary Backend, with conditions
 
-The Primary Backend is the Rust thin Backend: `rajska_oracle`, a PHP extension
+The Primary Backend is the Rust thin Backend: `oracledb`, a PHP extension
 built on Oracle's `oracledb` crate (pure Rust, no Instant Client). The Driver
 contract is designed against it and the conformance suite runs on it first.
 The answer is **yes with conditions**: every hard gate from the acceptance
@@ -16,7 +16,7 @@ evidence is in [`spikes/rust-oracledb/FINDINGS.md`](../../spikes/rust-oracledb/F
 
 In the order fixed before any probe ran:
 
-1. **Practicality**: `rajska_oracle` is an ordinary extension installed through
+1. **Practicality**: `oracledb` is an ordinary extension installed through
    PIE as a pre-built binary. No Instant Client, and the user never compiles
    anything. *Met*: all twelve targets (Linux glibc and musl × x86_64 and arm64,
    macOS arm64, Windows x86_64; NTS and ZTS) build, load and run a real query,

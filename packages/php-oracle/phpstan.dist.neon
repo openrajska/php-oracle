@@ -1,0 +1,14 @@
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+        - bench/src
+    tmpDir: .phpstan.cache
+    checkMissingOverrideMethodAttribute: true
+    ignoreErrors:
+        # test() is the running TestCase, which PHPStan cannot know outside a test file.
+        - identifiers: [method.notFound, return.type]
+          path: tests/Pest.php
+    scanFiles:
+        - stubs/oracledb.stub.php
