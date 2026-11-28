@@ -57,19 +57,15 @@ describe('autocommit', function (): void {
         $connection = $this->connect();
         $connection->execute('insert into tx_rows (id) values (1)', [], $this->options());
 
-        $thrown = null;
+        $failing = fn (): mixed => $connection->execute(
+            "begin update tx_rows set note = 'failed' where id = 1; insert into tx_rows (id) values (2); raise_application_error(-20043, 'fail'); end;",
+            [],
+            $this->options(),
+        );
 
-        try {
-            $connection->execute(
-                "begin update tx_rows set note = 'failed' where id = 1; insert into tx_rows (id) values (2); raise_application_error(-20043, 'fail'); end;",
-                [],
-                $this->options(),
-            );
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
-
-        expect($thrown?->getCode())->toBe(20043)
+        expect($failing)->toThrow(function (QueryException $exception): void {
+            expect($exception->getCode())->toBe(20043);
+        })
             ->and(otherSession()->select('select id, note from tx_rows')->all())->toBe([['ID' => 1, 'NOTE' => null]])
             ->and(locked('tx_rows', 1))->toBeFalse();
     });

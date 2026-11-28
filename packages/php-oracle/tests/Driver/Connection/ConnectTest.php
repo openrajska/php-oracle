@@ -15,7 +15,6 @@ use Rajska\Oracle\Oracle;
 use Rajska\Oracle\Tests\Driver\TestCase;
 use ReflectionClass;
 use RuntimeException;
-use Throwable;
 use WeakMap;
 
 uses(TestCase::class);
@@ -104,17 +103,25 @@ dataset('mtlsWallets', function () {
 
 describe('connect strings', function (): void {
     it('rejects easy connect plus parameters before any network io', function (string $parameters, string $instead): void {
-        $exception = rejected(NOWHERE . $parameters);
+        $started = microtime(true);
 
-        expect($exception->getMessage())->toContain('Easy Connect Plus')
-            ->toContain($instead);
+        $connect = fn (): Session => $this->connect(dsn: NOWHERE . $parameters);
+
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($started, $instead): void {
+            expect($exception->getMessage())->toContain('Easy Connect Plus')->toContain($instead)
+                ->and(microtime(true) - $started)->toBeLessThan(1.0);
+        });
     })->with('easyConnectPlusParameters');
 
     it('rejects a descriptor key the backend would ignore before any network io', function (string $setting, string $key, string $instead): void {
-        $exception = rejected(descriptor(NOWHERE, $setting));
+        $started = microtime(true);
 
-        expect($exception->getMessage())->toContain("The dsn sets $key")
-            ->toContain($instead);
+        $connect = fn (): Session => $this->connect(dsn: descriptor(NOWHERE, $setting));
+
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($started, $key, $instead): void {
+            expect($exception->getMessage())->toContain("The dsn sets $key")->toContain($instead)
+                ->and(microtime(true) - $started)->toBeLessThan(1.0);
+        });
     })->with('rejectedKeys');
 
     it('rejects a tns alias whose entry sets a rejected key before any network io', function (bool $fromTnsAdmin, string $alias, string $entry, string $message): void {
@@ -122,10 +129,14 @@ describe('connect strings', function (): void {
         if ($fromTnsAdmin) {
             putenv("TNS_ADMIN=$directory");
         }
+        $started = microtime(true);
 
-        $exception = $fromTnsAdmin ? rejected(strtoupper($alias)) : rejected($alias, configDir: $directory);
+        $connect = fn (): Session => $fromTnsAdmin ? $this->connect(dsn: strtoupper($alias)) : $this->connect(dsn: $alias, configDir: $directory);
 
-        expect($exception->getMessage())->toContain(str_replace('{directory}', $directory, $message));
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($started, $directory, $message): void {
+            expect($exception->getMessage())->toContain(str_replace('{directory}', $directory, $message))
+                ->and(microtime(true) - $started)->toBeLessThan(1.0);
+        });
     })->with([
         'a descriptor from configDir' => [false, 'nowhere_timeout', descriptor(NOWHERE, '(TRANSPORT_CONNECT_TIMEOUT=5)'), "The TNS alias 'nowhere_timeout' (in {directory}/tnsnames.ora) sets TRANSPORT_CONNECT_TIMEOUT"],
         'Easy Connect Plus from $TNS_ADMIN' => [true, 'nowhere_plus', NOWHERE . '?transport_connect_timeout=5', 'Easy Connect Plus'],
@@ -154,18 +165,15 @@ describe('connect strings', function (): void {
     ]);
 
     it('gives up on an unroutable host within the connect timeout', function (bool $standalone): void {
-        $thrown = null;
         $started = microtime(true);
 
-        try {
-            $this->connect(dsn: NOWHERE, connectTimeout: 1.5, standalone: $standalone);
-        } catch (ConnectionException $connectionException) {
-            $thrown = $connectionException;
-        }
+        $connect = fn (): Session => $this->connect(dsn: NOWHERE, connectTimeout: 1.5, standalone: $standalone);
 
-        expect($thrown?->getCode())->toBe(12170)
-            ->and($thrown?->getMessage())->toContain('connectTimeout of 1500 ms')
-            ->and(microtime(true) - $started)->toBeGreaterThanOrEqual(1.4)->toBeLessThan(4.0);
+        expect($connect)->toThrow(function (ConnectionException $exception) use ($started): void {
+            expect($exception->getCode())->toBe(12170)
+                ->and($exception->getMessage())->toContain('connectTimeout of 1500 ms')
+                ->and(microtime(true) - $started)->toBeGreaterThanOrEqual(1.4)->toBeLessThan(4.0);
+        });
     })->with('pooledAndStandalone');
 });
 
@@ -227,32 +235,35 @@ describe('tls', function (): void {
         $address = gethostbyname($parts['host']);
         $host = $withTheRoots ? ($address === '127.0.0.1' ? '127.0.0.2' : $address) : $parts['host'];
         $fields = ['dsn' => "tcps://$host:{$parts['port']}/{$parts['service']}", 'standalone' => true, ...($withTheRoots ? ['walletLocation' => wallet('ca')] : [])];
-        $thrown = null;
 
-        try {
-            $this->connect(...$fields);
-        } catch (ConnectionException $connectionException) {
-            $thrown = $connectionException;
-        }
+        $connect = fn (): Session => $this->connect(...$fields);
 
-        expect($thrown?->getMessage())->toContain($message);
+        expect($connect)->toThrow(ConnectionException::class, $message);
     })->with([
         'a server signed by a root it was not given' => [false, 'UnknownIssuer'],
         'a host name the certificate does not name' => [true, 'certificate not valid for name'],
     ]);
 
     it('fails with conversion instructions for a wallet that is not pem', function (string $wallet): void {
-        $exception = rejected('tcps://' . NOWHERE, walletLocation: wallet($wallet));
+        $started = microtime(true);
 
-        expect($exception->getMessage())->toContain('has no ewallet.pem')
-            ->toContain('openssl pkcs12 -in')
-            ->toContain('-out ');
+        $connect = fn (): Session => $this->connect(dsn: 'tcps://' . NOWHERE, walletLocation: wallet($wallet));
+
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($started): void {
+            expect($exception->getMessage())->toContain('has no ewallet.pem')->toContain('openssl pkcs12 -in')->toContain('-out ')
+                ->and(microtime(true) - $started)->toBeLessThan(1.0);
+        });
     })->with(['cwallet.sso' => ['sso'], 'ewallet.p12' => ['p12']]);
 
     it('gives a configuration error for a wallet location without any wallet', function (): void {
-        $exception = rejected('tcps://' . NOWHERE, walletLocation: tnsnames([]));
+        $started = microtime(true);
 
-        expect($exception->getMessage())->toContain('No ewallet.pem');
+        $connect = fn (): Session => $this->connect(dsn: 'tcps://' . NOWHERE, walletLocation: tnsnames([]));
+
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($started): void {
+            expect($exception->getMessage())->toContain('No ewallet.pem')
+                ->and(microtime(true) - $started)->toBeLessThan(1.0);
+        });
     });
 
     it('gives a configuration error that shows no secret for a wrong wallet password', function (): void {
@@ -264,11 +275,12 @@ describe('tls', function (): void {
             standalone: true,
         );
 
-        $exception = failedConnect($config);
+        $connect = fn (): Session => $this->driver()->connect($config);
 
-        expect($exception)->toBeInstanceOf(ConfigurationException::class)
-            ->and(strtolower($exception->getMessage()))->toContain('wallet')
-            ->and([$exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($config->password)->not->toContain($walletPassword);
+        expect($connect)->toThrow(function (ConfigurationException $exception) use ($config, $walletPassword): void {
+            expect(strtolower($exception->getMessage()))->toContain('wallet')
+                ->and([$exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($config->password)->not->toContain($walletPassword);
+        });
     });
 });
 
@@ -317,17 +329,14 @@ describe('drcp', function (): void {
         $connection = $this->connect(dsn: $this->config()->dsn . ':pooled', connectTimeout: $this->ownPool()['connectTimeout']);
         $insert = 'insert into drcp_rows (id, code) values (:id, :code)';
         $connection->execute($insert, ['id' => 41, 'code' => 'DRCP41a'], $this->options(autocommit: false));
-        $thrown = null;
 
-        try {
-            $connection->execute($insert, ['id' => 41, 'code' => 'DRCP41b'], $this->options(autocommit: false));
-        } catch (UniqueViolationException $uniqueViolationException) {
-            $thrown = $uniqueViolationException;
-        }
+        $insertAgain = fn (): mixed => $connection->execute($insert, ['id' => 41, 'code' => 'DRCP41b'], $this->options(autocommit: false));
 
-        expect($thrown?->getMessage())->toStartWith('ORA-00001')
-            ->not->toContain('ORA-03301')
-            ->not->toContain('DRCP41');
+        expect($insertAgain)->toThrow(function (UniqueViolationException $exception): void {
+            expect($exception->getMessage())->toStartWith('ORA-00001')
+                ->not->toContain('ORA-03301')
+                ->not->toContain('DRCP41');
+        });
     });
 });
 
@@ -340,17 +349,20 @@ describe('secrets', function (): void {
         ob_start();
         var_dump($config);
         $dumped = ob_get_clean() . print_r($config, true);
-        $exception = failedConnect($config);
 
-        expect($dumped)->toContain('SensitiveParameterValue')->toContain($config->user)
-            ->and($exception->getCode())->toBe(1017)
-            ->and([$dumped, $exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($password)->not->toContain($walletPassword);
+        $connect = fn (): Session => $this->driver()->connect($config);
+
+        expect($dumped)->toContain('SensitiveParameterValue')->toContain($config->user)->not->toContain($password)->not->toContain($walletPassword)
+            ->and($connect)->toThrow(function (ConnectionException $exception) use ($password, $walletPassword): void {
+                expect($exception->getCode())->toBe(1017)
+                    ->and([$exception->getMessage(), (string) $exception, $exception->getTraceAsString()])->each->not->toContain($password)->not->toContain($walletPassword);
+            });
     });
 
     it('holds the password of a config no longer than the config', function (): void {
         $password = 'Pa55-' . bin2hex(random_bytes(6));
         $config = $this->config(password: $password, standalone: true);
-        failedConnect($config);
+        expect(fn (): Session => $this->driver()->connect($config))->toThrow(ConnectionException::class);
         $whileTheConfigLives = adapterHolds($password);
 
         unset($config);
@@ -379,32 +391,6 @@ function adapterHolds(string $secret): bool
     };
 
     return $holds(new ReflectionClass(ExtensionManager::class)->getStaticProperties());
-}
-
-function failedConnect(ConnectionConfig $config): Throwable
-{
-    try {
-        new ExtensionManager()->connect($config)->close();
-    } catch (Throwable $throwable) {
-        return $throwable;
-    }
-
-    throw new RuntimeException('connect() succeeded.');
-}
-
-function rejected(string $dsn, mixed ...$fields): ConfigurationException
-{
-    $started = microtime(true);
-
-    try {
-        test()->connect(...['dsn' => $dsn, 'standalone' => true, ...$fields]);
-    } catch (ConfigurationException $configurationException) {
-        expect(microtime(true) - $started)->toBeLessThan(1.0, 'The check waited for the network.');
-
-        return $configurationException;
-    }
-
-    throw new RuntimeException("connect() accepted the dsn $dsn.");
 }
 
 /**
@@ -513,11 +499,8 @@ function drcpClasses(string $user): array
         standalone: true,
     ));
 
-    try {
-        $rows = $admin->select('select cclass_name, num_requests from v$cpool_cc_stats where cclass_name like :prefix', ['prefix' => "$user.%"])->all();
-    } finally {
-        $admin->close();
-    }
+    $rows = $admin->select('select cclass_name, num_requests from v$cpool_cc_stats where cclass_name like :prefix', ['prefix' => "$user.%"])->all();
+    $admin->close();
 
     $classes = [];
     foreach ($rows as $row) {

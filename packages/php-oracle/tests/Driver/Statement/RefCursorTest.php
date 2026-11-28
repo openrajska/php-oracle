@@ -200,16 +200,13 @@ describe('ref cursors', function (): void {
     it('fails on its first read when unopened and the connection goes on', function (): void {
         $connection = $this->connect();
         $execution = $connection->execute('declare c sys_refcursor; begin :o := c; end;', ['o' => new Out\Cursor()], $this->options());
-        $thrown = null;
 
-        try {
-            cursor($execution, 'o')->fetchBatch();
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
+        $read = static fn (): array => cursor($execution, 'o')->fetchBatch();
 
-        expect($thrown?->getCode())->toBe(1001)
-            ->and($thrown?->getMessage())->toStartWith('ORA-01001')
+        expect($read)->toThrow(function (QueryException $thrown): void {
+            expect($thrown->getCode())->toBe(1001)
+                ->and($thrown->getMessage())->toStartWith('ORA-01001');
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     });
 
@@ -257,16 +254,13 @@ describe('nested cursors', function (): void {
             $child->fetchBatch();
         }
         $parent->close();
-        $thrown = null;
 
-        try {
-            $child->$read();
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $use = static fn (): mixed => $child->$read();
 
-        expect($thrown?->getMessage())->toBe('The Cursor this one is nested in is closed, which closed this one too.')
-            ->and($thrown?->sql())->toBe(NESTED)
+        expect($use)->toThrow(function (UsageException $thrown): void {
+            expect($thrown->getMessage())->toBe('The Cursor this one is nested in is closed, which closed this one too.')
+                ->and($thrown->sql())->toBe(NESTED);
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     })->with('nestedReads');
 

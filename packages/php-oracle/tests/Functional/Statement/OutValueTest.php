@@ -142,15 +142,12 @@ describe('out values', function (): void {
         /** @var array<string, mixed> $binds */
         $execution = $this->connection->run($sql, $binds);
 
-        $thrown = null;
-        try {
-            $execution->out($name);
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $out = fn () => $execution->out($name);
 
-        expect($thrown?->getMessage())->toContain($message)
-            ->and($thrown?->sql())->toBe($sql);
+        expect($out)->toThrow(function (UsageException $usageException) use ($message, $sql): void {
+            expect($usageException->getMessage())->toContain($message)
+                ->and($usageException->sql())->toBe($sql);
+        });
     })->with('outNameMistakes');
 
     it('matches the name ignoring case', function (string $name): void {

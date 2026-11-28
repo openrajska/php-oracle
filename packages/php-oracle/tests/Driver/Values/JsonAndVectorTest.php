@@ -218,16 +218,10 @@ describe('json columns', function (): void {
 
     it('fails loudly on an oson id and reads the rest of the document', function (): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $this->rows($connection, 'select data from jv_docs');
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $fetch = fn (): array => $this->rows($connection, 'select data from jv_docs');
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain('OSON id')
+        expect($fetch)->toThrow(UnsupportedException::class, 'OSON id')
             ->and($this->rows($connection, "select json_value(data, '$.name') name from jv_docs"))->toBe([['NAME' => 'first']]);
     });
 });
@@ -294,16 +288,11 @@ describe('json binds', function (): void {
     })->with('jsonInputs');
 
     it('refuses what json cannot hold', function (mixed $value): void {
-        $thrown = null;
+        $build = fn (): In\Json => new In\Json($value);
 
-        try {
-            new In\Json($value);
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
-
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toStartWith('A JSON bind');
+        expect($build)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->getMessage())->toStartWith('A JSON bind');
+        });
     })->with([
         'NaN' => [\NAN],
         'INF inside' => [[\INF]],
@@ -349,32 +338,19 @@ describe('vector binds', function (): void {
     it('checks its values before any round trip', function (In\Vector $bind, string $message): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
 
-        $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
-            try {
-                $connection->execute('select :v from dual', ['v' => $bind], $this->options());
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
+        $trips = roundTrips($sid, fn (): mixed => expect(fn (): mixed => $connection->execute('select :v from dual', ['v' => $bind], $this->options()))
+            ->toThrow(UsageException::class, "Bind 'v': $message"));
 
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toContain("Bind 'v': $message")
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('vectorMistakes');
 
     it('checks the dimensions and positions of a sparse vector', function (int $dimensions, array $values): void {
-        $thrown = null;
+        $build = fn (): SparseVector => new SparseVector($dimensions, $values);
 
-        try {
-            new SparseVector($dimensions, $values);
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
-
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toStartWith('A SparseVector');
+        expect($build)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->getMessage())->toStartWith('A SparseVector');
+        });
     })->with([
         'no dimensions' => [0, []],
         'a position past the dimensions' => [3, [3 => 1.0]],

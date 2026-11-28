@@ -6,6 +6,7 @@ namespace Rajska\Oracle\Tests\Functional\Binds\BindTest;
 
 use Closure;
 use DateTimeImmutable;
+use Exception;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\In\Boolean;
 use Rajska\Oracle\Binds\In\Number;
@@ -21,6 +22,7 @@ use Rajska\Oracle\Statement\Execution;
 use Rajska\Oracle\Tests\Functional\TestCase;
 use SensitiveParameter;
 use Throwable;
+use TypeError;
 
 uses(TestCase::class);
 
@@ -49,8 +51,8 @@ beforeEach(function (): void {
 });
 
 /**
- * Every way a bound value can reach an exception: the server refusing it,
- * Core refusing it, a typed bind refusing it.
+ * Every way a bound value can reach a library exception: the server
+ * refusing it, Core refusing it, a typed bind refusing it.
  *
  * @return iterable<string, array{Closure(Connection, string): mixed}>
  */
@@ -68,6 +70,15 @@ dataset('failures', function () {
     yield 'function(), Core refuses it' => [static fn (Connection $c, #[SensitiveParameter] string $secret): float | int | string | null => $c->function('bind_number', ['p_value' => [$secret]])->number()];
     yield 'In\Number, not a decimal literal' => [static fn (Connection $c, #[SensitiveParameter] string $secret): Number => new In\Number("1e5$secret")];
     yield 'InOut\Number, not a decimal literal' => [static fn (Connection $c, #[SensitiveParameter] string $secret): \Rajska\Oracle\Binds\InOut\Number => new InOut\Number("1e5$secret")];
+});
+
+/**
+ * A typed bind given a value of the wrong PHP type: PHP refuses it with a
+ * TypeError before the bind's own checks run.
+ *
+ * @return iterable<string, array{Closure(Connection, string): mixed}>
+ */
+dataset('typeErrors', function () {
     yield 'In\Boolean, a string' => [static fn (Connection $c, #[SensitiveParameter] string $secret): Boolean => new In\Boolean($secret)]; // @phpstan-ignore argument.type (the mistake is the point)
     yield 'InOut\PlsInteger, a string' => [static fn (Connection $c, #[SensitiveParameter] string $secret): PlsInteger => new InOut\PlsInteger($secret)]; // @phpstan-ignore argument.type (the mistake is the point)
 });
@@ -103,17 +114,23 @@ describe('bind mistakes', function (): void {
 describe('secrets', function (): void {
     it('never shows a bound value in an error', function (Closure $failure): void {
         $secret = 'zq32secret';
-        $thrown = null;
 
-        try {
-            $failure($this->connection, $secret);
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        }
+        $failing = fn () => $failure($this->connection, $secret);
 
-        expect($thrown)->toBeInstanceOf(Throwable::class)
-            ->and(everythingShown($thrown))->not->toContain($secret);
+        expect($failing)->toThrow(function (Exception $exception) use ($secret): void {
+            expect(everythingShown($exception))->not->toContain($secret);
+        });
     })->with('failures');
+
+    it('never shows a bound value in a type error', function (Closure $failure): void {
+        $secret = 'zq32secret';
+
+        $failing = fn () => $failure($this->connection, $secret);
+
+        expect($failing)->toThrow(function (TypeError $typeError) use ($secret): void {
+            expect(everythingShown($typeError))->not->toContain($secret);
+        });
+    })->with('typeErrors');
 });
 
 /**

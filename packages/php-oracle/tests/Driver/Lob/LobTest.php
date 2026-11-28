@@ -15,7 +15,6 @@ use Rajska\Oracle\Lob\Type;
 use Rajska\Oracle\Statement\LobMode;
 use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Driver\TestCase;
-use Throwable;
 
 uses(TestCase::class);
 
@@ -27,6 +26,7 @@ const ALL_LOBS = <<<'SQL'
     SQL;
 
 beforeEach(function (): void {
+    $this->memoryLimit = \ini_get('memory_limit');
     schema()->run(<<<'SQL'
         create table lob_reads (
             id number(10) primary key,
@@ -62,6 +62,10 @@ beforeEach(function (): void {
             end loop;
         end;
         SQL);
+});
+
+afterEach(function (): void {
+    \ini_set('memory_limit', (string) $this->memoryLimit);
 });
 
 /**
@@ -267,21 +271,13 @@ describe('reading lobs', function (): void {
     it('fails on a chunk too large for memory and reads once memory allows', function (string $column): void {
         $connection = $this->connect();
         $lob = lob(array_values($this->rows($connection, "select $column from lob_reads where id = 4")[0])[0]);
-        $limit = \ini_get('memory_limit');
         \ini_set('memory_limit', (string) (memory_get_usage(true) + 512 * 1024));
-        $thrown = null;
 
-        try {
-            $lob->readChunk();
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        } finally {
-            \ini_set('memory_limit', (string) $limit);
-        }
+        $read = static fn (): string => $lob->readChunk();
 
-        expect($thrown)->toBeInstanceOf(UnsupportedException::class)
-            ->and($thrown?->getMessage())->toContain('memory_limit')
-            ->and(\strlen($lob->readChunk()))->toBeGreaterThanOrEqual(1024 * 1024);
+        expect($read)->toThrow(UnsupportedException::class, 'memory_limit');
+        \ini_set('memory_limit', (string) $this->memoryLimit);
+        expect(\strlen($lob->readChunk()))->toBeGreaterThanOrEqual(1024 * 1024);
     })->with(['BLOB' => ['binary_value'], 'CLOB' => ['text_value']]);
 });
 
@@ -419,20 +415,13 @@ describe('inline lobs', function (): void {
 
     it('fails pointing to the default mode when a lob is too large for memory', function (): void {
         $connection = $this->connect();
-        $limit = \ini_get('memory_limit');
         \ini_set('memory_limit', (string) (memory_get_usage() + 8 * 1024 * 1024));
-        $thrown = null;
 
-        try {
-            $this->rows($connection, 'select binary_value from lob_reads where id = 4', [], inline());
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        } finally {
-            \ini_set('memory_limit', (string) $limit);
-        }
+        $read = fn (): array => $this->rows($connection, 'select binary_value from lob_reads where id = 4', [], inline());
 
-        expect($thrown)->toBeInstanceOf(UnsupportedException::class)
-            ->and($thrown?->getMessage())->toContain('Column BINARY_VALUE', 'LobMode::Locator')
+        expect($read)->toThrow(function (UnsupportedException $thrown): void {
+            expect($thrown->getMessage())->toContain('Column BINARY_VALUE', 'LobMode::Locator');
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     });
 });

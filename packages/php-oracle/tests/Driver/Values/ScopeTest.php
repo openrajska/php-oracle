@@ -12,7 +12,6 @@ use Rajska\Oracle\Contracts\Driver\Cursor as CursorContract;
 use Rajska\Oracle\Contracts\Driver\Session;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Tests\Driver\TestCase;
-use RuntimeException;
 
 uses(TestCase::class);
 
@@ -64,21 +63,13 @@ describe('long columns', function (): void {
     it('refuses a long bind over 32767 bytes before any round trip', function (Bindable $bind, string $fix): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
 
-        $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
-            try {
-                $connection->execute('insert into scope_long_rows (id, text) values (1, :v)', ['v' => $bind], $this->options());
-            } catch (UnsupportedException $unsupportedException) {
-                $thrown = $unsupportedException;
-            }
-        });
+        $trips = roundTrips($sid, fn (): mixed => expect(fn (): mixed => $connection->execute('insert into scope_long_rows (id, text) values (1, :v)', ['v' => $bind], $this->options()))
+            ->toThrow(function (UnsupportedException $unsupportedException) use ($fix): void {
+                expect($unsupportedException->getMessage())->toContain("Bind 'v'")->toContain($fix)->toContain('more than 32767 bytes');
+            }));
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain("Bind 'v'")
-            ->toContain($fix)
-            ->toContain('more than 32767 bytes')
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('longBinds');
 });
 
@@ -88,13 +79,14 @@ describe('unreadable column types', function (): void {
         [$cursor, $parent] = cursorOf($kind, $connection, $sql);
 
         $column = $cursor->columns()[0];
-        $thrown = fetchFailure($cursor);
-        $parent?->close();
+        $fetch = fn (): array => $cursor->fetchBatch();
 
         expect([$column['name'], $column['type'], $column['objectType']])->toBe(['V', $type, $objectType])
-            ->and($thrown->getMessage())->toContain('Column V')
-            ->toContain($name)
+            ->and($fetch)->toThrow(function (UnsupportedException $unsupportedException) use ($name): void {
+                expect($unsupportedException->getMessage())->toContain('Column V')->toContain($name);
+            })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
+        $parent?->close();
     })->with(['query', 'REF CURSOR', 'nested CURSOR()'])->with('unreadableColumns');
 
     it('fetches nothing from an empty result', function (string $sql, string $type, string | null $objectType): void {
@@ -119,32 +111,22 @@ describe('anydata', function (): void {
 
     it('never shows the value when a fetch fails', function (): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $this->rows($connection, 'select sys.anydata.convertvarchar2(:v) v from dual', ['v' => 'secret']);
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $fetch = fn (): array => $this->rows($connection, 'select sys.anydata.convertvarchar2(:v) v from dual', ['v' => 'secret']);
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain('SYS.ANYDATA')
-            ->not->toContain('secret');
+        expect($fetch)->toThrow(function (UnsupportedException $unsupportedException): void {
+            expect($unsupportedException->getMessage())->toContain('SYS.ANYDATA')->not->toContain('secret');
+        });
     });
 
     it('fails naming the opaque type when bound', function (Bindable $bind): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute('begin :v := :v; end;', ['v' => $bind], $this->options());
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $bindIt = fn (): mixed => $connection->execute('begin :v := :v; end;', ['v' => $bind], $this->options());
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain("Bind 'v'")
-            ->toContain('SYS.ANYDATA is an opaque type')
+        expect($bindIt)->toThrow(function (UnsupportedException $unsupportedException): void {
+            expect($unsupportedException->getMessage())->toContain("Bind 'v'")->toContain('SYS.ANYDATA is an opaque type');
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     })->with([
         'IN' => [new In\Struct('SYS.ANYDATA', [])],
@@ -178,17 +160,4 @@ function cursorOf(string $kind, Session $connection, string $sql): array
     assert($cursor instanceof CursorContract);
 
     return [$cursor, null];
-}
-
-function fetchFailure(CursorContract $cursor): UnsupportedException
-{
-    try {
-        $rows = $cursor->fetchBatch();
-
-        throw new RuntimeException('A value was fetched: ' . var_export($rows, true));
-    } catch (UnsupportedException $unsupportedException) {
-        return $unsupportedException;
-    } finally {
-        $cursor->close();
-    }
 }

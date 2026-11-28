@@ -176,16 +176,11 @@ describe('temporal binds', function (): void {
     });
 
     it('refuses an incompatible date interval when the bind is built', function (Closure $bind, string $message): void {
-        $thrown = null;
+        assert($message !== '');
 
-        try {
-            $bind();
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
-
-        assert($thrown instanceof UsageException && $message !== '');
-        expect($thrown->getMessage())->toStartWith($message);
+        expect($bind)->toThrow(function (UsageException $thrown) use ($message): void {
+            expect($thrown->getMessage())->toStartWith($message);
+        });
     })->with('incompatibleIntervals');
 });
 
@@ -271,20 +266,14 @@ describe('scalar binds', function (): void {
     it('refuses a varchar of bytes that are not utf8 before any round trip', function (): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
+        $execute = fn (): mixed => $connection->execute('begin :v := :v; end;', ['v' => new In\Varchar("\xff")], $this->options());
 
-        $trips = roundTrips($sid, function () use ($connection, &$thrown): void {
-            try {
-                $connection->execute('begin :v := :v; end;', ['v' => new In\Varchar("\xff")], $this->options());
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
+        $trips = roundTrips($sid, static fn (): mixed => expect($execute)->toThrow(function (UsageException $thrown): void {
+            expect($thrown->getMessage())->toContain("Bind 'v'")
+                ->toContain('bind binary data with In\Raw or In\Blob');
+        }));
 
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toContain("Bind 'v'")
-            ->toContain('bind binary data with In\Raw or In\Blob')
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     });
 });
 

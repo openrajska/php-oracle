@@ -75,16 +75,12 @@ describe('running statements', function (): void {
 
 describe('connecting', function (): void {
     it('throws connection exception with code 1017 for a wrong password', function (): void {
-        $thrown = null;
+        $connect = fn (): Connection => Oracle::connect($this->config(password: 'not-the-password'));
 
-        try {
-            Oracle::connect($this->config(password: 'not-the-password'));
-        } catch (ConnectionException $connectionException) {
-            $thrown = $connectionException;
-        }
-
-        expect($thrown?->getCode())->toBe(1017)
-            ->and($thrown?->getMessage())->toStartWith('ORA-01017');
+        expect($connect)->toThrow(function (ConnectionException $connectionException): void {
+            expect($connectionException->getCode())->toBe(1017)
+                ->and($connectionException->getMessage())->toStartWith('ORA-01017');
+        });
     });
 });
 
@@ -99,15 +95,12 @@ describe('closing the connection', function (): void {
 
     it('carries the sql of a statement refused after close', function (): void {
         $this->connection->close();
-        $thrown = null;
 
-        try {
-            $this->connection->run('select 1 from dual');
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $run = fn () => $this->connection->run('select 1 from dual');
 
-        expect($thrown?->sql())->toBe('select 1 from dual');
+        expect($run)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->sql())->toBe('select 1 from dual');
+        });
     });
 
     it('closes a second time without error', function (): void {

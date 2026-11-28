@@ -187,18 +187,13 @@ describe('ref cursors', function (): void {
     it('fails before any round trip when a cursor is bound back to the server', function (Closure $bind): void {
         $sid = $this->sid($this->connection);
         $cursor = $this->connection->function('ref_cursors.categories_with_items')->cursor();
-        $thrown = null;
 
-        $trips = roundTrips($sid, function () use ($bind, $cursor, &$thrown): void {
-            try {
-                $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind($cursor)]);
-            } catch (UnsupportedException $unsupportedException) {
-                $thrown = $unsupportedException;
-            }
+        $trips = roundTrips($sid, function () use ($bind, $cursor): void {
+            expect(fn () => $this->connection->run('declare c sys_refcursor := :c; begin null; end;', ['c' => $bind($cursor)]))
+                ->toThrow(UnsupportedException::class, "Bind 'c': passing a Cursor back to the server is not supported yet");
         });
 
-        expect($thrown?->getMessage())->toContain("Bind 'c': passing a Cursor back to the server is not supported yet")
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('cursorsBoundBack');
 });
 

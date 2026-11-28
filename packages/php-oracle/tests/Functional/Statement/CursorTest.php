@@ -20,7 +20,6 @@ use Rajska\Oracle\Statement\Options;
 use Rajska\Oracle\Statement\RowShape;
 use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Functional\TestCase;
-use RuntimeException;
 
 uses(TestCase::class);
 
@@ -150,16 +149,12 @@ describe('queries', function (): void {
     });
 
     it('runs a statement that is not a query and throws usage exception', function (): void {
-        $thrown = null;
+        $select = fn () => $this->connection->select('insert into cursor_writes values (1)');
 
-        try {
-            $this->connection->select('insert into cursor_writes values (1)');
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
-
-        expect($thrown?->getMessage())->toContain('results()', 'out()')
-            ->and($thrown?->sql())->toBe('insert into cursor_writes values (1)')
+        expect($select)->toThrow(function (UsageException $usageException): void {
+            expect($usageException->getMessage())->toContain('results()', 'out()')
+                ->and($usageException->sql())->toBe('insert into cursor_writes values (1)');
+        })
             ->and($this->connection->select('select count(*) from cursor_writes')->value())->toBe(1);
     });
 
@@ -401,12 +396,6 @@ function assertClosed(Cursor $cursor): void
         'first()' => $cursor->first(...),
         'value()' => $cursor->value(...),
     ] as $read => $call) {
-        try {
-            $call();
-
-            throw new RuntimeException("$read after close() succeeded.");
-        } catch (UsageException) {
-            test()->addToAssertionCount(1);
-        }
+        expect($call)->toThrow(UsageException::class, message: "$read after close() succeeded.");
     }
 }

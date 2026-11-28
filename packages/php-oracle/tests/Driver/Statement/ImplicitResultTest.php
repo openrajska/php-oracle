@@ -116,19 +116,15 @@ describe('implicit results', function (): void {
 
     it('throws every time a raise follows return result', function (): void {
         $connection = $this->connect();
-        $codes = [];
+        $execute = fn (): mixed => $connection->execute("begin implicit_results(3); raise_application_error(-20056, 'after the results'); end;", [], $this->options());
 
         for ($i = 0; $i < 500; ++$i) {
-            try {
-                $connection->execute("begin implicit_results(3); raise_application_error(-20056, 'after the results'); end;", [], $this->options());
-                $codes[] = 0;
-            } catch (QueryException $queryException) {
-                $codes[] = $queryException->getCode();
-            }
+            expect($execute)->toThrow(function (QueryException $thrown): void {
+                expect($thrown->getCode())->toBe(20056);
+            });
         }
 
-        expect(array_unique($codes))->toBe([20056])
-            ->and(array_column($this->rows($connection, 'select id from implicit_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
+        expect(array_column($this->rows($connection, 'select id from implicit_categories order by id'), 'ID'))->toBe([1, 2, 3, 4, 5]);
     });
 
     it('gives the results the options of their execution', function (): void {

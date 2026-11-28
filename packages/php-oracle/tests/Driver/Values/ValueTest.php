@@ -216,20 +216,13 @@ describe('dates and times', function (): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
         $localMeanTime = new DateTimeImmutable('1890-01-01 00:00:00', new DateTimeZone('America/Sao_Paulo'));
-        $thrown = null;
 
-        $trips = roundTrips($sid, function () use ($connection, $localMeanTime, &$thrown): void {
-            try {
-                $connection->execute('select :v from dual', ['v' => new In\TimestampTz($localMeanTime)], $this->options());
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
+        $trips = roundTrips($sid, fn (): mixed => expect(fn (): mixed => $connection->execute('select :v from dual', ['v' => new In\TimestampTz($localMeanTime)], $this->options()))
+            ->toThrow(function (UsageException $usageException): void {
+                expect($usageException->getMessage())->toContain("Bind 'v'")->toContain('whole minutes');
+            }));
 
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toContain("Bind 'v'")
-            ->toContain('whole minutes')
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     });
 
     it('binds a date whose offset has seconds as an instant', function (): void {

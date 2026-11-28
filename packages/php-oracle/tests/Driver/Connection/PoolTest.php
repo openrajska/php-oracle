@@ -7,17 +7,17 @@ namespace Rajska\Oracle\Tests\Driver\Connection\PoolTest;
 use Closure;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Contracts\Driver\Session;
+use Rajska\Oracle\Exceptions\ArrayDmlFailedException;
 use Rajska\Oracle\Exceptions\ConnectionException;
 use Rajska\Oracle\Exceptions\ConnectionLostException;
-use Rajska\Oracle\Exceptions\OracleException;
 use Rajska\Oracle\Exceptions\PoolExhaustedException;
+use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Statement\KeyCase;
 use Rajska\Oracle\Statement\NumberMode;
 use Rajska\Oracle\Statement\RowShape;
 use Rajska\Oracle\Statement\ValueMapping;
 use Rajska\Oracle\Tests\Driver\TestCase;
 use Rajska\Oracle\Tracing;
-use RuntimeException;
 
 uses(TestCase::class);
 
@@ -101,11 +101,11 @@ dataset('leftOpen', function () {
     yield 'runMany()' => [static fn (Session $c): mixed => $c->executeMany('insert into pool_rows (id) values (:id)', [['id' => 2], ['id' => 3]], $open)];
     yield 'runMany() with a failing row, after a DML' => [static function (Session $c) use ($lock, $open): void {
         $lock($c);
-        fails(static fn (): mixed => $c->executeMany('insert into pool_rows (id) values (:id)', [['id' => 2], ['id' => 1]], $open));
+        expect(static fn (): mixed => $c->executeMany('insert into pool_rows (id) values (:id)', [['id' => 2], ['id' => 1]], $open))->toThrow(ArrayDmlFailedException::class);
     }];
     yield 'a failed execute, after a DML' => [static function (Session $c) use ($lock, $open): void {
         $lock($c);
-        fails(static fn (): mixed => $c->execute('insert into pool_rows (id) values (1)', [], $open));
+        expect(static fn (): mixed => $c->execute('insert into pool_rows (id) values (1)', [], $open))->toThrow(UniqueViolationException::class);
     }];
     yield 'a query, after a DML' => [static function (Session $c) use ($lock, $open): void {
         $lock($c);
@@ -169,21 +169,17 @@ describe('pool size', function (): void {
     it('makes a connect wait the acquire timeout and fail when every session is held', function (): void {
         $fields = $this->ownPool() + ['maxConnections' => 3, 'acquireTimeout' => 0.25];
         $sids = array_map(fn (): int => $this->sid($this->connect(...$fields)), range(1, 3));
-        $thrown = null;
         $started = hrtime(true);
 
-        try {
-            $this->connect(...$fields);
-        } catch (PoolExhaustedException $poolExhaustedException) {
-            $thrown = $poolExhaustedException;
-        }
+        $connect = fn (): Session => $this->connect(...$fields);
 
-        $waited = (hrtime(true) - $started) / 1e9;
         expect(array_unique($sids))->toHaveCount(3)
-            ->and($thrown?->getCode())->toBe(0)
-            ->and($thrown?->getMessage())->toContain('acquireTimeout')
-            ->and($thrown?->sql())->toBeNull()
-            ->and($waited)->toBeGreaterThanOrEqual(0.25)->toBeLessThan(1.25);
+            ->and($connect)->toThrow(function (PoolExhaustedException $exception) use ($started): void {
+                expect($exception->getCode())->toBe(0)
+                    ->and($exception->getMessage())->toContain('acquireTimeout')
+                    ->and($exception->sql())->toBeNull()
+                    ->and((hrtime(true) - $started) / 1e9)->toBeGreaterThanOrEqual(0.25)->toBeLessThan(1.25);
+            });
     });
 
     it('gives a released session to the next connect', function (): void {
@@ -211,17 +207,12 @@ describe('pool keys', function (): void {
         $fields = $this->ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
         $held = $this->connect(...$fields);
         $sid = $this->sid($held);
-        $exhausted = false;
-
-        try {
-            $this->connect(...$difference, ...$fields);
-        } catch (PoolExhaustedException) {
-            $exhausted = true;
-        }
+        expect(fn (): Session => $this->connect(...$difference, ...$fields))->toThrow(PoolExhaustedException::class);
         $held->close();
 
-        expect($exhausted)->toBeTrue()
-            ->and($this->sid($this->connect(...$difference, ...$fields)))->toBe($sid);
+        $next = $this->connect(...$difference, ...$fields);
+
+        expect($this->sid($next))->toBe($sid);
     })->with('fieldsOutsideThePoolKey');
 
     it('gives another pool for a different statement cache size', function (): void {
@@ -236,18 +227,14 @@ describe('pool keys', function (): void {
     it('gives another pool for a different password', function (): void {
         $fields = $this->ownPool() + ['maxConnections' => 1, 'acquireTimeout' => 0.25];
         $this->connect(...$fields)->close();
-        $thrown = null;
 
-        try {
-            // The first Pool's Session is free: a shared Pool would hand it over,
-            // while a Pool of its own logs on and fails.
-            $this->connect(...['password' => 'not-the-password'] + $fields);
-        } catch (ConnectionException $connectionException) {
-            $thrown = $connectionException;
-        }
+        // The first Pool's Session is free: a shared Pool would hand it over,
+        // while a Pool of its own logs on and fails.
+        $connect = fn (): Session => $this->connect(...['password' => 'not-the-password'] + $fields);
 
-        expect($thrown)->toBeInstanceOf(ConnectionException::class)
-            ->and($thrown?->getCode())->toBe(1017);
+        expect($connect)->toThrow(function (ConnectionException $exception): void {
+            expect($exception->getCode())->toBe(1017);
+        });
     });
 });
 
@@ -350,36 +337,24 @@ describe('broken sessions', function (): void {
         $cursor = $connection->execute('select level as n from dual connect by level <= 5', [], $this->options(fetchSize: 2))->cursor();
         assert($cursor !== null);
         kill($this->sid($connection), $immediate);
-        $lost = null;
-
-        try {
-            $this->value($connection, 'select 1 from dual');
-        } catch (ConnectionLostException $connectionLostException) {
-            $lost = $connectionLostException;
-        }
-        $later = array_map(static function (Closure $call): string {
-            try {
-                $call();
-            } catch (ConnectionLostException $connectionLostException) {
-                return $connectionLostException->getMessage();
-            }
-
-            return 'succeeded';
-        }, [
+        $later = [
             'execute()' => fn (): mixed => $connection->execute('select 1 from dual', [], $this->options()),
             'commit()' => $connection->commit(...),
             'rollback()' => $connection->rollback(...),
             'serverVersion()' => $connection->serverVersion(...),
             'fetchBatch()' => $cursor->fetchBatch(...),
             'columns()' => $cursor->columns(...),
-        ]);
+        ];
+
+        $first = fn (): mixed => $this->value($connection, 'select 1 from dual');
+
+        expect($first)->toThrow(function (ConnectionLostException $lost) use ($later): void {
+            expect($lost->getMessage())->not->toStartWith('Connection is broken: ')
+                ->and($later)->each->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $lost->getMessage());
+        });
         $cursor->close();
         $connection->close();
-
-        $broken = 'Connection is broken: ' . $lost?->getMessage();
-        expect($lost?->getMessage())->not->toStartWith('Connection is broken: ')
-            ->and($later)->toBe(array_fill_keys(array_keys($later), $broken))
-            ->and($this->session($this->connect(...$fields)))->not->toBe($session);
+        expect($this->session($this->connect(...$fields)))->not->toBe($session);
     })->with(['kill immediate' => [true], 'kill' => [false]]);
 
     it('releases a session dead after the last call without a throw and does not return it', function (bool $destroy): void {
@@ -404,17 +379,16 @@ describe('broken sessions', function (): void {
         $connection = $this->connect(...$fields);
         $session = $this->session($connection);
 
-        try {
-            $connection->execute('/* oracledb: panic */ select 1 from dual', [], $this->options());
-            $this->markTestSkipped('The panic hook exists in debug builds of the Extension only.');
-        } catch (ConnectionLostException $connectionLostException) {
-            $panic = $connectionLostException;
-        }
+        // The panic hook exists in debug builds of the Extension, the ones
+        // the suites run on.
+        $panic = fn (): mixed => $connection->execute('/* oracledb: panic */ select 1 from dual', [], $this->options());
 
-        expect($panic->getCode())->toBe(0)
-            ->and($panic->getMessage())->toStartWith('internal error in oracledb: ')
-            ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
-            ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $panic->getMessage());
+        expect($panic)->toThrow(function (ConnectionLostException $panic) use ($connection): void {
+            expect($panic->getCode())->toBe(0)
+                ->and($panic->getMessage())->toStartWith('internal error in oracledb: ')
+                ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
+                ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $panic->getMessage());
+        });
         $connection->close();
         for ($i = 0; $i < 3; ++$i) {
             $next = $this->connect(...$fields);
@@ -438,18 +412,4 @@ function eventually(callable $condition, float $seconds = 5): bool
     }
 
     return true;
-}
-
-/**
- * @param Closure(): mixed $call
- */
-function fails(Closure $call): void
-{
-    try {
-        $call();
-    } catch (OracleException) {
-        return;
-    }
-
-    throw new RuntimeException('The call did not fail.');
 }

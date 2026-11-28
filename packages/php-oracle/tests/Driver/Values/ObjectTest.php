@@ -7,6 +7,7 @@ namespace Rajska\Oracle\Tests\Driver\Values\ObjectTest;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
+use Exception;
 use Rajska\Oracle\Binds\Bindable;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
@@ -508,18 +509,11 @@ describe('binding objects', function (): void {
 
     it('fails loudly returning a nested table column and the connection stays usable', function (string $sql): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute($sql, ['outline_o' => new Out\Collection('obj_point_list')], $this->options(autocommit: false));
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
-        $connection->rollback();
+        $returning = fn (): mixed => $connection->execute($sql, ['outline_o' => new Out\Collection('obj_point_list')], $this->options(autocommit: false));
 
         // It comes back as a reference to its storage table, not decoded.
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain('database object stored in a LOB')
+        expect($returning)->toThrow(UnsupportedException::class, 'database object stored in a LOB')
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     })->with([
         'SQL' => ['update obj_shapes set id = id where id = 1 returning outline into :outline_o'],
@@ -662,20 +656,15 @@ describe('binding objects', function (): void {
             $this->options(),
         );
         $sid = $this->sid($connection);
-        $thrown = null;
-
-        $trips = roundTrips($sid, function () use ($connection, $bind, &$thrown): void {
-            try {
-                $connection->execute(ECHO_BLOCK, ['i' => $bind, 'o' => new Out\Number()], $this->options());
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
-
         $expected = str_replace(schemaPlaceholder(), $schema, $message);
-        assert($thrown instanceof UsageException && $expected !== '');
-        expect($thrown->getMessage())->toStartWith($expected)
-            ->and($trips)->toBe(0);
+        assert($expected !== '');
+
+        $trips = roundTrips($sid, fn (): mixed => expect(fn (): mixed => $connection->execute(ECHO_BLOCK, ['i' => $bind, 'o' => new Out\Number()], $this->options()))
+            ->toThrow(function (UsageException $usageException) use ($expected): void {
+                expect($usageException->getMessage())->toStartWith($expected);
+            }));
+
+        expect($trips)->toBe(0);
     })->with('mistakes');
 });
 
@@ -724,17 +713,13 @@ describe('type names', function (): void {
 
     it('fails naming an unknown type', function (string $unknown): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($unknown, null), 'o' => new Out\Number()], $this->options());
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
+        $bind = fn (): mixed => $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($unknown, null), 'o' => new Out\Number()], $this->options());
 
-        assert($thrown instanceof QueryException);
-        expect($thrown->getMessage())->toStartWith("Bind 'i': the type ")
-            ->toEndWith(' does not exist, or this user cannot see it.');
+        expect($bind)->toThrow(function (QueryException $queryException): void {
+            expect($queryException->getMessage())->toStartWith("Bind 'i': the type ")
+                ->toEndWith(' does not exist, or this user cannot see it.');
+        });
     })->with([
         'a quoted name written unquoted' => ['obj_mixed_point'],
         'a missing type' => ['obj_no_such_type'],
@@ -778,62 +763,46 @@ describe('type names', function (): void {
         $echo(['a' => 1]);
         $this->connect()->execute("alter type $type add attribute (b varchar2(10)) cascade", [], $this->options());
         $fresh = $this->connect(standalone: true);
-        $outcomes = [];
-        $messages = [];
+        $fetch = fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual");
 
-        foreach ([
-            'bind the old shape' => static fn (): mixed => $echo(['a' => 2]),
-            'bind the new shape' => static fn (): mixed => $echo(['a' => 3, 'b' => 'x']),
-            'fetch a value' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
-            'fetch a value again' => fn (): mixed => $this->value($connection, "select $type(4, 'y') from dual"),
-            'still usable' => fn (): mixed => $this->value($connection, 'select 1 from dual'),
-            'a new Session fetches' => fn (): mixed => $this->value($fresh, "select $type(5, 'z') from dual"),
-            'a new Session binds' => fn (): mixed => $fresh->execute(
+        expect(fn (): mixed => $echo(['a' => 2]))->toThrow(function (QueryException $queryException): void {
+            expect($queryException::class)->toBe(QueryException::class)
+                ->and($queryException->getCode())->toBe(3101);
+        })
+            ->and(fn (): mixed => $echo(['a' => 3, 'b' => 'x']))->toThrow(function (UsageException $usageException): void {
+                expect($usageException->getCode())->toBe(0);
+            })
+            ->and($fetch)->toThrow(function (QueryException $queryException) use ($type): void {
+                expect($queryException::class)->toBe(QueryException::class)
+                    ->and($queryException->getCode())->toBe(0)
+                    ->and($queryException->getMessage())->toContain(strtoupper($type) . ' has changed since this connection described it');
+            })
+            ->and($fetch)->toThrow(function (QueryException $queryException): void {
+                expect($queryException::class)->toBe(QueryException::class)
+                    ->and($queryException->getCode())->toBe(0);
+            })
+            ->and($this->value($connection, 'select 1 from dual'))->toBe(1)
+            ->and($this->value($fresh, "select $type(5, 'z') from dual"))->toBe(['A' => 5, 'B' => 'z'])
+            ->and($fresh->execute(
                 "declare v $type := :i; begin :o := v.a || v.b; end;",
                 ['i' => new In\Struct($type, ['a' => 6, 'b' => 'w']), 'o' => new Out\Varchar()],
                 $this->options(),
-            )->outValues()['o'][0],
-            'a new Session binds OUT' => fn (): mixed => $fresh->execute(
+            )->outValues()['o'][0])->toBe('6w')
+            ->and($fresh->execute(
                 "begin :o := $type(7, 'v'); end;",
                 ['o' => new Out\Struct($type)],
                 $this->options(),
-            )->outValues()['o'][0],
-        ] as $case => $run) {
-            try {
-                $outcomes[$case] = $run();
-            } catch (OracleException $e) {
-                $outcomes[$case] = $e::class . ($e->getCode() === 0 ? '' : ' ' . $e->getCode());
-                $messages[$case] = $e->getMessage();
-            }
-        }
-
-        expect($outcomes)->toBe([
-            'bind the old shape' => QueryException::class . ' 3101',
-            'bind the new shape' => UsageException::class,
-            'fetch a value' => QueryException::class,
-            'fetch a value again' => QueryException::class,
-            'still usable' => 1,
-            'a new Session fetches' => ['A' => 5, 'B' => 'z'],
-            'a new Session binds' => '6w',
-            'a new Session binds OUT' => ['A' => 7, 'B' => 'v'],
-        ])
-            ->and($messages['fetch a value'] ?? '')->toContain(strtoupper($type) . ' has changed since this connection described it');
+            )->outValues()['o'][0])->toBe(['A' => 7, 'B' => 'v']);
     });
 });
 
 describe('unsupported attributes', function (): void {
     it('fail loudly on read when v1 does not map their type', function (string $value, string $named): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $this->rows($connection, "select $value as v from dual");
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $read = fn (): array => $this->rows($connection, "select $value as v from dual");
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain($named)
+        expect($read)->toThrow(UnsupportedException::class, $named)
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     })->with([
         // JSON, VECTOR and LONG cannot be attributes of an Object type at all.
@@ -850,17 +819,13 @@ describe('unsupported attributes', function (): void {
         $holder = ['id' => 1, 'doc' => null, 'ndoc' => null, 'bin' => null];
         $holder[$attribute] = $value;
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options());
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $bind = fn (): mixed => $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_lob_holder', $holder), 'o' => new Out\Struct('obj_lob_holder')], $this->options());
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toStartWith("Bind 'i', attribute " . strtoupper($attribute) . ': ')
-            ->toEndWith(' values in an Object or Collection are not supported yet.');
+        expect($bind)->toThrow(function (UnsupportedException $unsupportedException) use ($attribute): void {
+            expect($unsupportedException->getMessage())->toStartWith("Bind 'i', attribute " . strtoupper($attribute) . ': ')
+                ->toEndWith(' values in an Object or Collection are not supported yet.');
+        });
     })->with([
         'CLOB' => ['doc', 'x'],
         'NCLOB' => ['ndoc', 'x'],
@@ -869,16 +834,12 @@ describe('unsupported attributes', function (): void {
 
     it('fail loudly on bind when the type has a ref or bfile attribute', function (string $type): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($type, null), 'o' => new Out\Number()], $this->options());
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $bind = fn (): mixed => $connection->execute(ECHO_BLOCK, ['i' => new In\Struct($type, null), 'o' => new Out\Number()], $this->options());
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toStartWith("Bind 'i': TDS type code");
+        expect($bind)->toThrow(function (UnsupportedException $unsupportedException): void {
+            expect($unsupportedException->getMessage())->toStartWith("Bind 'i': TDS type code");
+        });
     })->with(['obj_ref_holder', 'obj_bfile_holder']);
 
     it('bind and read as null when they are null lobs', function (): void {
@@ -902,31 +863,21 @@ describe('inheritance', function (): void {
 
     it('fails loudly reading a subtype instance', function (): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $this->rows($connection, 'select animal from obj_animals where id = 2');
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $read = fn (): array => $this->rows($connection, 'select animal from obj_animals where id = 2');
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toContain('OBJ_ANIMAL holds an instance of an object subtype');
+        expect($read)->toThrow(UnsupportedException::class, 'OBJ_ANIMAL holds an instance of an object subtype');
     });
 
     it('fails loudly binding a subtype instance', function (): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => new Out\Number()], $this->options());
-        } catch (UnsupportedException $unsupportedException) {
-            $thrown = $unsupportedException;
-        }
+        $bind = fn (): mixed => $connection->execute(ECHO_BLOCK, ['i' => new In\Struct('obj_dog', ['name' => 'rex', 'breed' => 'lab']), 'o' => new Out\Number()], $this->options());
 
-        assert($thrown instanceof UnsupportedException);
-        expect($thrown->getMessage())->toStartWith("Bind 'i': ")
-            ->toContain('OBJ_DOG holds an instance of an object subtype');
+        expect($bind)->toThrow(function (UnsupportedException $unsupportedException): void {
+            expect($unsupportedException->getMessage())->toStartWith("Bind 'i': ")
+                ->toContain('OBJ_DOG holds an instance of an object subtype');
+        });
     });
 });
 
@@ -954,15 +905,13 @@ describe('nested collections', function (): void {
 
     it('fails loudly binding an index by varchar2', function (Bindable $bind): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute('begin :o := obj_kinds.string_map; end;', ['o' => $bind], $this->options());
-        } catch (UnsupportedException | UsageException $exception) {
-            $thrown = $exception;
-        }
+        $bindIt = fn (): mixed => $connection->execute('begin :o := obj_kinds.string_map; end;', ['o' => $bind], $this->options());
 
-        expect($thrown?->getMessage())->toContain('INDEX BY VARCHAR2');
+        expect($bindIt)->toThrow(function (Exception $exception): void {
+            expect($exception)->toBeInstanceOf(OracleException::class)
+                ->and($exception->getMessage())->toContain('INDEX BY VARCHAR2');
+        });
     })->with([
         // @phpstan-ignore argument.type (deliberately string keys)
         'In\Indexed with string keys' => [new In\Indexed('obj_kinds.t_string_map', ['a' => 'x'])],

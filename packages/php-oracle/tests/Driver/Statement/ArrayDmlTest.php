@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Rajska\Oracle\Tests\Driver\Statement\ArrayDmlTest;
 
-use Closure;
 use Rajska\Oracle\Binds\In;
 use Rajska\Oracle\Binds\InOut;
 use Rajska\Oracle\Binds\Out;
@@ -19,7 +18,6 @@ use Rajska\Oracle\Exceptions\UniqueViolationException;
 use Rajska\Oracle\Exceptions\UnsupportedException;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Driver\TestCase;
-use RuntimeException;
 
 uses(TestCase::class);
 
@@ -250,12 +248,14 @@ describe('failing rows', function (): void {
     it('throw one array dml exception and apply nothing under autocommit', function (): void {
         $connection = $this->connect();
 
-        $thrown = failing(static fn (): ArrayDml => many($connection, INSERT, withBadRows()));
+        $insert = static fn (): ArrayDml => many($connection, INSERT, withBadRows());
 
-        expect(failures($thrown))->toBe([[3, 1], [5, 1400], [7, 2290]])
-            ->and($thrown->getCode())->toBe(1)
-            ->and($thrown->getMessage())->toStartWith('3 of 10 rows failed; first: row 3: ORA-00001: ')
-            ->and($thrown->sql())->toBe(INSERT)
+        expect($insert)->toThrow(function (ArrayDmlFailedException $thrown): void {
+            expect(failures($thrown))->toBe([[3, 1], [5, 1400], [7, 2290]])
+                ->and($thrown->getCode())->toBe(1)
+                ->and($thrown->getMessage())->toStartWith('3 of 10 rows failed; first: row 3: ORA-00001: ')
+                ->and($thrown->sql())->toBe(INSERT);
+        })
             ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(0)
             ->and(committed(otherSession()))->toBe(0);
     });
@@ -264,9 +264,11 @@ describe('failing rows', function (): void {
         $connection = $this->connect();
         $connection->execute('insert into tx_rows (id) values (1)', [], $this->options(autocommit: false));
 
-        $thrown = failing(static fn (): ArrayDml => many($connection, INSERT, withBadRows(), autocommit: false));
+        $insert = static fn (): ArrayDml => many($connection, INSERT, withBadRows(), autocommit: false);
 
-        expect(failures($thrown))->toBe([[3, 1], [5, 1400], [7, 2290]])
+        expect($insert)->toThrow(function (ArrayDmlFailedException $thrown): void {
+            expect(failures($thrown))->toBe([[3, 1], [5, 1400], [7, 2290]]);
+        })
             ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(0)
             ->and($this->value($connection, 'select count(*) from tx_rows'))->toBe(1)
             ->and(otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
@@ -278,24 +280,23 @@ describe('failing rows', function (): void {
         $rows[1]['id'] = 1;
         $rows[3]['code'] = 'c1';
 
-        $thrown = failing(static fn (): ArrayDml => many($connection, INSERT, $rows));
+        $insert = static fn (): ArrayDml => many($connection, INSERT, $rows);
 
-        expect($thrown::class)->toBe(ArrayDmlFailedException::class)
-            ->and(failures($thrown))->toBe([[1, 1], [3, 1]])
+        expect($insert)->toThrow(function (ArrayDmlFailedException $thrown): void {
+            expect($thrown::class)->toBe(ArrayDmlFailedException::class)
+                ->and(failures($thrown))->toBe([[1, 1], [3, 1]]);
+        })
             ->and(committed(otherSession()))->toBe(0);
     });
 
     it('apply nothing when a block fails at a row', function (bool $autocommit): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            many($connection, 'begin insert into tx_rows (id) values (:id); end;', [['id' => 1], ['id' => 2], ['id' => 1], ['id' => 3]], $autocommit);
-        } catch (UniqueViolationException $uniqueViolationException) {
-            $thrown = $uniqueViolationException;
-        }
+        $block = static fn (): ArrayDml => many($connection, 'begin insert into tx_rows (id) values (:id); end;', [['id' => 1], ['id' => 2], ['id' => 1], ['id' => 3]], $autocommit);
 
-        expect($thrown?->getMessage())->toStartWith('ORA-00001: ')
+        expect($block)->toThrow(function (UniqueViolationException $thrown): void {
+            expect($thrown->getMessage())->toStartWith('ORA-00001: ');
+        })
             ->and($this->value($connection, 'select count(*) from tx_rows'))->toBe(0);
     })->with(['under autocommit' => [true], 'inside a transaction' => [false]]);
 
@@ -303,16 +304,13 @@ describe('failing rows', function (): void {
         $connection = $this->connect();
         // One shared array for every failing row: little memory.
         $rows = [['id' => 1, 'code' => 'c1', 'qty' => 1], ...array_fill(0, 65536, ['id' => 2, 'code' => 'c2', 'qty' => -1])];
-        $thrown = null;
 
-        try {
-            many($connection, INSERT, $rows);
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
+        $insert = static fn (): ArrayDml => many($connection, INSERT, $rows);
 
-        expect($thrown)->not->toBeInstanceOf(ArrayDmlFailedException::class)
-            ->and($thrown?->getMessage())->toBe('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.')
+        expect($insert)->toThrow(function (QueryException $thrown): void {
+            expect($thrown)->not->toBeInstanceOf(ArrayDmlFailedException::class)
+                ->and($thrown->getMessage())->toBe('65536 of 65537 rows failed, more than the 65535 the server lists; none was applied.');
+        })
             ->and($this->value($connection, 'select count(*) from batch_rows'))->toBe(0);
     });
 });
@@ -393,50 +391,37 @@ describe('refusals', function (): void {
     it('fails before any round trip', function (string $sql, array $rows, string $message): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
+        // @phpstan-ignore argument.type (what a caller without static analysis may pass)
+        $refused = static fn (): ArrayDml => many($connection, $sql, $rows);
 
-        $trips = roundTrips($sid, static function () use ($connection, $sql, $rows, &$thrown): void {
-            try {
-                // @phpstan-ignore argument.type (what a caller without static analysis may pass)
-                many($connection, $sql, $rows);
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
+        $trips = roundTrips($sid, static fn (): mixed => expect($refused)->toThrow(function (UsageException $thrown) use ($message): void {
+            expect($thrown->getMessage())->toBe($message);
+        }));
 
-        expect($thrown?->getMessage())->toBe($message)
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('refusals');
 
     it('refuses a placeholder written twice before any round trip', function (): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
+        $refused = static fn (): ArrayDml => many($connection, 'insert into batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
 
-        $trips = roundTrips($sid, static function () use ($connection, &$thrown): void {
-            try {
-                many($connection, 'insert into batch_rows (id, code, qty) values (:id, :code, :id)', [['id' => 1, 'code' => 'a']]);
-            } catch (UnsupportedException $unsupportedException) {
-                $thrown = $unsupportedException;
-            }
-        });
+        $trips = roundTrips($sid, static fn (): mixed => expect($refused)->toThrow(function (UnsupportedException $thrown): void {
+            expect($thrown->getMessage())->toBe('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.');
+        }));
 
-        expect($thrown?->getMessage())->toBe('runMany() cannot bind a placeholder written more than once in the SQL yet; give each occurrence a name of its own.')
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     });
 
     it('refuses implicit results once the block ran and undoes its rows', function (bool $autocommit): void {
         $connection = $this->connect();
         $block = 'declare c sys_refcursor; begin insert into tx_rows (id) values (:id); open c for select :id from dual; dbms_sql.return_result(c); end;';
-        $thrown = null;
 
-        try {
-            many($connection, $block, [['id' => 1], ['id' => 2]], $autocommit);
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $run = static fn (): ArrayDml => many($connection, $block, [['id' => 1], ['id' => 2]], $autocommit);
 
-        expect($thrown?->getMessage())->toBe("runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row. The block's rows are undone.")
+        expect($run)->toThrow(function (UsageException $thrown): void {
+            expect($thrown->getMessage())->toBe("runMany() cannot return Implicit results (DBMS_SQL.RETURN_RESULT); run the block with run() for each row. The block's rows are undone.");
+        })
             ->and($this->value($connection, 'select count(*) from tx_rows'))->toBe(0)
             ->and(otherSession()->select('select count(*) from tx_rows')->value())->toBe(0);
     })->with(['under autocommit' => [true], 'inside a transaction' => [false]]);
@@ -469,20 +454,6 @@ function withBadRows(): array
     $rows[7]['qty'] = -1;
 
     return $rows;
-}
-
-/**
- * @param Closure(): mixed $call
- */
-function failing(Closure $call): ArrayDmlFailedException
-{
-    try {
-        $call();
-    } catch (ArrayDmlFailedException $arrayDmlFailedException) {
-        return $arrayDmlFailedException;
-    }
-
-    throw new RuntimeException('No ArrayDmlFailedException.');
 }
 
 /**

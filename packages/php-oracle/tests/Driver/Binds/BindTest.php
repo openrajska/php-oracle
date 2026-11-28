@@ -216,21 +216,15 @@ describe('bind mistakes', function (): void {
     it('fails before any round trip naming the fix', function (array $binds, string $sql, string $fix): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
-        $thrown = null;
+        // @phpstan-ignore argument.type (the mistake is the point)
+        $execute = fn (): mixed => $connection->execute($sql, $binds, $this->options());
 
-        $trips = roundTrips($sid, function () use ($connection, $sql, $binds, &$thrown): void {
-            try {
-                // @phpstan-ignore argument.type (the mistake is the point)
-                $connection->execute($sql, $binds, $this->options());
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
-        });
+        $trips = roundTrips($sid, static fn (): mixed => expect($execute)->toThrow(function (UsageException $thrown) use ($fix, $sql): void {
+            expect($thrown->getMessage())->toContain($fix)
+                ->and($thrown->sql())->toBe($sql);
+        }));
 
-        assert($thrown instanceof UsageException);
-        expect($thrown->getMessage())->toContain($fix)
-            ->and($thrown->sql())->toBe($sql)
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('mistakes');
 
     it('lets an exception thrown while turning a value into a string reach the caller', function (): void {
@@ -247,15 +241,12 @@ describe('bind mistakes', function (): void {
                 throw $this->thrown;
             }
         };
-        $caught = null;
 
-        try {
-            $connection->execute('select :v from dual', ['v' => $value], $this->options());
-        } catch (DomainException $domainException) {
-            $caught = $domainException;
-        }
+        $execute = fn (): mixed => $connection->execute('select :v from dual', ['v' => $value], $this->options());
 
-        expect($caught)->toBe($thrown)
+        expect($execute)->toThrow(function (DomainException $caught) use ($thrown): void {
+            expect($caught)->toBe($thrown);
+        })
             ->and($this->value($connection, 'select :v from dual', ['v' => 1]))->toBe(1);
     });
 });

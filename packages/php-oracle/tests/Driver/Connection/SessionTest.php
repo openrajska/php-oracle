@@ -200,19 +200,16 @@ describe('call timeout', function (): void {
     it('throws timeout exception over the call timeout and the connection survives', function (): void {
         $connection = $this->connect(...$this->ownPool());
         $sql = 'select count(*) from session_bulk a, session_bulk b';
-        $thrown = null;
         $started = microtime(true);
 
-        try {
-            $connection->execute($sql, [], $this->options(timeout: 0.5))->cursor()?->fetchBatch();
-        } catch (TimeoutException $timeoutException) {
-            $thrown = $timeoutException;
-        }
+        $count = fn (): mixed => $connection->execute($sql, [], $this->options(timeout: 0.5))->cursor()?->fetchBatch();
 
-        expect($thrown?->getCode())->toBe(0)
-            ->and($thrown?->getMessage())->toBe('Call timeout of 500 ms exceeded.')
-            ->and($thrown?->sql())->toBe($sql)
-            ->and(microtime(true) - $started)->toBeLessThan(5)
+        expect($count)->toThrow(function (TimeoutException $exception) use ($sql, $started): void {
+            expect($exception->getCode())->toBe(0)
+                ->and($exception->getMessage())->toBe('Call timeout of 500 ms exceeded.')
+                ->and($exception->sql())->toBe($sql)
+                ->and(microtime(true) - $started)->toBeLessThan(5);
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     });
 
@@ -249,17 +246,14 @@ describe('call timeout', function (): void {
         $fields = $this->ownPool() + ['maxConnections' => 1];
         $connection = $this->connect(...$fields);
         $session = $this->session($connection);
-        $timeout = null;
 
-        try {
-            $connection->execute('begin dbms_session.sleep(3); end;', [], $this->options(timeout: 0.5));
-        } catch (TimeoutException $timeoutException) {
-            $timeout = $timeoutException;
-        }
+        $sleep = fn (): mixed => $connection->execute('begin dbms_session.sleep(3); end;', [], $this->options(timeout: 0.5));
 
-        expect($timeout?->getMessage())->toStartWith('Call timeout of 500 ms exceeded')
-            ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
-            ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $timeout?->getMessage());
+        expect($sleep)->toThrow(function (TimeoutException $timeout) use ($connection): void {
+            expect($timeout->getMessage())->toStartWith('Call timeout of 500 ms exceeded')
+                ->and(fn () => $connection->execute('select 1 from dual', [], $this->options()))
+                ->toThrow(ConnectionLostException::class, 'Connection is broken: ' . $timeout->getMessage());
+        });
         $connection->close();
         expect($this->session($this->connect(...$fields)))->not->toBe($session);
     });
@@ -272,15 +266,11 @@ describe('killed sessions', function (): void {
         $connection->trace(new Tracing(module: 'after the kill'));
         $started = microtime(true);
 
-        $lost = null;
-        try {
-            $connection->execute('select 1 from dual', [], $this->options(timeout: 30));
-        } catch (ConnectionLostException $connectionLostException) {
-            $lost = $connectionLostException;
-        }
+        $select = fn (): mixed => $connection->execute('select 1 from dual', [], $this->options(timeout: 30));
 
-        expect($lost)->toBeInstanceOf(ConnectionLostException::class)
-            ->and(microtime(true) - $started)->toBeLessThan(5)
+        expect($select)->toThrow(function (ConnectionLostException $exception) use ($started): void {
+            expect(microtime(true) - $started)->toBeLessThan(5);
+        })
             ->and(fn () => $connection->trace(new Tracing(module: 'broken')))
             ->toThrow(ConnectionLostException::class, 'Connection is broken: ');
     });

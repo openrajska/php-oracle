@@ -104,18 +104,15 @@ describe('failing rows', function (): void {
         $rows[3]['id'] = 1;
         $rows[5]['code'] = null;
         $rows[7]['qty'] = -1;
-        $thrown = null;
 
-        try {
-            $this->connection->runMany(INSERT, $rows);
-        } catch (ArrayDmlFailedException $arrayDmlFailedException) {
-            $thrown = $arrayDmlFailedException;
-        }
+        $runMany = fn () => $this->connection->runMany(INSERT, $rows);
 
-        expect($thrown?->getCode())->toBe(1)
-            ->and($thrown?->sql())->toBe(INSERT)
-            ->and($thrown?->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
-            ->and(array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $thrown?->rows() ?? []))->toBe([[3, 1], [5, 1400], [7, 2290]]);
+        expect($runMany)->toThrow(function (ArrayDmlFailedException $arrayDmlFailedException): void {
+            expect($arrayDmlFailedException->getCode())->toBe(1)
+                ->and($arrayDmlFailedException->sql())->toBe(INSERT)
+                ->and($arrayDmlFailedException->getMessage())->toStartWith('3 of 8 rows failed; first: row 3: ORA-00001')
+                ->and(array_map(static fn (RowFailure $row): array => [$row->index, $row->code], $arrayDmlFailedException->rows()))->toBe([[3, 1], [5, 1400], [7, 2290]]);
+        });
     });
 
     it('undoes only that call inside a transaction', function (): void {

@@ -16,7 +16,6 @@ use Rajska\Oracle\Statement\KeyCase;
 use Rajska\Oracle\Statement\RowShape;
 use Rajska\Oracle\Tests\Driver\TestCase;
 use Rajska\Oracle\Tracing;
-use Throwable;
 
 uses(TestCase::class);
 
@@ -144,16 +143,13 @@ describe('rows', function (): void {
 
     it('fail at cursor open with a hint when column names repeat under assoc', function (string $sql, KeyCase $keyCase): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute($sql, [], $this->options(keyCase: $keyCase));
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
+        $execute = fn (): mixed => $connection->execute($sql, [], $this->options(keyCase: $keyCase));
 
-        expect($thrown?->getMessage())->toContain('alias', 'RowShape::List')
-            ->and($thrown?->sql())->toBe($sql);
+        expect($execute)->toThrow(function (UsageException $thrown) use ($sql): void {
+            expect($thrown->getMessage())->toContain('alias', 'RowShape::List')
+                ->and($thrown->sql())->toBe($sql);
+        });
     })->with('duplicateColumns');
 
     it('read repeated column names as list rows', function (): void {
@@ -260,16 +256,10 @@ describe('closing the connection', function (): void {
         $use = $prepare($connection);
         assert($use instanceof Closure);
         $connection->close();
-        $thrown = null;
 
-        try {
-            $use();
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        }
-
-        expect($thrown)->toBeInstanceOf(UsageException::class)
-            ->and($thrown?->getMessage())->toBe('The Connection is closed.');
+        expect($use)->toThrow(function (UsageException $thrown): void {
+            expect($thrown->getMessage())->toBe('The Connection is closed.');
+        });
     })->with('usesAfterClose');
 
     it('leaves the next owner of the session unaffected by what the last one left', function (Closure $prepare): void {
@@ -292,52 +282,42 @@ describe('failing statements', function (): void {
     it('throws unique violation exception for a duplicate key', function (): void {
         $connection = $this->connect();
         $sql = "insert into statement_codes (id, code) values (1, 'duplicate')";
-        $thrown = null;
 
-        try {
-            $connection->execute($sql, [], $this->options());
-        } catch (UniqueViolationException $uniqueViolationException) {
-            $thrown = $uniqueViolationException;
-        }
+        $insert = fn (): mixed => $connection->execute($sql, [], $this->options());
 
-        expect($thrown?->getCode())->toBe(1)
-            ->and($thrown?->getMessage())->toStartWith('ORA-00001')
-            ->and($thrown?->sql())->toBe($sql)
-            ->and($thrown?->call())->toBeNull();
+        expect($insert)->toThrow(function (UniqueViolationException $thrown) use ($sql): void {
+            expect($thrown->getCode())->toBe(1)
+                ->and($thrown->getMessage())->toStartWith('ORA-00001')
+                ->and($thrown->sql())->toBe($sql)
+                ->and($thrown->call())->toBeNull();
+        });
     });
 
     it('keeps the ora 03301 line and the bound value out of a unique violation', function (): void {
         $connection = $this->connect(...$this->ownPool());
         $insert = 'insert into statement_codes (id, code) values (:id, :code)';
         $connection->execute($insert, ['id' => 2, 'code' => 'zq39secret'], $this->options(autocommit: false));
-        $thrown = null;
 
-        try {
-            $connection->execute($insert, ['id' => 3, 'code' => 'zq39secret'], $this->options(autocommit: false));
-        } catch (UniqueViolationException $uniqueViolationException) {
-            $thrown = $uniqueViolationException;
-        }
+        $duplicate = fn (): mixed => $connection->execute($insert, ['id' => 3, 'code' => 'zq39secret'], $this->options(autocommit: false));
 
-        expect($thrown?->getMessage())->toStartWith('ORA-00001')
-            ->not->toContain('ORA-03301')
-            ->not->toContain('zq39secret');
+        expect($duplicate)->toThrow(function (UniqueViolationException $thrown): void {
+            expect($thrown->getMessage())->toStartWith('ORA-00001')
+                ->not->toContain('ORA-03301')
+                ->not->toContain('zq39secret');
+        });
     });
 
     it('throws query exception with the server offset for a syntax error', function (string $sql, int $code, int $offset): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute($sql, [], $this->options());
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
+        $execute = fn (): mixed => $connection->execute($sql, [], $this->options());
 
-        assert($thrown instanceof QueryException);
-        expect($thrown::class)->toBe(QueryException::class)
-            ->and($thrown->getCode())->toBe($code)
-            ->and($thrown->offset())->toBe($offset)
-            ->and($thrown->sql())->toBe($sql);
+        expect($execute)->toThrow(function (QueryException $thrown) use ($sql, $code, $offset): void {
+            expect($thrown::class)->toBe(QueryException::class)
+                ->and($thrown->getCode())->toBe($code)
+                ->and($thrown->offset())->toBe($offset)
+                ->and($thrown->sql())->toBe($sql);
+        });
     })->with([
         'a misspelled keyword' => ['select 1 fro dual', 923, 13],
         'an unknown column' => ['select nosuchcolumn from dual', 904, 7],

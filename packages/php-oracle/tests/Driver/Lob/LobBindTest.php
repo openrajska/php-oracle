@@ -14,7 +14,6 @@ use Rajska\Oracle\Contracts\Driver\Locator;
 use Rajska\Oracle\Exceptions\UsageException;
 use Rajska\Oracle\Tests\Driver\TestCase;
 use Stringable;
-use Throwable;
 
 uses(TestCase::class);
 
@@ -316,16 +315,12 @@ describe('streams', function (): void {
 describe('invalid values', function (): void {
     it('refuses text that is not utf8 naming blob', function (Closure $bind, string $message): void {
         $connection = $this->connect();
-        $thrown = null;
 
-        try {
-            $connection->execute('begin :v := :v; end;', ['v' => $bind()], $this->options());
-        } catch (Throwable $throwable) {
-            $thrown = $throwable;
-        }
+        $execute = fn (): mixed => $connection->execute('begin :v := :v; end;', ['v' => $bind()], $this->options());
 
-        expect($thrown)->toBeInstanceOf(UsageException::class)
-            ->and($thrown?->getMessage())->toBe($message)
+        expect($execute)->toThrow(function (UsageException $thrown) use ($message): void {
+            expect($thrown->getMessage())->toBe($message);
+        })
             ->and($this->value($connection, 'select 1 from dual'))->toBe(1);
     })->with('notUtf8');
 
@@ -333,12 +328,9 @@ describe('invalid values', function (): void {
         $connection = $this->connect();
         $sid = $this->sid($connection);
 
-        $trips = roundTrips($sid, function () use ($connection): void {
-            try {
-                $connection->execute('begin :v := :v; end;', ['v' => new In\Clob("ok \xff")], $this->options());
-            } catch (UsageException) {
-            }
-        });
+        $execute = fn (): mixed => $connection->execute('begin :v := :v; end;', ['v' => new In\Clob("ok \xff")], $this->options());
+
+        $trips = roundTrips($sid, static fn (): mixed => expect($execute)->toThrow(UsageException::class));
 
         expect($trips)->toBe(0);
     });

@@ -613,20 +613,16 @@ describe('call names', function (): void {
 
     it('fails before any round trip on an invalid name', function (string $name, array $binds, string $message, string $verb): void {
         $sid = $this->sid($this->connection);
-        $thrown = null;
 
-        $trips = roundTrips($sid, function () use ($verb, $name, $binds, &$thrown): void {
-            try {
-                $this->connection->{$verb}($name, $binds);
-            } catch (UsageException $usageException) {
-                $thrown = $usageException;
-            }
+        $trips = roundTrips($sid, function () use ($verb, $name, $binds, $message): void {
+            expect(fn () => $this->connection->{$verb}($name, $binds))->toThrow(function (UsageException $usageException) use ($name, $message): void {
+                expect($usageException->getMessage())->toContain($message)
+                    ->and($usageException->call())->toBe($name)
+                    ->and($usageException->sql())->toBeNull();
+            });
         });
 
-        expect($thrown?->getMessage())->toContain($message)
-            ->and($thrown?->call())->toBe($name)
-            ->and($thrown?->sql())->toBeNull()
-            ->and($trips)->toBe(0);
+        expect($trips)->toBe(0);
     })->with('invalidNames')->with(['procedure', 'function']);
 });
 
@@ -663,31 +659,23 @@ describe('the call cache', function (): void {
 
 describe('failing calls', function (): void {
     it('carries the call name and the generated block', function (Closure $call, string $name, string $sql): void {
-        $thrown = null;
+        $failing = fn () => $call($this->connection);
 
-        try {
-            $call($this->connection);
-        } catch (QueryException $queryException) {
-            $thrown = $queryException;
-        }
-
-        expect($thrown?->getCode())->toBe(20046)
-            ->and($thrown?->getMessage())->toStartWith("ORA-20046: $name raised")
-            ->and($thrown?->sql())->toBe($sql)
-            ->and($thrown?->call())->toBe($name);
+        expect($failing)->toThrow(function (QueryException $queryException) use ($name, $sql): void {
+            expect($queryException->getCode())->toBe(20046)
+                ->and($queryException->getMessage())->toStartWith("ORA-20046: $name raised")
+                ->and($queryException->sql())->toBe($sql)
+                ->and($queryException->call())->toBe($name);
+        });
     })->with('failingCalls');
 
     it('names the parameter and the call on a bind error', function (Closure $call, string $name): void {
-        $thrown = null;
+        $failing = fn () => $call($this->connection);
 
-        try {
-            $call($this->connection);
-        } catch (UsageException $usageException) {
-            $thrown = $usageException;
-        }
-
-        expect($thrown?->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.")
-            ->and($thrown?->call())->toBe($name);
+        expect($failing)->toThrow(function (UsageException $usageException) use ($name): void {
+            expect($usageException->getMessage())->toBe("Bind 'P_Value': a DateTimeInterface does not bind by itself; use In\\Date or In\\Timestamp.")
+                ->and($usageException->call())->toBe($name);
+        });
     })->with('badBinds');
 
     it('passes the exception of another backend to the caller as it was thrown', function (): void {
